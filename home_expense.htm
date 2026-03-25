@@ -123,6 +123,7 @@ body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;
 var R=null,S='role',PS=null,SEL=null,NN=8,editingId=null,payTab='byEmp';
 var fltStatus='All',fltMonth='All',fltYear='All',fltEmp='All';
 var empFltStatus='All',empFltMonth='All',empFltYear='All';
+var empDashMonth='All',empDashYear='All';
 var dashFltMonth='All',dashFltYear='All',dashFltUnit='All';
 var checkedClaims={},slipUploaded=false;
 var mgrFormEmp='Ahmad Razif',mgrFormPayType='employee';
@@ -131,8 +132,8 @@ var empExpandMap={},editingBankEmp=null;
 var MONTHS={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
 var YEARS=['2025','2026'];
 var UNITS=['Villa Dahlia','Villa Mawar','Office KL','Office JB'];
-var CATS=['Utilities','Maintenance & Repair','Housekeeping & Cleaning','Laundry','Daily Supplies','Hospitality Items','Electrical & Setup','Office Expenses','Employee Welfare','Outsource Staff','Unit Renovation','Other'];
-var CAT_COLORS={'Utilities':'#185FA5','Maintenance & Repair':'#854F0B','Housekeeping & Cleaning':'#3B6D11','Laundry':'#534AB7','Daily Supplies':'#0F6E56','Hospitality Items':'#993556','Electrical & Setup':'#993C1D','Office Expenses':'#5F5E5A','Employee Welfare':'#185FA5','Outsource Staff':'#854F0B','Unit Renovation':'#A32D2D','Other':'#888780'};
+var CATS=['Utilities','Maintenance & Repair','Housekeeping & Cleaning','Laundry','Daily Products','Hospitality Items','Electrical & Unit Setup','Office Expenses','Employee Welfare','Outsource Cleaning Staff','Unit Renovation','Other'];
+var CAT_COLORS={'Utilities':'#185FA5','Maintenance & Repair':'#854F0B','Housekeeping & Cleaning':'#3B6D11','Laundry':'#534AB7','Daily Products':'#0F6E56','Hospitality Items':'#993556','Electrical & Unit Setup':'#993C1D','Office Expenses':'#5F5E5A','Employee Welfare':'#185FA5','Outsource Cleaning Staff':'#854F0B','Unit Renovation':'#A32D2D','Other':'#888780'};
 
 var BANK_INFO={
   'Ahmad Razif':{bank:'Maybank',acc:'1234 5678 9012',fullName:'Ahmad Razif bin Abdullah'},
@@ -155,10 +156,11 @@ var claims=[
 ];
 
 function isPaidOut(c){return c.status==='Claimed'||c.status==='Company-Paid';}
-function empCanEdit(c){return(c.status==='Submitted'||c.status==='Draft')&&!isPaidOut(c);}
+function empCanEdit(c){return(c.status==='Submitted'||c.status==='Draft'||c.status==='Auto-Approved')&&!isPaidOut(c);}
 function mgrCanEdit(c){return(c.status==='Approved'||c.status==='Rejected'||c.status==='Auto-Approved')&&!isPaidOut(c);}
 function initials(n){var p=n.split(' ');return(p[0][0]+(p[1]?p[1][0]:'')).toUpperCase();}
 function hasBankInfo(emp){var b=BANK_INFO[emp];return b&&b.bank&&b.acc&&b.fullName;}
+function dstat(s){return R!=='admin'&&s==='Auto-Approved'?'Approved':s;}
 
 function sbadge(s){
   var m={Submitted:'b-sub',Approved:'b-appr',Rejected:'b-rej',Draft:'b-draft',Claimed:'b-claimed','Auto-Approved':'b-auto','Company-Paid':'b-copay'};
@@ -167,7 +169,7 @@ function sbadge(s){
 function ccCard(c,fn){
   var byTag=c.submittedBy==='manager'?'<span style="font-size:9px;color:#6b7280;background:#f3f4f6;border-radius:99px;padding:1px 4px;border:1px solid #e5e7eb;margin-left:3px">mgr</span>':'';
   var unitTag=c.unit?'<span style="font-size:9px;background:#f3f4f6;color:#6b7280;border-radius:99px;padding:1px 5px;border:1px solid #e5e7eb">'+c.unit+'</span>':'';
-  return '<div class="cc" onclick="'+fn+'"><div style="flex:1;min-width:0"><div class="cc-id">'+c.id+'</div><div class="cc-desc">'+c.desc+'</div><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px">'+(c.category?'<span style="font-size:10px;color:#6b7280">'+c.category+'</span>':'<span style="font-size:10px;color:#9ca3af;font-style:italic">No category</span>')+(R==='admin'&&c.emp?'<span style="font-size:10px;color:#9ca3af">· '+c.emp.split(' ')[0]+'</span>'+byTag:'')+unitTag+'</div></div><div class="cc-r"><div class="cc-amt">RM '+c.amount.toFixed(2)+'</div>'+sbadge(c.status)+'</div></div>';
+  return '<div class="cc" onclick="'+fn+'"><div style="flex:1;min-width:0"><div class="cc-id">'+c.id+'</div><div class="cc-desc">'+c.desc+'</div><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px">'+(c.category?'<span style="font-size:10px;color:#6b7280">'+c.category+'</span>':'<span style="font-size:10px;color:#9ca3af;font-style:italic">No category</span>')+(R==='admin'&&c.emp?'<span style="font-size:10px;color:#9ca3af">· '+c.emp.split(' ')[0]+'</span>'+byTag:'')+unitTag+'</div></div><div class="cc-r"><div class="cc-amt">RM '+c.amount.toFixed(2)+'</div>'+sbadge(dstat(c.status))+'</div></div>';
 }
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
 function ss(s,p){PS=p||S;S=s;render();}
@@ -177,7 +179,7 @@ function loginAs(r){R=r;ss(r==='admin'?'adminDash':'empHome');}
 
 function filterClaims(list,st,mo,yr,em){
   return list.filter(function(c){
-    if(st&&st!=='All'&&c.status!==st)return false;
+    if(st&&st!=='All'){var cs=R!=='admin'?dstat(c.status):c.status;if(cs!==st)return false;}
     if(mo&&mo!=='All'&&c.date.slice(5,7)!==mo)return false;
     if(yr&&yr!=='All'&&c.date.slice(0,4)!==yr)return false;
     if(em&&em!=='All'&&c.emp!==em)return false;
@@ -249,8 +251,9 @@ function render(){
 
   function empNav(a){
     nav.style.display='flex';
-    var its=[['home','⊞','Home',"ss('empHome')"],['claims','☰','Claims',"ss('empList','empHome')"],['new','＋','New',"ss('newClaim','empHome')"],['exit','⏏','Exit','logout()']];
+    var its=[['home','⊞','Home',"ss('empHome')"],['claims','☰','Claims',"ss('empList','empHome')"],['new','＋','New',"ss('newClaim','empHome')"]];
     nav.innerHTML=its.map(function(x){return'<div class="ni'+(a===x[0]?' on':'')+'" onclick="'+x[3]+'"><span class="ni-ic" style="'+(x[0]==='new'?'color:#2563eb;font-size:16px;':'')+'">'+x[1]+'</span>'+x[2]+'</div>';}).join('');
+    lo.style.display='block';
   }
   function adminNav(a){
     nav.style.display='flex';
@@ -261,19 +264,24 @@ function render(){
 
   if(S==='role'){
     tbt_el.textContent='Home Expense';
-    ms.innerHTML='<div class="role-scr"><div style="font-size:48px">🏠</div><div style="font-size:22px;font-weight:700;color:#111;text-align:center">Home Expense System</div><div style="font-size:13px;color:#6b7280;text-align:center;margin-bottom:8px">Select your role to continue</div><button class="pbtn btn-p" onclick="loginAs(\'employee\')" style="font-size:15px;padding:14px">👤  Login as Employee</button><button class="pbtn btn-o" onclick="loginAs(\'admin\')" style="margin-top:10px;font-size:15px;padding:14px">🔐  Login as Manager</button><div style="font-size:11px;color:#9ca3af;margin-top:10px">Demo prototype v9</div></div>';
+    ms.innerHTML='<div class="role-scr"><div style="font-size:48px">🏠</div><div style="font-size:22px;font-weight:700;color:#111;text-align:center">Home Expense System</div><div style="font-size:13px;color:#6b7280;text-align:center;margin-bottom:8px">Select your role to continue</div><button class="pbtn btn-p" onclick="loginAs(\'employee\')" style="font-size:15px;padding:14px">👤  Login as Employee</button><button class="pbtn btn-o" onclick="loginAs(\'admin\')" style="margin-top:10px;font-size:15px;padding:14px">🔐  Login as Manager</button><div style="font-size:11px;color:#9ca3af;margin-top:10px">Demo prototype v10</div></div>';
     return;
   }
   tbr_el.style.display='block';tbr_el.textContent=R==='admin'?'Manager':'Employee';
 
   if(S==='empHome'){
     tbt_el.textContent='My Dashboard';empNav('home');
+    var months=['All'].concat(Object.keys(MONTHS));var years=['All'].concat(YEARS);
+    function edm(v){empDashMonth=v;render();}function edy(v){empDashYear=v;render();}
+    window.edm=edm;window.edy=edy;
     var my=claims.filter(function(c){return c.emp==='Ahmad Razif'&&c.payType==='employee';});
-    var total=my.filter(function(c){return c.status!=='Draft';}).reduce(function(s,c){return s+c.amount;},0);
+    var fm=my.filter(function(c){var mo=empDashMonth==='All'||c.date.slice(5,7)===empDashMonth;var yr=empDashYear==='All'||c.date.slice(0,4)===empDashYear;return mo&&yr;});
+    var total=fm.filter(function(c){return dstat(c.status)!=='Draft';}).reduce(function(s,c){return s+c.amount;},0);
     var sc={Submitted:0,Approved:0,Rejected:0,Draft:0,Claimed:0};
-    my.forEach(function(c){if(sc[c.status]!==undefined)sc[c.status]++;});
-    var recent=my.slice(0,3).map(function(c){var i=claims.indexOf(c);return ccCard(c,'viewClaim('+i+',\'empHome\')');}).join('');
-    ms.innerHTML='<div class="scr"><div class="hero" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">Total submitted (March 2026)</div><div style="font-size:26px;font-weight:700;color:#1d4ed8">RM '+total.toFixed(2)+'</div><div style="font-size:11px;color:#1d4ed8;margin-top:2px;opacity:.8">'+my.filter(function(c){return c.status!=='Draft';}).length+' claims</div></div><div class="sgrid" style="grid-template-columns:repeat(5,minmax(0,1fr))">'+['Submitted','Approved','Rejected','Draft','Claimed'].map(function(s,i){var cols=['#1d4ed8','#065f46','#991b1b','#374151','#92400e'];return'<div class="sbox"><div class="snum" style="color:'+cols[i]+'">'+sc[s]+'</div><div class="slbl">'+s+'</div></div>';}).join('')+'</div><button class="pbtn btn-p" onclick="ss(\'newClaim\',\'empHome\')">+ New Claim</button><div><div class="sec-hdr"><span class="sec-t">Recent claims</span><span class="va" onclick="ss(\'empList\',\'empHome\')">View all →</span></div><div style="margin-top:6px">'+recent+'</div></div></div>';
+    fm.forEach(function(c){var ds=dstat(c.status);if(sc[ds]!==undefined)sc[ds]++;});
+    var periodLabel=empDashMonth!=='All'&&empDashYear!=='All'?MONTHS[empDashMonth]+' '+empDashYear:empDashMonth!=='All'?MONTHS[empDashMonth]:empDashYear!=='All'?empDashYear:'All time';
+    var recent=fm.slice(0,3).map(function(c){var i=claims.indexOf(c);return ccCard(c,'viewClaim('+i+',\'empHome\')');}).join('');
+    ms.innerHTML='<div class="scr"><div style="background:#f9fafb;border-radius:12px;padding:9px;border:1px solid #e5e7eb;display:flex;flex-direction:column;gap:5px"><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Month</div><div class="flt-row">'+months.map(function(m){return'<span class="chip'+(empDashMonth===m?' on':'')+'" onclick="edm(\''+m+'\')">'+(m==='All'?'All':MONTHS[m])+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Year</div><div class="flt-row">'+years.map(function(y){return'<span class="chip'+(empDashYear===y?' on':'')+'" onclick="edy(\''+y+'\')">'+y+'</span>';}).join('')+'</div></div></div><div class="hero" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">Total submitted · '+periodLabel+'</div><div style="font-size:26px;font-weight:700;color:#1d4ed8">RM '+total.toFixed(2)+'</div><div style="font-size:11px;color:#1d4ed8;margin-top:2px;opacity:.8">'+fm.filter(function(c){return dstat(c.status)!=='Draft';}).length+' claims</div></div><div class="sgrid" style="grid-template-columns:repeat(5,minmax(0,1fr))">'+['Submitted','Approved','Rejected','Draft','Claimed'].map(function(s,i){var cols=['#1d4ed8','#065f46','#991b1b','#374151','#92400e'];return'<div class="sbox"><div class="snum" style="color:'+cols[i]+'">'+sc[s]+'</div><div class="slbl">'+s+'</div></div>';}).join('')+'</div><button class="pbtn btn-p" onclick="ss(\'newClaim\',\'empHome\')">+ New Claim</button><div><div class="sec-hdr"><span class="sec-t">Recent claims</span><span class="va" onclick="ss(\'empList\',\'empHome\')">View all →</span></div><div style="margin-top:6px">'+(recent||'<div style="text-align:center;padding:12px;font-size:12px;color:#6b7280">No claims for this period</div>')+'</div></div></div>';
   }
   else if(S==='empList'){
     tbt_el.textContent='My Claims';bb_el.style.display='block';empNav('claims');
@@ -290,16 +298,16 @@ function render(){
   else if(S==='claimDetail'){
     var c=SEL;tbt_el.textContent='Claim Detail';bb_el.style.display='block';empNav('claims');
     var canEdit=empCanEdit(c),locked=isPaidOut(c);
-    var editBar=locked?'<div class="lock-bar"><span>🔒</span><span style="font-size:11px;color:#6b7280;margin-left:4px">Paid out — cannot edit.</span></div>':canEdit?'<div class="edit-bar"><span style="font-size:11px;color:#92400e">You can still edit this claim</span><span class="edit-link" onclick="startEmpEdit(\''+c.id+'\')">Edit →</span></div>':'<div class="lock-bar"><span>🔒</span><span style="font-size:11px;color:#6b7280;margin-left:4px">Cannot edit — status: '+c.status+'</span></div>';
+    var editBar=locked?'<div class="lock-bar"><span>🔒</span><span style="font-size:11px;color:#6b7280;margin-left:4px">Paid out — cannot edit.</span></div>':canEdit?'<div class="edit-bar"><span style="font-size:11px;color:#92400e">You can still edit this claim</span><span class="edit-link" onclick="startEmpEdit(\''+c.id+'\')">Edit →</span></div>':'<div class="lock-bar"><span>🔒</span><span style="font-size:11px;color:#6b7280;margin-left:4px">Cannot edit — status: '+dstat(c.status)+'</span></div>';
     var byMgr=c.submittedBy==='manager'?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Submitted by manager</span> on your behalf.</div></div>':'';
     var rejBox=c.status==='Rejected'&&c.rejectReason?'<div class="rbox"><div style="font-size:10px;font-weight:600;color:#991b1b">Rejection reason</div><div style="font-size:12px;color:#991b1b;margin-top:1px">'+c.rejectReason+'</div></div>':'';
     var claimedBox=c.status==='Claimed'?'<div class="slip-box"><span>💳</span><span style="font-size:12px;color:#92400e;font-weight:600;margin-left:4px">Payment processed · '+c.slipRef+'</span></div>':'';
-    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(c.status)+'</div><div class="dgrid">'+['Category','Amount','Date','Unit','Status'].map(function(l,i){var v=[c.category||'—','RM '+c.amount.toFixed(2),c.date,c.unit||'—',c.status];return'<div class="di"><div class="dil">'+l+'</div><div class="div_">'+v[i]+'</div></div>';}).join('')+'</div>'+rejBox+claimedBox+(!c.category?'<div class="info-box" style="background:#fef3c7;margin-top:6px"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Category pending</span> — manager will assign on review.</div></div>':'')+'</div><div class="up-box"><div style="font-size:20px">🧾</div><div style="font-size:12px;color:#6b7280;margin-top:3px">receipt_'+c.date+'.jpg</div></div></div>';
+    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(dstat(c.status))+'</div><div class="dgrid">'+['Category','Amount','Date','Unit','Status'].map(function(l,i){var v=[c.category||'—','RM '+c.amount.toFixed(2),c.date,c.unit||'—',dstat(c.status)];return'<div class="di"><div class="dil">'+l+'</div><div class="div_">'+v[i]+'</div></div>';}).join('')+'</div>'+rejBox+claimedBox+(!c.category?'<div class="info-box" style="background:#fef3c7;margin-top:6px"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Category pending</span> — manager will assign on review.</div></div>':'')+'</div><div class="up-box"><div style="font-size:20px">🧾</div><div style="font-size:12px;color:#6b7280;margin-top:3px">receipt_'+c.date+'.jpg</div></div></div>';
   }
   else if(S==='empEdit'){
     var c=claims.filter(function(x){return x.id===editingId;})[0];if(!c){ss('empList');return;}
     tbt_el.textContent='Edit Claim';bb_el.style.display='block';empNav('claims');
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Editing '+c.id+'</span> — currently '+c.status+'.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" value="'+c.desc+'"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+c.date+'"/></div></div><div class="up-box"><div style="font-size:20px">🧾</div><div style="font-size:12px;color:#6b7280;margin-top:3px">Tap to replace receipt</div></div>'+(c.status==='Draft'?'<div class="arow"><button class="pbtn btn-o" onclick="saveEmpEdit()">Save Draft</button><button class="pbtn btn-p" onclick="submitEmpEdit()">Save & Submit</button></div>':'<div class="arow"><button class="pbtn btn-o" onclick="ss(\'claimDetail\',\'empList\')">Cancel</button><button class="pbtn btn-p" onclick="submitEmpEdit()">Save & Re-submit</button></div>')+'</div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Editing '+c.id+'</span> — currently '+dstat(c.status)+'.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" value="'+c.desc+'"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+c.date+'"/></div></div><div class="up-box"><div style="font-size:20px">🧾</div><div style="font-size:12px;color:#6b7280;margin-top:3px">Tap to replace receipt</div></div>'+(c.status==='Draft'?'<div class="arow"><button class="pbtn btn-o" onclick="saveEmpEdit()">Save Draft</button><button class="pbtn btn-p" onclick="submitEmpEdit()">Save & Submit</button></div>':'<div class="arow"><button class="pbtn btn-o" onclick="ss(\'claimDetail\',\'empList\')">Cancel</button><button class="pbtn btn-p" onclick="submitEmpEdit()">Save & Re-submit</button></div>')+'</div>';
   }
   else if(S==='newClaim'){
     tbt_el.textContent='New Claim';bb_el.style.display='block';empNav('');
@@ -371,7 +379,7 @@ function render(){
   }
   else if(S==='adminPay'){
     tbt_el.textContent='Pay Out';bb_el.style.display='block';adminNav('pay');
-    var appClaims=claims.filter(function(c){return c.status==='Approved'&&c.payType==='employee';});
+    var appClaims=claims.filter(function(c){return(c.status==='Approved'||c.status==='Auto-Approved')&&c.payType==='employee';});
     var selCount=Object.keys(checkedClaims).filter(function(k){return checkedClaims[k];}).length;
     var totalSel=appClaims.filter(function(c){return checkedClaims[c.id];}).reduce(function(s,c){return s+c.amount;},0);
     function toggleAll(emp){var ec=appClaims.filter(function(c){return c.emp===emp;});var allOn=ec.every(function(c){return checkedClaims[c.id];});ec.forEach(function(c){checkedClaims[c.id]=!allOn;});render();}
