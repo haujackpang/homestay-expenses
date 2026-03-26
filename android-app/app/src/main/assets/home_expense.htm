@@ -315,11 +315,11 @@ async function updateUserAccount(){
 }
 async function deleteUserAccount(userId,name){
   if(!confirm('Delete account: '+name+'?\nThis cannot be undone.')){return;}
-  // 1. Delete profile
-  await fetch(SUPABASE_URL+'/rest/v1/profiles?id=eq.'+userId,{method:'DELETE',headers:adminHeaders});
-  // 2. Delete auth user
+  // 1. Delete bank_info by employee name
+  await fetch(SUPABASE_URL+'/rest/v1/bank_info?employee_name=eq.'+encodeURIComponent(name),{method:'DELETE',headers:adminHeaders});
+  // 2. Delete auth user (profiles cascade automatically)
   var r=await fetch(SUPABASE_URL+'/auth/v1/admin/users/'+userId,{method:'DELETE',headers:adminHeaders});
-  if(!r.ok){var e=await r.json();toast('Error: '+(e.msg||'Delete failed'));return;}
+  if(!r.ok){var e=await r.json();toast('Error: '+(e.msg||e.message||'Delete failed'));return;}
   await loadUsers();
   toast('Account deleted');
   render();
