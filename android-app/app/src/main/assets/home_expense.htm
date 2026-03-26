@@ -376,6 +376,14 @@ function ss(s,p){PS=p||S;S=s;pendingReceipt=null;pendingReceiptName='';render();
 function goBack(){ss(PS||(R==='admin'?'adminDash':'empHome'));}
 
 // ===== RECEIPT UPLOAD =====
+function togglePayType(t){
+  var d=document.getElementById('f-desc'),a=document.getElementById('f-amount'),dt=document.getElementById('f-date'),c=document.getElementById('f-cat'),u=document.getElementById('f-unit');
+  var sv={desc:d?d.value:'',amt:a?a.value:'',date:dt?dt.value:'',cat:c?c.value:'',unit:u?u.value:''};
+  mgrFormPayType=t;render();
+  d=document.getElementById('f-desc');a=document.getElementById('f-amount');dt=document.getElementById('f-date');c=document.getElementById('f-cat');u=document.getElementById('f-unit');
+  if(d)d.value=sv.desc;if(a)a.value=sv.amt;if(dt)dt.value=sv.date;if(c)c.value=sv.cat;if(u)u.value=sv.unit;
+}
+window.togglePayType=togglePayType;
 function pickReceipt(){
   var inp=document.getElementById('receipt-input');
   if(!inp){inp=document.createElement('input');inp.type='file';inp.id='receipt-input';inp.accept='image/*,.pdf,.doc,.docx';inp.style.display='none';inp.setAttribute('capture','environment');document.body.appendChild(inp);}
@@ -384,7 +392,8 @@ function pickReceipt(){
     if(inp.files&&inp.files[0]){
       pendingReceipt=inp.files[0];
       pendingReceiptName=inp.files[0].name;
-      render();
+      var rbox=document.getElementById('rbox');
+      if(rbox)rbox.innerHTML=receiptBox('');
     }
   };
   inp.click();
@@ -553,11 +562,12 @@ function render(){
   else if(S==='empEdit'){
     var c=claims.filter(function(x){return x.id===editingId;})[0];if(!c){ss('empList');return;}
     tbt_el.textContent='Edit Claim';bb_el.style.display='block';empNav('claims');
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Editing '+c.id+'</span> — currently '+dstat(c.status)+'.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" value="'+c.desc+'"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+c.date+'"/></div></div><div class="up-box"><div style="font-size:20px">🧾</div><div style="font-size:12px;color:#6b7280;margin-top:3px">Tap to replace receipt</div></div>'+(c.status==='Draft'?'<div class="arow"><button class="pbtn btn-o" onclick="saveEmpEdit()">Save Draft</button><button class="pbtn btn-p" onclick="submitEmpEdit()">Save & Submit</button></div>':'<div class="arow"><button class="pbtn btn-o" onclick="ss(\'claimDetail\',\'empList\')">Cancel</button><button class="pbtn btn-p" onclick="submitEmpEdit()">Save & Re-submit</button></div>')+'</div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Editing '+c.id+'</span> — currently '+dstat(c.status)+'.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" value="'+c.desc+'"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+c.date+'"/></div></div><div id="rbox">'+receiptBox(c.slipRef)+'</div>'+(c.status==='Draft'?'<div class="arow"><button class="pbtn btn-o" onclick="saveEmpEdit()">Save Draft</button><button class="pbtn btn-p" onclick="submitEmpEdit()">Save & Submit</button></div>':'<div class="arow"><button class="pbtn btn-o" onclick="ss(\'claimDetail\',\'empList\')">Cancel</button><button class="pbtn btn-p" onclick="submitEmpEdit()">Save & Re-submit</button></div>')+'</div>';
   }
   else if(S==='newClaim'){
     tbt_el.textContent='New Claim';bb_el.style.display='block';empNav('');
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">No category needed</span> — manager assigns during review.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. TNB Bill March"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date"/></div></div><div class="fg"><label class="fl">Remarks</label><input class="fi" placeholder="Optional notes..."/></div>'+receiptBox('')+'<div class="arow"><button class="pbtn btn-o" onclick="submitNewClaim(true)">Save Draft</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div></div>';
+    var today=new Date().toISOString().slice(0,10);
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">No category needed</span> — manager assigns during review.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. TNB Bill March"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div><div class="fg"><label class="fl">Remarks</label><input class="fi" placeholder="Optional notes..."/></div><div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="submitNewClaim(true)">Save Draft</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div></div>';
   }
   else if(S==='adminDash'){
     tbt_el.textContent='Manager Dashboard';adminNav('dash');
@@ -667,10 +677,12 @@ function render(){
   else if(S==='mgrNewClaim'){
     tbt_el.textContent='Submit Expense';bb_el.style.display='block';adminNav('sub');
     var isCompany=mgrFormPayType==='company';
-    var empOpts=ACTIVE_EMPS.map(function(e){return'<option value="'+e+'"'+(mgrFormEmp===e?' selected':'')+'>'+e+'</option>';}).join('');
+    var mySelf=myName();var empDropList=ACTIVE_EMPS.indexOf(mySelf)<0?[mySelf].concat(ACTIVE_EMPS):ACTIVE_EMPS;
+    var empOpts=empDropList.map(function(e){return'<option value="'+e+'"'+(mgrFormEmp===e?' selected':'')+'>'+e+(e===mySelf?' (self)':'')+'</option>';}).join('');
     var catOpts=CATS.map(function(c){return'<option>'+c+'</option>';}).join('');
     var unitOpts=UNITS.map(function(u){return'<option>'+u+'</option>';}).join('');
-    ms.innerHTML='<div class="scr"><div style="display:flex;flex-direction:column;gap:7px"><div class="ptype-card'+(isCompany?'':' on')+'" onclick="mgrFormPayType=\'employee\';render()"><div style="font-size:20px">👤</div><div><div class="ptype-title">Employee paid</div><div class="ptype-desc">Needs reimbursement — auto-approved</div></div></div><div class="ptype-card'+(isCompany?' on':'')+'" onclick="mgrFormPayType=\'company\';render()"><div style="font-size:20px">🏢</div><div><div class="ptype-title">Company paid</div><div class="ptype-desc">No reimbursement — tracking only</div></div></div></div>'+(isCompany?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid:</span> No employee assigned.</div></div>':'<div class="fg"><label class="fl">Submit for employee *</label><select class="fi" id="f-emp" onchange="mgrFormEmp=this.value">'+empOpts+'</select></div>')+'<div class="fg"><label class="fl">Category *</label><select class="fi" id="f-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location *</label><select class="fi" id="f-unit"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. TNB Bill March"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date"/></div></div>'+receiptBox('')+'<button class="pbtn '+(isCompany?'btn-s':'btn-p')+'" onclick="submitMgrClaim()">'+(isCompany?'Record as Company-Paid':'Submit (Auto-Approved)')+'</button></div>';
+    var today=new Date().toISOString().slice(0,10);
+    ms.innerHTML='<div class="scr"><div style="display:flex;flex-direction:column;gap:7px"><div class="ptype-card'+(isCompany?'':' on')+'" onclick="togglePayType(\'employee\')"><div style="font-size:20px">👤</div><div><div class="ptype-title">Employee paid</div><div class="ptype-desc">Needs reimbursement — auto-approved</div></div></div><div class="ptype-card'+(isCompany?' on':'')+'" onclick="togglePayType(\'company\')"><div style="font-size:20px">🏢</div><div><div class="ptype-title">Company paid</div><div class="ptype-desc">No reimbursement — tracking only</div></div></div></div>'+(isCompany?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid:</span> No employee assigned.</div></div>':'<div class="fg"><label class="fl">Submit for employee *</label><select class="fi" id="f-emp" onchange="mgrFormEmp=this.value">'+empOpts+'</select></div>')+'<div class="fg"><label class="fl">Category *</label><select class="fi" id="f-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location *</label><select class="fi" id="f-unit"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. TNB Bill March"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div>'+'<div id="rbox">'+receiptBox('')+'</div><button class="pbtn '+(isCompany?'btn-s':'btn-p')+'" onclick="submitMgrClaim()">'+(isCompany?'Record as Company-Paid':'Submit (Auto-Approved)')+'</button></div>';
   }
 }
 
