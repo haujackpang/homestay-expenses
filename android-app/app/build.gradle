@@ -10,13 +10,28 @@ android {
         applicationId "com.homestay.expense"
         minSdk 26
         targetSdk 34
-        versionCode 10
-        versionName "10.0"
+        versionCode 12
+        versionName "12.0"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('../release-key.jks')
+            storePassword 'homestay123'
+            keyAlias 'homestay'
+            keyPassword 'homestay123'
+        }
     }
 
     buildTypes {
         debug {
             minifyEnabled false
+        }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
 

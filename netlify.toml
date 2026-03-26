@@ -1,0 +1,18 @@
+[build]
+  publish = "."
+
+[[redirects]]
+  from = "/"
+  to = "/home_expense.htm"
+  status = 200
+
+[[redirects]]
+  from = "/index.html"
+  to = "/home_expense.htm"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"

@@ -3,6 +3,10 @@ android-app/app/build/
 android-app/build/
 android-app/.gradle/
 
+# Signing keys
+*.jks
+*.keystore
+
 # IDE
 .vscode/
 *.iml
