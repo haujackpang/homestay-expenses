@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Home Expense System</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
 body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;}
@@ -112,7 +113,7 @@ body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;
   <span id="bb" class="bkb" style="display:none" onclick="goBack()">← Back</span>
   <span class="tbt" id="tbt">Home Expense</span>
   <span class="tbr" id="tbr" style="display:none"></span>
-  <span id="lob" class="lob" style="display:none" onclick="logout()">Logout</span>
+  <span id="lob" class="lob" style="display:none" onclick="doLogout()">Logout</span>
 </div>
 <div id="ms" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;"></div>
 <div id="nav" class="nav" style="display:none"></div>
@@ -120,47 +121,228 @@ body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;
 </div>
 
 <script>
-var R=null,S='role',PS=null,SEL=null,NN=8,editingId=null,payTab='byEmp';
+// ===== SUPABASE CONFIG =====
+var SUPABASE_URL='https://skwogboredsczcyhlqgn.supabase.co';
+var SUPABASE_KEY='sb_publishable_92g8DBB_Zf5cv8fqaFBdEA_1fK6e0VL';
+var SUPABASE_SERVICE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDI1MzY5OSwiZXhwIjoyMDg5ODI5Njk5fQ.VuxUoTz2SRMqRLaYhZtqfrjfNLVyEKMF3v4MU_mfVoY';
+var sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+// ===== STATE =====
+var R=null,S='auth',PS=null,SEL=null,editingId=null,payTab='byEmp';
+var currentUser=null,currentProfile=null;
 var fltStatus='All',fltMonth='All',fltYear='All',fltEmp='All';
 var empFltStatus='All',empFltMonth='All',empFltYear='All';
 var empDashMonth='All',empDashYear='All';
 var dashFltMonth='All',dashFltYear='All',dashFltUnit='All';
 var checkedClaims={},slipUploaded=false;
-var mgrFormEmp='Ahmad Razif',mgrFormPayType='employee';
+var mgrFormEmp='',mgrFormPayType='employee';
 var empExpandMap={},editingBankEmp=null;
+var claims=[],BANK_INFO={},EMPS=[];
+var authError='',authLoading=false;
+var isSystemAdmin=false,allUsers=[],editingUser=null,userFormError='';
 
+// ===== CONSTANTS =====
 var MONTHS={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
-var YEARS=['2025','2026'];
+var YEARS=['2025','2026','2027'];
 var UNITS=['Villa Dahlia','Villa Mawar','Office KL','Office JB'];
 var CATS=['Utilities','Maintenance & Repair','Housekeeping & Cleaning','Laundry','Daily Products','Hospitality Items','Electrical & Unit Setup','Office Expenses','Employee Welfare','Outsource Cleaning Staff','Unit Renovation','Other'];
 var CAT_COLORS={'Utilities':'#185FA5','Maintenance & Repair':'#854F0B','Housekeeping & Cleaning':'#3B6D11','Laundry':'#534AB7','Daily Products':'#0F6E56','Hospitality Items':'#993556','Electrical & Unit Setup':'#993C1D','Office Expenses':'#5F5E5A','Employee Welfare':'#185FA5','Outsource Cleaning Staff':'#854F0B','Unit Renovation':'#A32D2D','Other':'#888780'};
 
-var BANK_INFO={
-  'Ahmad Razif':{bank:'Maybank',acc:'1234 5678 9012',fullName:'Ahmad Razif bin Abdullah'},
-  'Siti Aminah':{bank:'CIMB Bank',acc:'8001 2345 6789',fullName:'Siti Aminah binti Yusof'},
-  'Lee Wei Jian':{bank:'',acc:'',fullName:''},
-  'Priya Nair':{bank:'RHB Bank',acc:'5566 7788 9900',fullName:'Priya d/o Nair Kumar'},
-};
-var EMPS=Object.keys(BANK_INFO);
+// ===== SUPABASE DATA FUNCTIONS =====
+async function loadClaims(){
+  var q=sb.from('claims').select('*').order('created_at',{ascending:false});
+  var{data,error}=await q;
+  if(error){console.error('loadClaims:',error);return;}
+  claims=data.map(function(r){return{id:r.claim_id,uid:r.id,emp:r.emp||'',unit:r.unit||'',category:r.category||'',desc:r.description,amount:parseFloat(r.amount),date:r.date,status:r.status,rejectReason:r.reject_reason||'',slipRef:r.slip_ref||'',payType:r.pay_type,submittedBy:r.submitted_by};});
+}
+async function loadBankInfo(){
+  var{data,error}=await sb.from('bank_info').select('*');
+  if(error){console.error('loadBankInfo:',error);return;}
+  BANK_INFO={};data.forEach(function(r){BANK_INFO[r.employee_name]={bank:r.bank||'',acc:r.acc||'',fullName:r.full_name||''};});
+  EMPS=Object.keys(BANK_INFO);
+  if(mgrFormEmp===''&&EMPS.length)mgrFormEmp=EMPS[0];
+}
+async function loadAll(){await loadClaims();await loadBankInfo();}
 
-var claims=[
-  {id:'HE-2026-03-00001',emp:'Ahmad Razif',unit:'Villa Dahlia',category:'Utilities',desc:'TNB Bill March',amount:245,date:'2026-03-01',status:'Approved',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'},
-  {id:'HE-2026-03-00002',emp:'Ahmad Razif',unit:'',category:'',desc:'Pipe leak repair',amount:180,date:'2026-03-05',status:'Submitted',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'},
-  {id:'HE-2026-03-00003',emp:'Siti Aminah',unit:'',category:'',desc:'Monthly cleaning service',amount:120,date:'2026-03-10',status:'Rejected',rejectReason:'Receipt photo not legible',slipRef:'',payType:'employee',submittedBy:'self'},
-  {id:'HE-2026-03-00004',emp:'Lee Wei Jian',unit:'Office KL',category:'Office Expenses',desc:'Printer cartridge',amount:89.50,date:'2026-03-12',status:'Approved',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'},
-  {id:'HE-2026-03-00005',emp:'Priya Nair',unit:'Villa Mawar',category:'Utilities',desc:'Unifi Monthly Bill',amount:139,date:'2026-03-15',status:'Claimed',rejectReason:'',slipRef:'SLIP-001',payType:'employee',submittedBy:'self'},
-  {id:'HE-2026-02-00001',emp:'Ahmad Razif',unit:'Office KL',category:'Office Expenses',desc:'Printer ink & stationery',amount:67,date:'2026-02-10',status:'Approved',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'},
-  {id:'HE-2026-02-00002',emp:'Siti Aminah',unit:'Villa Dahlia',category:'Laundry',desc:'Linen laundry Feb',amount:155,date:'2026-02-18',status:'Approved',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'},
-  {id:'CO-2026-03-00001',emp:'',unit:'Villa Mawar',category:'Utilities',desc:'Water bill (company card)',amount:210,date:'2026-03-02',status:'Company-Paid',rejectReason:'',slipRef:'',payType:'company',submittedBy:'manager'},
-  {id:'MGR-2026-03-00001',emp:'Ahmad Razif',unit:'Office KL',category:'Employee Welfare',desc:'Team lunch',amount:95,date:'2026-03-08',status:'Auto-Approved',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'manager'},
-];
+async function getNextClaimId(prefix){
+  var now=new Date();var yr=now.getFullYear();
+  var ym=yr+'-'+String(now.getMonth()+1).padStart(2,'0');
+  var{data,error}=await sb.from('claim_sequences').select('last_number').eq('year',yr).single();
+  var n;
+  if(error||!data){
+    n=1;
+    await sb.from('claim_sequences').upsert({year:yr,last_number:1},{onConflict:'year'});
+  } else {
+    n=data.last_number+1;
+    await sb.from('claim_sequences').update({last_number:n}).eq('year',yr);
+  }
+  return prefix+'-'+ym+'-'+String(n).padStart(5,'0');
+}
 
+async function dbInsertClaim(c){
+  var{error}=await sb.from('claims').insert({claim_id:c.id,emp:c.emp,unit:c.unit,category:c.category,description:c.desc,amount:c.amount,date:c.date,status:c.status,reject_reason:c.rejectReason,slip_ref:c.slipRef,pay_type:c.payType,submitted_by:c.submittedBy,created_by:currentUser.id});
+  if(error)console.error('dbInsertClaim:',error);
+  return !error;
+}
+async function dbUpdateClaim(claimId,fields){
+  var upd={updated_at:new Date().toISOString()};
+  if(fields.desc!==undefined)upd.description=fields.desc;
+  if(fields.amount!==undefined)upd.amount=fields.amount;
+  if(fields.date!==undefined)upd.date=fields.date;
+  if(fields.status!==undefined)upd.status=fields.status;
+  if(fields.category!==undefined)upd.category=fields.category;
+  if(fields.unit!==undefined)upd.unit=fields.unit;
+  if(fields.rejectReason!==undefined)upd.reject_reason=fields.rejectReason;
+  if(fields.slipRef!==undefined)upd.slip_ref=fields.slipRef;
+  var{error}=await sb.from('claims').update(upd).eq('claim_id',claimId);
+  if(error)console.error('dbUpdateClaim:',error);
+  return !error;
+}
+async function dbUpdateBankInfo(empName,bank,acc,fullName){
+  var{error}=await sb.from('bank_info').update({bank:bank,acc:acc,full_name:fullName,updated_at:new Date().toISOString()}).eq('employee_name',empName);
+  if(error)console.error('dbUpdateBankInfo:',error);
+  return !error;
+}
+
+// ===== AUTH FUNCTIONS =====
+async function doLogin(){
+  var user=document.getElementById('auth-user'),pw=document.getElementById('auth-pw');
+  if(!user||!pw||!user.value||!pw.value){authError='Please fill all fields';render();return;}
+  authLoading=true;authError='';render();
+  var email=user.value.toLowerCase().trim()+'@homestay.app';
+  var{data,error}=await sb.auth.signInWithPassword({email:email,password:pw.value});
+  authLoading=false;
+  if(error){authError='Invalid username or password';render();return;}
+  await initSession(data.user);
+}
+async function doLogout(){
+  await sb.auth.signOut();
+  currentUser=null;currentProfile=null;R=null;S='auth';PS=null;claims=[];BANK_INFO={};EMPS=[];
+  isSystemAdmin=false;allUsers=[];editingUser=null;userFormError='';
+  render();
+}
+async function initSession(user){
+  currentUser=user;
+  var{data:prof}=await sb.from('profiles').select('*').eq('id',user.id).single();
+  if(!prof){authLoading=false;authError='Profile not found. Contact admin.';S='auth';render();return;}
+  currentProfile=prof;
+  isSystemAdmin=prof.role==='admin';
+  R=(prof.role==='admin'||prof.role==='manager')?'admin':'employee';
+  await loadAll();
+  setupRealtime();
+  authLoading=false;
+  S=R==='admin'?'adminDash':'empHome';
+  render();
+}
+
+// ===== USER MANAGEMENT (Admin only, uses Admin API) =====
+var adminHeaders={'apikey':SUPABASE_SERVICE_KEY,'Authorization':'Bearer '+SUPABASE_SERVICE_KEY,'Content-Type':'application/json'};
+
+async function openUsersScreen(){
+  await loadUsers();
+  ss('adminUsers','adminDash');
+}
+async function loadUsers(){
+  if(!isSystemAdmin)return;
+  var r=await fetch(SUPABASE_URL+'/rest/v1/profiles?select=*&order=created_at',{headers:adminHeaders});
+  if(r.ok){allUsers=await r.json();}
+  else{console.error('loadUsers:',await r.text());}
+}
+async function createUserAccount(){
+  var u=document.getElementById('uf-user'),p=document.getElementById('uf-pw'),n=document.getElementById('uf-name'),r=document.getElementById('uf-role');
+  if(!u||!p||!n||!r||!u.value.trim()||!p.value||!n.value.trim()){userFormError='Please fill all fields';render();return;}
+  if(p.value.length<6){userFormError='Password must be at least 6 characters';render();return;}
+  var username=u.value.trim().toLowerCase();
+  var email=username+'@homestay.app';
+  var fullName=n.value.trim();
+  var role=r.value;
+  // 1. Create auth user via Admin API
+  var r1=await fetch(SUPABASE_URL+'/auth/v1/admin/users',{
+    method:'POST',headers:adminHeaders,
+    body:JSON.stringify({email:email,password:p.value,email_confirm:true,user_metadata:{full_name:fullName}})
+  });
+  var d1=await r1.json();
+  if(!r1.ok||!d1.id){userFormError=d1.msg||d1.message||'Failed to create user';render();return;}
+  // 2. Create profile
+  var r2=await fetch(SUPABASE_URL+'/rest/v1/profiles',{
+    method:'POST',headers:{...adminHeaders,'Prefer':'return=minimal'},
+    body:JSON.stringify({id:d1.id,email:email,full_name:fullName,role:role})
+  });
+  if(!r2.ok){userFormError='User created but profile failed';render();return;}
+  // 3. Create bank_info for employees
+  if(role==='employee'){
+    await fetch(SUPABASE_URL+'/rest/v1/bank_info',{
+      method:'POST',headers:{...adminHeaders,'Prefer':'return=minimal'},
+      body:JSON.stringify({employee_name:fullName})
+    }).catch(function(){});
+  }
+  userFormError='';
+  await loadUsers();await loadBankInfo();
+  toast('Account created: @'+username);
+  ss('adminUsers','adminDash');
+}
+async function updateUserAccount(){
+  if(!editingUser)return;
+  var n=document.getElementById('uf-name'),r=document.getElementById('uf-role'),p=document.getElementById('uf-pw');
+  if(!n||!n.value.trim()){userFormError='Name is required';render();return;}
+  if(p&&p.value&&p.value.length<6){userFormError='Password must be at least 6 characters';render();return;}
+  var fullName=n.value.trim();
+  var role=r?r.value:editingUser.role;
+  var oldName=editingUser.full_name;
+  // 1. Update profile
+  await fetch(SUPABASE_URL+'/rest/v1/profiles?id=eq.'+editingUser.id,{
+    method:'PATCH',headers:{...adminHeaders,'Prefer':'return=minimal'},
+    body:JSON.stringify({full_name:fullName,role:role})
+  });
+  // 2. Update bank_info name if changed
+  if(fullName!==oldName){
+    await fetch(SUPABASE_URL+'/rest/v1/bank_info?employee_name=eq.'+encodeURIComponent(oldName),{
+      method:'PATCH',headers:{...adminHeaders,'Prefer':'return=minimal'},
+      body:JSON.stringify({employee_name:fullName})
+    });
+  }
+  // 3. Update password if provided
+  if(p&&p.value){
+    await fetch(SUPABASE_URL+'/auth/v1/admin/users/'+editingUser.id,{
+      method:'PUT',headers:adminHeaders,
+      body:JSON.stringify({password:p.value})
+    });
+  }
+  userFormError='';editingUser=null;
+  await loadUsers();await loadBankInfo();
+  toast('Account updated');
+  ss('adminUsers','adminDash');
+}
+async function deleteUserAccount(userId,name){
+  if(!confirm('Delete account: '+name+'?\nThis cannot be undone.')){return;}
+  // 1. Delete profile
+  await fetch(SUPABASE_URL+'/rest/v1/profiles?id=eq.'+userId,{method:'DELETE',headers:adminHeaders});
+  // 2. Delete auth user
+  var r=await fetch(SUPABASE_URL+'/auth/v1/admin/users/'+userId,{method:'DELETE',headers:adminHeaders});
+  if(!r.ok){var e=await r.json();toast('Error: '+(e.msg||'Delete failed'));return;}
+  await loadUsers();
+  toast('Account deleted');
+  render();
+}
+
+// ===== REALTIME =====
+var realtimeSub=null;
+function setupRealtime(){
+  if(realtimeSub)realtimeSub.unsubscribe();
+  realtimeSub=sb.channel('db-changes')
+    .on('postgres_changes',{event:'*',schema:'public',table:'claims'},async function(){await loadClaims();render();})
+    .on('postgres_changes',{event:'*',schema:'public',table:'bank_info'},async function(){await loadBankInfo();render();})
+    .subscribe();
+}
+
+// ===== HELPERS =====
 function isPaidOut(c){return c.status==='Claimed'||c.status==='Company-Paid';}
 function empCanEdit(c){return(c.status==='Submitted'||c.status==='Draft'||c.status==='Auto-Approved')&&!isPaidOut(c);}
 function mgrCanEdit(c){return(c.status==='Approved'||c.status==='Rejected'||c.status==='Auto-Approved')&&!isPaidOut(c);}
 function initials(n){var p=n.split(' ');return(p[0][0]+(p[1]?p[1][0]:'')).toUpperCase();}
 function hasBankInfo(emp){var b=BANK_INFO[emp];return b&&b.bank&&b.acc&&b.fullName;}
 function dstat(s){return R!=='admin'&&s==='Auto-Approved'?'Approved':s;}
+function myName(){return currentProfile?currentProfile.full_name:'';}
 
 function sbadge(s){
   var m={Submitted:'b-sub',Approved:'b-appr',Rejected:'b-rej',Draft:'b-draft',Claimed:'b-claimed','Auto-Approved':'b-auto','Company-Paid':'b-copay'};
@@ -174,8 +356,6 @@ function ccCard(c,fn){
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
 function ss(s,p){PS=p||S;S=s;render();}
 function goBack(){ss(PS||(R==='admin'?'adminDash':'empHome'));}
-function logout(){R=null;S='role';PS=null;render();}
-function loginAs(r){R=r;ss(r==='admin'?'adminDash':'empHome');}
 
 function filterClaims(list,st,mo,yr,em){
   return list.filter(function(c){
@@ -186,65 +366,74 @@ function filterClaims(list,st,mo,yr,em){
     return true;
   });
 }
-function approveClaim(id,cat,unit){
-  claims.forEach(function(c){if(c.id===id){c.status='Approved';if(cat)c.category=cat;if(unit)c.unit=unit;c.rejectReason='';}});
-  toast('Claim approved');ss('adminList','adminDash');
+
+// ===== ASYNC ACTIONS =====
+async function approveClaim(id,cat,unit){
+  await dbUpdateClaim(id,{status:'Approved',category:cat||undefined,unit:unit||undefined,rejectReason:''});
+  await loadClaims();toast('Claim approved');ss('adminList','adminDash');
 }
-function rejectClaim(id,reason){
-  claims.forEach(function(c){if(c.id===id){c.status='Rejected';c.rejectReason=reason||'No reason given';}});
-  toast('Claim rejected');ss('adminList','adminDash');
+async function rejectClaim(id,reason){
+  await dbUpdateClaim(id,{status:'Rejected',rejectReason:reason||'No reason given'});
+  await loadClaims();toast('Claim rejected');ss('adminList','adminDash');
 }
-function markClaimed(){
+async function markClaimed(){
   var ids=Object.keys(checkedClaims).filter(function(k){return checkedClaims[k];});
   if(!slipUploaded){toast('Please upload bank slip first');return;}
   if(!ids.length){toast('Select at least one claim');return;}
   var ref='SLIP-'+Date.now().toString().slice(-6);
-  claims.forEach(function(c){if(ids.indexOf(c.id)>=0){c.status='Claimed';c.slipRef=ref;}});
+  for(var i=0;i<ids.length;i++){await dbUpdateClaim(ids[i],{status:'Claimed',slipRef:ref});}
   checkedClaims={};slipUploaded=false;
-  toast(ids.length+' claim(s) marked as Claimed');ss('adminDash');
+  await loadClaims();toast(ids.length+' claim(s) marked as Claimed');ss('adminDash');
 }
-function saveBankInfo(){
+async function saveBankInfo(){
   var b=document.getElementById('p-bank'),a=document.getElementById('p-acc'),n=document.getElementById('p-name');
   if(!b||!a||!n||!b.value||!a.value||!n.value){toast('Please fill all fields');return;}
-  BANK_INFO[editingBankEmp]={bank:b.value,acc:a.value,fullName:n.value};
-  toast('Bank info saved for '+editingBankEmp);editingBankEmp=null;ss('adminEmployees','adminDash');
+  await dbUpdateBankInfo(editingBankEmp,b.value,a.value,n.value);
+  await loadBankInfo();toast('Bank info saved for '+editingBankEmp);editingBankEmp=null;ss('adminEmployees','adminDash');
 }
-function saveEmpEdit(){
+async function saveEmpEdit(){
   var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date');
   if(!desc||!amt||!dt||!desc.value||!amt.value||!dt.value){toast('Please fill all required fields');return;}
-  claims.forEach(function(c){if(c.id===editingId){c.desc=desc.value;c.amount=parseFloat(amt.value);c.date=dt.value;}});
-  toast('Claim updated');editingId=null;ss('claimDetail',PS);
+  await dbUpdateClaim(editingId,{desc:desc.value,amount:parseFloat(amt.value),date:dt.value});
+  await loadClaims();toast('Claim updated');editingId=null;ss('claimDetail',PS);
 }
-function submitEmpEdit(){
+async function submitEmpEdit(){
   var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date');
   if(!desc||!amt||!dt||!desc.value||!amt.value||!dt.value){toast('Please fill all required fields');return;}
-  claims.forEach(function(c){if(c.id===editingId){c.desc=desc.value;c.amount=parseFloat(amt.value);c.date=dt.value;c.status='Submitted';}});
-  toast('Claim re-submitted');editingId=null;ss('empList','empHome');
+  await dbUpdateClaim(editingId,{desc:desc.value,amount:parseFloat(amt.value),date:dt.value,status:'Submitted'});
+  await loadClaims();toast('Claim re-submitted');editingId=null;ss('empList','empHome');
 }
-function saveMgrEdit(){
+async function saveMgrEdit(){
   var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),amt=document.getElementById('rv-amt');
-  claims.forEach(function(c){if(c.id===editingId){if(cat&&cat.value)c.category=cat.value;if(unit&&unit.value)c.unit=unit.value;if(amt&&amt.value)c.amount=parseFloat(amt.value);}});
-  toast('Claim updated');editingId=null;ss('adminList','adminDash');
+  var upd={};
+  if(cat&&cat.value)upd.category=cat.value;if(unit&&unit.value)upd.unit=unit.value;if(amt&&amt.value)upd.amount=parseFloat(amt.value);
+  await dbUpdateClaim(editingId,upd);
+  await loadClaims();toast('Claim updated');editingId=null;ss('adminList','adminDash');
 }
-function submitNewClaim(asDraft){
+async function submitNewClaim(asDraft){
   var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date');
   if(!desc||!amt||!dt)return;
   var dv=desc.value,av=parseFloat(amt.value),dtv=dt.value;
   if(!asDraft&&(!dv||!av||!dtv)){toast('Please fill all required fields');return;}
-  var nc={id:'HE-2026-03-'+String(NN++).padStart(5,'0'),emp:'Ahmad Razif',unit:'',category:'',desc:dv||'(untitled)',amount:av||0,date:dtv||'2026-03-22',status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'};
-  claims.unshift(nc);toast(asDraft?'Draft saved':'Claim '+nc.id+' submitted!');ss('empList','empHome');
+  var cid=await getNextClaimId('HE');
+  var nc={id:cid,emp:myName(),unit:'',category:'',desc:dv||'(untitled)',amount:av||0,date:dtv||new Date().toISOString().slice(0,10),status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'};
+  await dbInsertClaim(nc);
+  await loadClaims();toast(asDraft?'Draft saved':'Claim '+cid+' submitted!');ss('empList','empHome');
 }
-function submitMgrClaim(){
+async function submitMgrClaim(){
   var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date'),cat=document.getElementById('f-cat'),unit=document.getElementById('f-unit');
   if(!desc||!amt||!dt)return;
   var dv=desc.value,av=parseFloat(amt.value),dtv=dt.value,cv=cat?cat.value:'Other',uv=unit?unit.value:'';
   if(!dv||!av||!dtv){toast('Please fill all required fields');return;}
   var isCompany=mgrFormPayType==='company';
-  var nc={id:(isCompany?'CO':'MGR')+'-2026-03-'+String(NN++).padStart(5,'0'),emp:isCompany?'':mgrFormEmp,unit:uv,category:cv,desc:dv,amount:av,date:dtv,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager'};
-  claims.unshift(nc);toast(isCompany?'Recorded as Company-Paid':'Auto-approved for '+mgrFormEmp);
-  mgrFormPayType='employee';mgrFormEmp='Ahmad Razif';ss('adminDash');
+  var cid=await getNextClaimId(isCompany?'CO':'MGR');
+  var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,category:cv,desc:dv,amount:av,date:dtv,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager'};
+  await dbInsertClaim(nc);
+  await loadClaims();toast(isCompany?'Recorded as Company-Paid':'Auto-approved for '+mgrFormEmp);
+  mgrFormPayType='employee';mgrFormEmp=EMPS.length?EMPS[0]:'';ss('adminDash');
 }
 
+// ===== RENDER =====
 function render(){
   var ms=document.getElementById('ms'),tbt_el=document.getElementById('tbt'),bb_el=document.getElementById('bb'),tbr_el=document.getElementById('tbr'),nav=document.getElementById('nav'),lo=document.getElementById('lob');
   bb_el.style.display='none';tbr_el.style.display='none';nav.style.display='none';nav.innerHTML='';lo.style.display='none';
@@ -262,19 +451,21 @@ function render(){
     lo.style.display='block';
   }
 
-  if(S==='role'){
+  // ===== AUTH SCREEN =====
+  if(S==='auth'){
     tbt_el.textContent='Home Expense';
-    ms.innerHTML='<div class="role-scr"><div style="font-size:48px">🏠</div><div style="font-size:22px;font-weight:700;color:#111;text-align:center">Home Expense System</div><div style="font-size:13px;color:#6b7280;text-align:center;margin-bottom:8px">Select your role to continue</div><button class="pbtn btn-p" onclick="loginAs(\'employee\')" style="font-size:15px;padding:14px">👤  Login as Employee</button><button class="pbtn btn-o" onclick="loginAs(\'admin\')" style="margin-top:10px;font-size:15px;padding:14px">🔐  Login as Manager</button><div style="font-size:11px;color:#9ca3af;margin-top:10px">Demo prototype v10</div></div>';
+    ms.innerHTML='<div class="role-scr" style="gap:12px"><div style="font-size:48px">🏠</div><div style="font-size:22px;font-weight:700;color:#111;text-align:center">Home Expense System</div><div style="font-size:13px;color:#6b7280;text-align:center;margin-bottom:4px">Login to continue</div>'+(authError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px 12px;border-radius:8px;width:100%;text-align:center">'+authError+'</div>':'')+'<div style="width:100%;display:flex;flex-direction:column;gap:8px"><div class="fg"><label class="fl">Username</label><input class="fi" id="auth-user" placeholder="e.g. admin" autocapitalize="off" autocomplete="username"/></div><div class="fg"><label class="fl">Password</label><input class="fi" id="auth-pw" type="password" placeholder="Your password" autocomplete="current-password"/></div></div><button class="pbtn btn-p" onclick="doLogin()" style="width:100%;font-size:15px;padding:14px"'+(authLoading?' disabled':'')+'>'+(authLoading?'Loading...':'Login')+'</button><div style="font-size:11px;color:#9ca3af;margin-top:4px">v12 · Cloud</div></div>';
     return;
   }
-  tbr_el.style.display='block';tbr_el.textContent=R==='admin'?'Manager':'Employee';
+
+  tbr_el.style.display='block';tbr_el.textContent=isSystemAdmin?'Admin · '+myName():R==='admin'?'Manager · '+myName():'Employee · '+myName();
 
   if(S==='empHome'){
     tbt_el.textContent='My Dashboard';empNav('home');
     var months=['All'].concat(Object.keys(MONTHS));var years=['All'].concat(YEARS);
     function edm(v){empDashMonth=v;render();}function edy(v){empDashYear=v;render();}
     window.edm=edm;window.edy=edy;
-    var my=claims.filter(function(c){return c.emp==='Ahmad Razif'&&c.payType==='employee';});
+    var my=claims.filter(function(c){return c.emp===myName()&&c.payType==='employee';});
     var fm=my.filter(function(c){var mo=empDashMonth==='All'||c.date.slice(5,7)===empDashMonth;var yr=empDashYear==='All'||c.date.slice(0,4)===empDashYear;return mo&&yr;});
     var total=fm.filter(function(c){return dstat(c.status)!=='Draft';}).reduce(function(s,c){return s+c.amount;},0);
     var sc={Submitted:0,Approved:0,Rejected:0,Draft:0,Claimed:0};
@@ -285,7 +476,7 @@ function render(){
   }
   else if(S==='empList'){
     tbt_el.textContent='My Claims';bb_el.style.display='block';empNav('claims');
-    var my=claims.filter(function(c){return c.emp==='Ahmad Razif'&&c.payType==='employee';});
+    var my=claims.filter(function(c){return c.emp===myName()&&c.payType==='employee';});
     var months=['All'].concat(Object.keys(MONTHS));var years=['All'].concat(YEARS);
     var statuses=['All','Submitted','Approved','Rejected','Draft','Claimed'];
     function ec(v){empFltStatus=v;render();}function em(v){empFltMonth=v;render();}function ey(v){empFltYear=v;render();}
@@ -329,7 +520,7 @@ function render(){
     var grandTotal=sorted.reduce(function(s,k){return s+catTotals[k];},0);
     var bars=sorted.map(function(cat){var pct=grandTotal>0?Math.round((catTotals[cat]/grandTotal)*100):0;var col=CAT_COLORS[cat]||'#888780';return'<div class="brow"><div class="blbl"><span>'+cat+'</span><span>RM '+catTotals[cat].toFixed(2)+'</span></div><div class="btrk"><div class="bfil" style="width:'+pct+'%;background:'+col+'"></div></div></div>';}).join('');
     var pendCards=base.filter(function(c){return c.status==='Submitted';}).slice(0,2).map(function(c){var i=claims.indexOf(c);return ccCard(c,'adminView('+i+',\'adminDash\')');}).join('');
-    ms.innerHTML='<div class="scr"><div style="background:#f9fafb;border-radius:12px;padding:9px;border:1px solid #e5e7eb;display:flex;flex-direction:column;gap:5px"><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Month</div><div class="flt-row">'+months.map(function(m){return'<span class="chip'+(dashFltMonth===m?' on':'')+'" onclick="dm(\''+m+'\')">'+(m==='All'?'All':MONTHS[m])+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Year</div><div class="flt-row">'+years.map(function(y){return'<span class="chip'+(dashFltYear===y?' on':'')+'" onclick="dy(\''+y+'\')">'+y+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Unit</div><div class="flt-row">'+unitOpts.map(function(u){return'<span class="chip'+((dashFltUnit===u||(dashFltUnit==='All'&&u==='All Units'))?' on':'')+'" onclick="du(\''+u+'\')">'+u+'</span>';}).join('')+'</div></div></div><div class="sgrid" style="grid-template-columns:1fr 1fr;gap:7px"><div class="hero" style="background:#d1fae5"><div style="font-size:11px;color:#065f46">Reimbursable</div><div style="font-size:20px;font-weight:700;color:#065f46">RM '+apprTotal.toFixed(2)+'</div><div style="font-size:11px;color:#065f46;opacity:.8;margin-top:2px">'+claimedN+' claimed</div></div><div class="hero" style="background:#f9fafb;border:1px solid #e5e7eb"><div style="font-size:11px;color:#6b7280">Company paid</div><div style="font-size:20px;font-weight:700;color:#111">RM '+coTotal.toFixed(2)+'</div><div style="font-size:11px;color:#6b7280;margin-top:2px">No reimbursement</div></div></div><div class="sgrid" style="grid-template-columns:repeat(3,minmax(0,1fr))"><div class="sbox" onclick="ss(\'adminList\',\'adminDash\')"><div class="snum" style="color:#92400e">'+pending+'</div><div class="slbl">Pending</div></div><div class="sbox"><div class="snum" style="color:#065f46">'+base.filter(function(c){return c.status==='Approved';}).length+'</div><div class="slbl">Approved</div></div><div class="sbox"><div class="snum" style="color:#92400e">'+claimedN+'</div><div class="slbl">Claimed</div></div></div>'+(pendCards?'<div><div class="sec-hdr"><span class="sec-t">Pending approval</span><span class="va" onclick="ss(\'adminList\',\'adminDash\')">All →</span></div><div style="margin-top:6px">'+pendCards+'</div></div>':'<div style="text-align:center;padding:8px;font-size:12px;color:#6b7280">No pending claims ✓</div>')+(sorted.length?'<div><div class="sec-t" style="margin-bottom:6px">Spending by category</div><div style="background:#f9fafb;border-radius:12px;padding:10px;border:1px solid #e5e7eb">'+bars+'</div></div>':'')+'</div>';
+    ms.innerHTML='<div class="scr"><div style="background:#f9fafb;border-radius:12px;padding:9px;border:1px solid #e5e7eb;display:flex;flex-direction:column;gap:5px"><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Month</div><div class="flt-row">'+months.map(function(m){return'<span class="chip'+(dashFltMonth===m?' on':'')+'" onclick="dm(\''+m+'\')">'+(m==='All'?'All':MONTHS[m])+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Year</div><div class="flt-row">'+years.map(function(y){return'<span class="chip'+(dashFltYear===y?' on':'')+'" onclick="dy(\''+y+'\')">'+y+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Unit</div><div class="flt-row">'+unitOpts.map(function(u){return'<span class="chip'+((dashFltUnit===u||(dashFltUnit==='All'&&u==='All Units'))?' on':'')+'" onclick="du(\''+u+'\')">'+u+'</span>';}).join('')+'</div></div></div><div class="sgrid" style="grid-template-columns:1fr 1fr;gap:7px"><div class="hero" style="background:#d1fae5"><div style="font-size:11px;color:#065f46">Reimbursable</div><div style="font-size:20px;font-weight:700;color:#065f46">RM '+apprTotal.toFixed(2)+'</div><div style="font-size:11px;color:#065f46;opacity:.8;margin-top:2px">'+claimedN+' claimed</div></div><div class="hero" style="background:#f9fafb;border:1px solid #e5e7eb"><div style="font-size:11px;color:#6b7280">Company paid</div><div style="font-size:20px;font-weight:700;color:#111">RM '+coTotal.toFixed(2)+'</div><div style="font-size:11px;color:#6b7280;margin-top:2px">No reimbursement</div></div></div><div class="sgrid" style="grid-template-columns:repeat(3,minmax(0,1fr))"><div class="sbox" onclick="ss(\'adminList\',\'adminDash\')"><div class="snum" style="color:#92400e">'+pending+'</div><div class="slbl">Pending</div></div><div class="sbox"><div class="snum" style="color:#065f46">'+base.filter(function(c){return c.status==='Approved';}).length+'</div><div class="slbl">Approved</div></div><div class="sbox"><div class="snum" style="color:#92400e">'+claimedN+'</div><div class="slbl">Claimed</div></div></div>'+(isSystemAdmin?'<div class="sbox" onclick="openUsers()" style="cursor:pointer;background:#dbeafe;border-color:#93c5fd;display:flex;align-items:center;gap:10px;padding:11px 14px"><span style="font-size:18px">👥</span><div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1d4ed8">Manage Users</div><div style="font-size:11px;color:#1d4ed8;opacity:.8">Add, edit or remove user accounts</div></div><span style="font-size:12px;color:#1d4ed8">→</span></div>':'')+(pendCards?'<div><div class="sec-hdr"><span class="sec-t">Pending approval</span><span class="va" onclick="ss(\'adminList\',\'adminDash\')">All →</span></div><div style="margin-top:6px">'+pendCards+'</div></div>':'<div style="text-align:center;padding:8px;font-size:12px;color:#6b7280">No pending claims ✓</div>')+(sorted.length?'<div><div class="sec-t" style="margin-bottom:6px">Spending by category</div><div style="background:#f9fafb;border-radius:12px;padding:10px;border:1px solid #e5e7eb">'+bars+'</div></div>':'')+'</div>';
   }
   else if(S==='adminList'){
     tbt_el.textContent='All Claims';bb_el.style.display='block';adminNav('list');
@@ -344,10 +535,10 @@ function render(){
   }
   else if(S==='adminReview'){
     var c=SEL;tbt_el.textContent='Review Claim';bb_el.style.display='block';adminNav('list');
-    var isPending=c.status==='Submitted',canMgrEdit=mgrCanEdit(c),locked=isPaidOut(c),isCompanyPaid=c.status==='Company-Paid';
+    var isPending=c.status==='Submitted',canMgrEd=mgrCanEdit(c),locked=isPaidOut(c),isCompanyPaid=c.status==='Company-Paid';
     var catOpts=CATS.map(function(cat){return'<option value="'+cat+'"'+(c.category===cat?' selected':'')+'>'+cat+'</option>';}).join('');
     var unitOpts=UNITS.map(function(u){return'<option value="'+u+'"'+(c.unit===u?' selected':'')+'>'+u+'</option>';}).join('');
-    var editBar=locked?'<div class="lock-bar"><span>🔒</span><span style="font-size:11px;color:#6b7280;margin-left:4px">Paid out — cannot modify.</span></div>':canMgrEdit?'<div class="edit-bar"><span style="font-size:11px;color:#92400e">This claim can be modified</span><span class="edit-link" onclick="ss(\'mgrEdit\',\'adminReview\')">Edit →</span></div>':'';
+    var editBar=locked?'<div class="lock-bar"><span>🔒</span><span style="font-size:11px;color:#6b7280;margin-left:4px">Paid out — cannot modify.</span></div>':canMgrEd?'<div class="edit-bar"><span style="font-size:11px;color:#92400e">This claim can be modified</span><span class="edit-link" onclick="ss(\'mgrEdit\',\'adminReview\')">Edit →</span></div>':'';
     var actionArea=isPending?'<div class="fg"><label class="fl">Assign category *</label><select class="fi" id="rv-cat"><option value="">— Select —</option>'+catOpts+'</select></div><div class="fg"><label class="fl">Assign unit *</label><select class="fi" id="rv-unit"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Rejection reason (if rejecting)</label><input class="fi" id="rv-reason" placeholder="Leave blank if approving"/></div><div class="arow"><button class="pbtn btn-d" onclick="doReject()">✕  Reject</button><button class="pbtn btn-s" onclick="doApprove()">✓  Approve</button></div>':isCompanyPaid?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid</span> — no reimbursement needed.</div></div>':'<div style="background:#f9fafb;border-radius:8px;padding:10px;text-align:center;font-size:12px;color:#6b7280">Status: '+c.status+'</div>';
     var byMgr=c.submittedBy==='manager'?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Submitted by manager</span>'+(c.emp?' for '+c.emp:'')+'</div></div>':'';
     var rejBox=c.status==='Rejected'&&c.rejectReason?'<div class="rbox"><div style="font-size:10px;font-weight:600;color:#991b1b">Rejection reason</div><div style="font-size:12px;color:#991b1b;margin-top:1px">'+c.rejectReason+'</div></div>':'';
@@ -400,6 +591,22 @@ function render(){
     var allRows=appClaims.map(function(c){var on=checkedClaims[c.id];return'<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #f3f4f6"><div class="chk'+(on?' on':'')+'" onclick="checkedClaims[\''+c.id+'\']='+(!on)+';render()">'+(on?'<span style="font-size:10px;color:#fff">✓</span>':'')+'</div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;color:#111">'+c.desc+'</div><div style="font-size:10px;color:#9ca3af;font-family:monospace">'+c.id+' · '+c.emp.split(' ')[0]+'</div></div><div style="font-size:12px;font-weight:600;flex-shrink:0;color:#111">RM '+c.amount.toFixed(2)+'</div></div>';}).join('');
     ms.innerHTML='<div class="scr"><div class="tab-bar"><div class="tab-opt'+(payTab==='byEmp'?' on':'')+'" onclick="payTab=\'byEmp\';render()">By employee</div><div class="tab-opt'+(payTab==='all'?' on':'')+'" onclick="payTab=\'all\';render()">All claims</div></div>'+(appClaims.length===0?'<div style="text-align:center;padding:20px;font-size:12px;color:#6b7280">No approved claims pending</div>':payTab==='byEmp'?(byEmpHTML||'<div style="text-align:center;padding:20px;font-size:12px;color:#6b7280">No approved claims</div>'):'<div style="background:#f9fafb;border-radius:12px;padding:0 12px;border:1px solid #e5e7eb">'+(allRows||'')+'</div>')+'<div style="background:#f9fafb;border-radius:12px;padding:11px;border:1px solid #e5e7eb;margin-top:4px"><div style="font-size:12px;font-weight:600;color:#111;margin-bottom:7px">Upload bank transfer slip</div>'+(slipUploaded?'<div class="slip-box"><span>✅</span><span style="font-size:12px;color:#92400e;font-weight:600;margin-left:6px">transfer_slip.pdf uploaded</span></div>':'<div class="up-box" onclick="slipUploaded=true;render()"><div style="font-size:20px">📄</div><div style="font-size:12px;color:#6b7280;margin-top:3px">Tap to upload bank transfer slip</div></div>')+'</div><div style="background:#f9fafb;border-radius:12px;padding:11px;border:1px solid #e5e7eb;margin-top:4px"><div class="sum-row"><span style="color:#6b7280">Selected</span><span>'+selCount+' claim(s)</span></div><div class="sum-row"><span style="color:#6b7280">Total payout</span><span>RM '+totalSel.toFixed(2)+'</span></div></div><button class="pbtn btn-w" style="margin-top:4px" onclick="markClaimed()">Mark as Claimed</button></div>';
   }
+  else if(S==='adminUsers'){
+    tbt_el.textContent='Manage Users';bb_el.style.display='block';adminNav('dash');
+    var userCards=allUsers.map(function(u){
+      var ini=initials(u.full_name);
+      var roleTag=u.role==='admin'?'<span style="font-size:10px;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:99px">Admin</span>':u.role==='manager'?'<span style="font-size:10px;color:#065f46;background:#d1fae5;padding:1px 6px;border-radius:99px">Manager</span>':'<span style="font-size:10px;color:#6b7280;background:#f3f4f6;padding:1px 6px;border-radius:99px">Employee</span>';
+      var username=u.email.replace('@homestay.app','');
+      var actions=u.role!=='admin'?'<div style="display:flex;gap:8px;margin-top:3px"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();editUser(\''+u.id+'\')">Edit</span><span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();deleteUserAccount(\''+u.id+'\',\''+u.full_name.replace(/'/g,"\\'")+'\')">Delete</span></div>':'';
+      return '<div class="emp-list-row"><div class="avatar">'+ini+'</div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:6px"><div style="font-size:13px;font-weight:600;color:#111">'+u.full_name+'</div>'+roleTag+'</div><div style="font-size:11px;color:#9ca3af;font-family:monospace">@'+username+'</div>'+actions+'</div></div>';
+    }).join('');
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+allUsers.length+' user(s)</span> in the system. Only admin can manage accounts.</div></div>'+userCards+'<button class="pbtn btn-p" onclick="editingUser=null;userFormError=\'\';ss(\'userForm\',\'adminUsers\')">+ Add New User</button></div>';
+  }
+  else if(S==='userForm'){
+    tbt_el.textContent=editingUser?'Edit User':'Add User';bb_el.style.display='block';adminNav('dash');
+    var isEditing=!!editingUser;
+    ms.innerHTML='<div class="scr">'+(userFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px 12px;border-radius:8px;text-align:center">'+userFormError+'</div>':'')+(isEditing?'<div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Editing:</span> '+editingUser.full_name+' (@'+editingUser.email.replace('@homestay.app','')+')</div></div>':'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">The username will be used for login. Example: username <b>ahmad</b> → login as <b>ahmad</b>.</div></div>')+(isEditing?'':'<div class="fg"><label class="fl">Username *</label><input class="fi" id="uf-user" placeholder="e.g. ahmad" autocapitalize="off"/></div>')+'<div class="fg"><label class="fl">Full name *</label><input class="fi" id="uf-name" value="'+(isEditing?editingUser.full_name:'')+'"/></div><div class="fg"><label class="fl">Role *</label><select class="fi" id="uf-role"><option value="employee"'+(isEditing&&editingUser.role==='employee'?' selected':'')+'>Employee</option><option value="manager"'+(isEditing&&editingUser.role==='manager'?' selected':'')+'>Manager</option></select></div><div class="fg"><label class="fl">Password '+(isEditing?'(leave blank to keep current)':'*')+'</label><input class="fi" id="uf-pw" type="password" placeholder="Min 6 characters"/></div><button class="pbtn btn-s" onclick="'+(isEditing?'updateUserAccount()':'createUserAccount()')+'">'+(isEditing?'Save Changes':'Create Account')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="editingUser=null;userFormError=\'\';ss(\'adminUsers\',\'adminDash\')">Cancel</button></div>';
+  }
   else if(S==='mgrNewClaim'){
     tbt_el.textContent='Submit Expense';bb_el.style.display='block';adminNav('sub');
     var isCompany=mgrFormPayType==='company';
@@ -410,33 +617,57 @@ function render(){
   }
 }
 
+// ===== GLOBAL HANDLERS =====
 window.viewClaim=function(i,p){SEL=claims[i];ss('claimDetail',p);};
 window.adminView=function(i,p){SEL=claims[i];ss('adminReview',p);};
 window.startEmpEdit=function(id){editingId=id;ss('empEdit','claimDetail');};
 window.openBankEdit=function(emp){editingBankEmp=emp;ss('bankEdit','adminEmployees');};
-window.goBack=goBack;window.loginAs=loginAs;window.logout=logout;
-window.doApprove=function(){
+window.goBack=goBack;
+window.doLogout=doLogout;
+window.doLogin=doLogin;
+window.openUsers=openUsersScreen;
+window.createUserAccount=createUserAccount;
+window.updateUserAccount=updateUserAccount;
+window.deleteUserAccount=deleteUserAccount;
+window.editUser=function(uid){editingUser=allUsers.filter(function(u){return u.id===uid;})[0];userFormError='';ss('userForm','adminUsers');};
+window.doApprove=async function(){
   var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit');
   if(!cat||!cat.value){toast('Please assign a category');return;}
   if(!unit||!unit.value){toast('Please assign a unit');return;}
-  approveClaim(SEL.id,cat.value,unit.value);
+  await approveClaim(SEL.id,cat.value,unit.value);
 };
-window.doReject=function(){var r=document.getElementById('rv-reason');rejectClaim(SEL.id,r?r.value:'No reason given');};
+window.doReject=async function(){var r=document.getElementById('rv-reason');await rejectClaim(SEL.id,r?r.value:'No reason given');};
 window.saveMgrEdit=saveMgrEdit;window.saveEmpEdit=saveEmpEdit;window.submitEmpEdit=submitEmpEdit;
 window.submitNewClaim=submitNewClaim;window.submitMgrClaim=submitMgrClaim;
 window.markClaimed=markClaimed;window.saveBankInfo=saveBankInfo;
-window.mgrChangeToReject=function(){
-  var amt=document.getElementById('rv-amt');if(amt&&amt.value)SEL.amount=parseFloat(amt.value);
-  SEL.status='Rejected';SEL.rejectReason='Decision revised by manager';
-  toast('Changed to Rejected');editingId=null;ss('adminList','adminDash');
+window.mgrChangeToReject=async function(){
+  var amt=document.getElementById('rv-amt');
+  var upd={status:'Rejected',rejectReason:'Decision revised by manager'};
+  if(amt&&amt.value)upd.amount=parseFloat(amt.value);
+  await dbUpdateClaim(SEL.id,upd);
+  await loadClaims();toast('Changed to Rejected');editingId=null;ss('adminList','adminDash');
 };
-window.mgrChangeToApprove=function(){
+window.mgrChangeToApprove=async function(){
   var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),amt=document.getElementById('rv-amt');
-  if(cat&&cat.value)SEL.category=cat.value;if(unit&&unit.value)SEL.unit=unit.value;if(amt&&amt.value)SEL.amount=parseFloat(amt.value);
-  SEL.status='Approved';SEL.rejectReason='';
-  toast('Changed to Approved');editingId=null;ss('adminList','adminDash');
+  var upd={status:'Approved',rejectReason:''};
+  if(cat&&cat.value)upd.category=cat.value;if(unit&&unit.value)upd.unit=unit.value;if(amt&&amt.value)upd.amount=parseFloat(amt.value);
+  await dbUpdateClaim(SEL.id,upd);
+  await loadClaims();toast('Changed to Approved');editingId=null;ss('adminList','adminDash');
 };
-render();
+
+// ===== INIT: CHECK SESSION =====
+(async function(){
+  render(); // show auth screen
+  var{data:{session}}=await sb.auth.getSession();
+  if(session&&session.user){
+    await initSession(session.user);
+  }
+  sb.auth.onAuthStateChange(async function(event,session){
+    if(event==='SIGNED_OUT'){
+      currentUser=null;currentProfile=null;R=null;S='auth';claims=[];render();
+    }
+  });
+})();
 </script>
 </body>
 </html>

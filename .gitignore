@@ -1,0 +1,13 @@
+# Build outputs
+android-app/app/build/
+android-app/build/
+android-app/.gradle/
+
+# IDE
+.vscode/
+*.iml
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

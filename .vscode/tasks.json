@@ -10,6 +10,120 @@
 			"label": "Git Push v10",
 			"type": "shell",
 			"command": "git add -A; git commit -m 'v10: dashboard filter, display fix, category updates'; git push origin main"
+		},
+		{
+			"label": "Check Android",
+			"type": "shell",
+			"command": "emulator -list-avds 2>&1; Write-Host '---'; where.exe emulator 2>&1; Write-Host '---'; where.exe adb 2>&1"
+		},
+		{
+			"label": "Find Android SDK",
+			"type": "shell",
+			"command": "$paths = @('C:\\Users\\localad\\AppData\\Local\\Android\\Sdk', 'C:\\Android', 'C:\\Program Files\\Android', 'C:\\Program Files (x86)\\Android'); foreach($p in $paths) { if(Test-Path $p) { Write-Host \"FOUND: $p\"; Get-ChildItem $p -Recurse -Filter 'emulator.exe' -ErrorAction SilentlyContinue | Select-Object FullName } else { Write-Host \"NOT FOUND: $p\" } }"
+		},
+		{
+			"label": "Check SDK Details",
+			"type": "shell",
+			"command": "$sdk = 'C:\\Users\\localad\\AppData\\Local\\Android\\Sdk'; Get-ChildItem $sdk -Directory | ForEach-Object { Write-Host $_.Name }; Write-Host '---EMULATOR---'; $emu = Join-Path $sdk 'emulator\\emulator.exe'; if(Test-Path $emu) { Write-Host \"Found: $emu\"; & $emu -list-avds 2>&1 } else { Write-Host 'emulator.exe not found' }; Write-Host '---ADB---'; $adb = Join-Path $sdk 'platform-tools\\adb.exe'; if(Test-Path $adb) { Write-Host \"Found: $adb\" } else { Write-Host 'adb not found' }"
+		},
+		{
+			"label": "HTTP Server",
+			"type": "shell",
+			"command": "python -m http.server 8080 --directory 'c:\\Users\\localad\\Desktop\\homestay-expenses'",
+			"isBackground": true
+		},
+		{
+			"label": "HTTP Server Node",
+			"type": "shell",
+			"command": "npx -y http-server 'c:\\Users\\localad\\Desktop\\homestay-expenses' -p 8080 -c-1",
+			"isBackground": true
+		},
+		{
+			"label": "Android Emulator",
+			"type": "shell",
+			"command": "& 'C:\\Users\\localad\\AppData\\Local\\Android\\Sdk\\emulator\\emulator.exe' -avd Medium_Phone_API_35 -no-snapshot-load",
+			"isBackground": true
+		},
+		{
+			"label": "Open in Emulator Browser",
+			"type": "shell",
+			"command": "$adb = 'C:\\Users\\localad\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; Write-Host 'Waiting for emulator to boot...'; & $adb wait-for-device; Write-Host 'Device connected, waiting for boot animation to end...'; do { Start-Sleep -Seconds 2; $bootanim = & $adb shell getprop sys.boot_completed 2>&1 } while ($bootanim -ne '1'); Write-Host 'Boot complete! Opening browser...'; & $adb shell am start -a android.intent.action.VIEW -d 'http://10.0.2.2:8080/home_expense.htm'; Write-Host 'DONE - Browser opened on emulator!'"
+		},
+		{
+			"label": "Check Build Tools",
+			"type": "shell",
+			"command": "Write-Host '=== JAVA ==='; java -version 2>&1; Write-Host '=== JAVAC ==='; javac -version 2>&1; Write-Host '=== GRADLE ==='; gradle --version 2>&1 | Select-Object -First 5; Write-Host '=== SDK CONTENTS ==='; Get-ChildItem 'C:\\Users\\localad\\AppData\\Local\\Android\\Sdk\\build-tools' | ForEach-Object { Write-Host $_.Name }; Write-Host '=== PLATFORMS ==='; Get-ChildItem 'C:\\Users\\localad\\AppData\\Local\\Android\\Sdk\\platforms' | ForEach-Object { Write-Host $_.Name }; Write-Host '=== CMDLINE-TOOLS ==='; Test-Path 'C:\\Users\\localad\\AppData\\Local\\Android\\Sdk\\cmdline-tools'"
+		},
+		{
+			"label": "Find Java",
+			"type": "shell",
+			"command": "$paths = @('C:\\Program Files\\Android\\Android Studio', 'C:\\Program Files\\Android Studio', 'C:\\Program Files (x86)\\Android\\Android Studio'); foreach($p in $paths) { if(Test-Path $p) { Write-Host \"FOUND: $p\"; Get-ChildItem $p -Directory | ForEach-Object { Write-Host \"  $($_.Name)\" } } }; Write-Host '=== JBR ==='; $jbrPath = Get-ChildItem 'C:\\Program Files\\Android' -Recurse -Filter 'java.exe' -ErrorAction SilentlyContinue | Select-Object -First 3 -ExpandProperty FullName; $jbrPath; Write-Host '=== JAVA_HOME ==='; Write-Host $env:JAVA_HOME; Write-Host '=== ENV Paths with java ==='; $env:Path -split ';' | Where-Object { $_ -match 'java|jdk|jbr|jre' }"
+		},
+		{
+			"label": "Copy Assets",
+			"type": "shell",
+			"command": "Copy-Item 'c:\\Users\\localad\\Desktop\\homestay-expenses\\home_expense.htm' 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\app\\src\\main\\assets\\home_expense.htm'; Write-Host 'HTML copied to assets'; New-Item -ItemType Directory -Path 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\app\\src\\main\\res\\mipmap-hdpi' -Force | Out-Null; New-Item -ItemType Directory -Path 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\app\\src\\main\\res\\mipmap-mdpi' -Force | Out-Null; New-Item -ItemType Directory -Path 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\app\\src\\main\\res\\mipmap-xhdpi' -Force | Out-Null; New-Item -ItemType Directory -Path 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\app\\src\\main\\res\\mipmap-xxhdpi' -Force | Out-Null; Write-Host 'Directories created'"
+		},
+		{
+			"label": "Copy Assets 2",
+			"type": "shell",
+			"command": "New-Item -ItemType Directory -Path 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\app\\src\\main\\assets' -Force | Out-Null; Copy-Item 'c:\\Users\\localad\\Desktop\\homestay-expenses\\home_expense.htm' 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\app\\src\\main\\assets\\home_expense.htm' -Force; Write-Host 'HTML copied to assets OK'"
+		},
+		{
+			"label": "Find Gradle Wrapper",
+			"type": "shell",
+			"command": "$env:JAVA_HOME = 'C:\\Program Files\\Android\\Android Studio\\jbr'; $env:ANDROID_HOME = 'C:\\Users\\localad\\AppData\\Local\\Android\\Sdk'; Set-Location 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app'; Write-Host 'Checking Gradle in Android Studio...'; $gradlePath = Get-ChildItem 'C:\\Program Files\\Android\\Android Studio\\plugins\\gradle' -Recurse -Filter 'gradle.bat' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName; if($gradlePath) { Write-Host \"Found gradle: $gradlePath\" } else { Write-Host 'No gradle.bat found in AS plugins, trying lib...'; $gradlePath = Get-ChildItem 'C:\\Program Files\\Android\\Android Studio\\lib' -Recurse -Filter 'gradle*' -ErrorAction SilentlyContinue | Select-Object -First 5 -ExpandProperty FullName; $gradlePath }; Write-Host '--- Checking gradle wrapper jar in AS ---'; Get-ChildItem 'C:\\Program Files\\Android\\Android Studio' -Recurse -Filter 'gradle-wrapper.jar' -ErrorAction SilentlyContinue | Select-Object -First 3 -ExpandProperty FullName"
+		},
+		{
+			"label": "Download Gradle Wrapper",
+			"type": "shell",
+			"command": "Write-Host 'Downloading gradle-wrapper.jar...'; $wrapperUrl = 'https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradle/wrapper/gradle-wrapper.jar'; $outPath = 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\gradle\\wrapper\\gradle-wrapper.jar'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri $wrapperUrl -OutFile $outPath -UseBasicParsing; if(Test-Path $outPath) { Write-Host \"Downloaded OK: $((Get-Item $outPath).Length) bytes\" } else { Write-Host 'FAIL' }"
+		},
+		{
+			"label": "Build APK",
+			"type": "shell",
+			"command": "$env:JAVA_HOME = 'C:\\Program Files\\Android\\Android Studio\\jbr'; $env:ANDROID_HOME = 'C:\\Users\\localad\\AppData\\Local\\Android\\Sdk'; Set-Location 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app'; Write-Host 'Starting Gradle build...'; cmd /c 'set JAVA_HOME=C:\\Program Files\\Android\\Android Studio\\jbr& set ANDROID_HOME=C:\\Users\\localad\\AppData\\Local\\Android\\Sdk& gradlew.bat assembleDebug --no-daemon 2>&1'; Write-Host '=== BUILD FINISHED ==='"
+		},
+		{
+			"label": "Build APK v2",
+			"type": "shell",
+			"command": "cmd /c 'cd /d c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app & set JAVA_HOME=C:\\Program Files\\Android\\Android Studio\\jbr& set ANDROID_HOME=C:\\Users\\localad\\AppData\\Local\\Android\\Sdk& gradlew.bat assembleDebug --no-daemon 2>&1'"
+		},
+		{
+			"label": "Build APK v3",
+			"type": "shell",
+			"command": "Remove-Item 'C:\\Users\\localad\\.gradle\\caches\\transforms-3' -Recurse -Force -ErrorAction SilentlyContinue; Write-Host 'Gradle transform cache cleared'; cmd /c 'cd /d c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app & set JAVA_HOME=C:\\Program Files\\Android\\Android Studio\\jbr& set ANDROID_HOME=C:\\Users\\localad\\AppData\\Local\\Android\\Sdk& gradlew.bat clean assembleDebug --no-daemon 2>&1'"
+		},
+		{
+			"label": "Build APK v4",
+			"type": "shell",
+			"command": "Remove-Item 'C:\\Users\\localad\\.gradle\\caches\\transforms-3' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\.gradle' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\app\\build' -Recurse -Force -ErrorAction SilentlyContinue; Write-Host 'Caches cleared'; cmd /c 'cd /d c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app & set JAVA_HOME=C:\\Program Files\\Android\\Android Studio\\jbr& set ANDROID_HOME=C:\\Users\\localad\\AppData\\Local\\Android\\Sdk& gradlew.bat assembleDebug --no-daemon 2>&1'"
+		},
+		{
+			"label": "Test jlink",
+			"type": "shell",
+			"command": "Write-Host '=== jlink test ==='; & 'C:\\Program Files\\Android\\Android Studio\\jbr\\bin\\jlink.exe' --version 2>&1; Write-Host '=== java version ==='; & 'C:\\Program Files\\Android\\Android Studio\\jbr\\bin\\java.exe' -version 2>&1; Write-Host '=== JBR modules ==='; & 'C:\\Program Files\\Android\\Android Studio\\jbr\\bin\\java.exe' --list-modules 2>&1 | Select-Object -First 5"
+		},
+		{
+			"label": "Build APK v5",
+			"type": "shell",
+			"command": "Remove-Item 'C:\\Users\\localad\\.gradle\\caches\\transforms-3' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\.gradle' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\app\\build' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\build' -Recurse -Force -ErrorAction SilentlyContinue; Write-Host 'Caches cleared'; cmd /c 'cd /d c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app & set JAVA_HOME=C:\\Program Files\\Android\\Android Studio\\jbr& set ANDROID_HOME=C:\\Users\\localad\\AppData\\Local\\Android\\Sdk& gradlew.bat assembleDebug --no-daemon --info 2>&1'"
+		},
+		{
+			"label": "Install & Launch",
+			"type": "shell",
+			"command": "$adb = 'C:\\Users\\localad\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; $apk = 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\app\\build\\outputs\\apk\\debug\\app-debug.apk'; Write-Host \"APK path: $apk\"; Write-Host \"APK exists: $(Test-Path $apk)\"; if(Test-Path $apk) { Write-Host \"APK size: $((Get-Item $apk).Length / 1KB) KB\" }; Write-Host 'Checking emulator...'; $devices = & $adb devices 2>&1; Write-Host $devices; Write-Host 'Installing APK...'; & $adb install -r $apk 2>&1; Write-Host 'Launching app...'; & $adb shell am start -n com.homestay.expense/.MainActivity 2>&1; Write-Host 'DONE!'"
+		},
+		{
+			"label": "Start Emulator",
+			"type": "shell",
+			"command": "& 'C:\\Users\\localad\\AppData\\Local\\Android\\Sdk\\emulator\\emulator.exe' -avd Medium_Phone_API_35",
+			"isBackground": true
+		},
+		{
+			"label": "Install APK",
+			"type": "shell",
+			"command": "$adb = 'C:\\Users\\localad\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe'; $apk = 'c:\\Users\\localad\\Desktop\\homestay-expenses\\android-app\\app\\build\\outputs\\apk\\debug\\app-debug.apk'; Write-Host 'Waiting for emulator...'; & $adb wait-for-device; Write-Host 'Device connected! Waiting for boot...'; do { Start-Sleep -Seconds 3; $boot = & $adb shell getprop sys.boot_completed 2>&1 } while ($boot -ne '1'); Write-Host 'Boot complete!'; Write-Host 'Installing APK...'; & $adb install -r $apk 2>&1; Write-Host 'Launching app...'; & $adb shell am start -n com.homestay.expense/.MainActivity 2>&1; Write-Host 'ALL DONE!'"
 		}
 	]
 }
