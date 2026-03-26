@@ -225,6 +225,7 @@ async function initSession(user){
   currentUser=user;
   var{data:prof}=await sb.from('profiles').select('*').eq('id',user.id).single();
   if(!prof){authLoading=false;authError='Profile not found. Contact admin.';S='auth';render();return;}
+  if(prof.active===false){authLoading=false;authError='Your account has been deactivated. Contact admin.';await sb.auth.signOut();S='auth';render();return;}
   currentProfile=prof;
   isSystemAdmin=prof.role==='admin';
   R=(prof.role==='admin'||prof.role==='manager')?'admin':'employee';
@@ -314,14 +315,25 @@ async function updateUserAccount(){
   ss('adminUsers','adminDash');
 }
 async function deleteUserAccount(userId,name){
-  if(!confirm('Delete account: '+name+'?\nThis cannot be undone.')){return;}
-  // 1. Delete bank_info by employee name
-  await fetch(SUPABASE_URL+'/rest/v1/bank_info?employee_name=eq.'+encodeURIComponent(name),{method:'DELETE',headers:adminHeaders});
-  // 2. Delete auth user (profiles cascade automatically)
-  var r=await fetch(SUPABASE_URL+'/auth/v1/admin/users/'+userId,{method:'DELETE',headers:adminHeaders});
-  if(!r.ok){var e=await r.json();toast('Error: '+(e.msg||e.message||'Delete failed'));return;}
+  if(!confirm('Deactivate account: '+name+'?\nUser will not be able to login.')){return;}
+  var r=await fetch(SUPABASE_URL+'/rest/v1/profiles?id=eq.'+userId,{
+    method:'PATCH',headers:{...adminHeaders,'Prefer':'return=minimal'},
+    body:JSON.stringify({active:false})
+  });
+  if(!r.ok){toast('Error: Deactivate failed');return;}
   await loadUsers();
-  toast('Account deleted');
+  toast('Account deactivated: '+name);
+  render();
+}
+async function reactivateUser(userId,name){
+  if(!confirm('Reactivate account: '+name+'?')){return;}
+  var r=await fetch(SUPABASE_URL+'/rest/v1/profiles?id=eq.'+userId,{
+    method:'PATCH',headers:{...adminHeaders,'Prefer':'return=minimal'},
+    body:JSON.stringify({active:true})
+  });
+  if(!r.ok){toast('Error: Reactivate failed');return;}
+  await loadUsers();
+  toast('Account reactivated: '+name);
   render();
 }
 
@@ -597,8 +609,10 @@ function render(){
       var ini=initials(u.full_name);
       var roleTag=u.role==='admin'?'<span style="font-size:10px;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:99px">Admin</span>':u.role==='manager'?'<span style="font-size:10px;color:#065f46;background:#d1fae5;padding:1px 6px;border-radius:99px">Manager</span>':'<span style="font-size:10px;color:#6b7280;background:#f3f4f6;padding:1px 6px;border-radius:99px">Employee</span>';
       var username=u.email.replace('@homestay.app','');
-      var actions=u.role!=='admin'?'<div style="display:flex;gap:8px;margin-top:3px"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();editUser(\''+u.id+'\')">Edit</span><span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();deleteUserAccount(\''+u.id+'\',\''+u.full_name.replace(/'/g,"\\'")+'\')">Delete</span></div>':'';
-      return '<div class="emp-list-row"><div class="avatar">'+ini+'</div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:6px"><div style="font-size:13px;font-weight:600;color:#111">'+u.full_name+'</div>'+roleTag+'</div><div style="font-size:11px;color:#9ca3af;font-family:monospace">@'+username+'</div>'+actions+'</div></div>';
+      var isActive=u.active!==false;
+      var actions=u.role!=='admin'?'<div style="display:flex;gap:8px;margin-top:3px"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();editUser(\''+u.id+'\')">Edit</span>'+(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();deleteUserAccount(\''+u.id+'\',\''+u.full_name.replace(/'/g,"\\'")+'\')">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();reactivateUser(\''+u.id+'\',\''+u.full_name.replace(/'/g,"\\'")+'\')">Reactivate</span>')+'</div>':'';
+      var statusTag=!isActive?'<span style="font-size:9px;color:#991b1b;background:#fee2e2;padding:1px 5px;border-radius:99px;margin-left:4px">Inactive</span>':'';
+      return '<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div class="avatar">'+ini+'</div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="font-size:13px;font-weight:600;color:#111">'+u.full_name+'</div>'+roleTag+statusTag+'</div><div style="font-size:11px;color:#9ca3af;font-family:monospace">@'+username+'</div>'+actions+'</div></div>';
     }).join('');
     ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+allUsers.length+' user(s)</span> in the system. Only admin can manage accounts.</div></div>'+userCards+'<button class="pbtn btn-p" onclick="editingUser=null;userFormError=\'\';ss(\'userForm\',\'adminUsers\')">+ Add New User</button></div>';
   }
@@ -628,7 +642,7 @@ window.doLogin=doLogin;
 window.openUsers=openUsersScreen;
 window.createUserAccount=createUserAccount;
 window.updateUserAccount=updateUserAccount;
-window.deleteUserAccount=deleteUserAccount;
+window.deleteUserAccount=deleteUserAccount;window.reactivateUser=reactivateUser;
 window.editUser=function(uid){editingUser=allUsers.filter(function(u){return u.id===uid;})[0];userFormError='';ss('userForm','adminUsers');};
 window.doApprove=async function(){
   var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit');
