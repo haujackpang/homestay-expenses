@@ -161,11 +161,11 @@ async function loadBankInfo(){
   if(error){console.error('loadBankInfo:',error);return;}
   BANK_INFO={};data.forEach(function(r){BANK_INFO[r.employee_name]={bank:r.bank||'',acc:r.acc||'',fullName:r.full_name||''};});
   EMPS=Object.keys(BANK_INFO);
-  // Build active employees list (exclude deactivated)
-  var{data:profs}=await sb.from('profiles').select('full_name,active').in('role',['employee']);
-  var inactiveNames={};
-  if(profs)profs.forEach(function(p){if(p.active===false)inactiveNames[p.full_name]=true;});
-  ACTIVE_EMPS=EMPS.filter(function(e){return!inactiveNames[e];});
+    // Build active employees list (exclude deactivated and admin)
+    var{data:profs}=await sb.from('profiles').select('full_name,active,role');
+    var inactiveNames={};var adminNames={};
+    if(profs)profs.forEach(function(p){if(p.active===false)inactiveNames[p.full_name]=true;if(p.role==='admin')adminNames[p.full_name]=true;});
+    ACTIVE_EMPS=EMPS.filter(function(e){return!inactiveNames[e]&&!adminNames[e];});
   if(mgrFormEmp===''&&ACTIVE_EMPS.length)mgrFormEmp=ACTIVE_EMPS[0];
 }
 async function loadAll(){await loadClaims();await loadBankInfo();}
@@ -238,7 +238,7 @@ async function initSession(user){
   await loadAll();
   setupRealtime();
   authLoading=false;
-  S=R==='admin'?'adminDash':'empHome';
+  S=isSystemAdmin?'adminUsers':R==='admin'?'adminDash':'empHome';
   render();
 }
 
@@ -510,7 +510,11 @@ function render(){
   }
   function adminNav(a){
     nav.style.display='flex';
-    var its=[['dash','⊞','Dash',"ss('adminDash')"],['list','☰','Claims',"ss('adminList','adminDash')"],['pay','💳','Pay',"ss('adminPay','adminDash')"],['emps','👥','Staff',"ss('adminEmployees','adminDash')"],['sub','＋','Submit',"ss('mgrNewClaim','adminDash')"]];
+    if(isSystemAdmin){
+      var its=[['users','👥','Users',"openUsers()"]];
+    } else {
+      var its=[['dash','⊞','Dash',"ss('adminDash')"],['list','☰','Claims',"ss('adminList','adminDash')"],['pay','💳','Pay',"ss('adminPay','adminDash')"],['emps','👥','Staff',"ss('adminEmployees','adminDash')"],['sub','＋','Submit',"ss('mgrNewClaim','adminDash')"]];
+    }
     nav.innerHTML=its.map(function(x){return'<div class="ni'+(a===x[0]?' on':'')+'" onclick="'+x[3]+'"><span class="ni-ic">'+x[1]+'</span>'+x[2]+'</div>';}).join('');
     lo.style.display='block';
   }
@@ -677,7 +681,7 @@ function render(){
   else if(S==='mgrNewClaim'){
     tbt_el.textContent='Submit Expense';bb_el.style.display='block';adminNav('sub');
     var isCompany=mgrFormPayType==='company';
-    var mySelf=myName();var empDropList=ACTIVE_EMPS.indexOf(mySelf)<0?[mySelf].concat(ACTIVE_EMPS):ACTIVE_EMPS;
+      var mySelf=myName();var empDropList=(!isSystemAdmin&&ACTIVE_EMPS.indexOf(mySelf)<0)?[mySelf].concat(ACTIVE_EMPS):ACTIVE_EMPS;
     var empOpts=empDropList.map(function(e){return'<option value="'+e+'"'+(mgrFormEmp===e?' selected':'')+'>'+e+(e===mySelf?' (self)':'')+'</option>';}).join('');
     var catOpts=CATS.map(function(c){return'<option>'+c+'</option>';}).join('');
     var unitOpts=UNITS.map(function(u){return'<option>'+u+'</option>';}).join('');
