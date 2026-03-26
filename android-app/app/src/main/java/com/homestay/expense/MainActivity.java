@@ -1,6 +1,7 @@
 package com.homestay.expense;
 
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
@@ -64,8 +65,9 @@ public class MainActivity extends Activity {
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType("*/*");
                 intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/*", "application/pdf"});
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
 
-                Intent chooser = Intent.createChooser(intent, "Select receipt");
+                Intent chooser = Intent.createChooser(intent, "Select receipts");
                 startActivityForResult(chooser, FILE_CHOOSER_CODE);
                 return true;
             }
@@ -80,8 +82,17 @@ public class MainActivity extends Activity {
             if (fileCallback != null) {
                 Uri[] results = null;
                 if (resultCode == RESULT_OK && data != null) {
-                    Uri uri = data.getData();
-                    if (uri != null) results = new Uri[]{uri};
+                    // Handle multiple files
+                    ClipData clipData = data.getClipData();
+                    if (clipData != null) {
+                        results = new Uri[clipData.getItemCount()];
+                        for (int i = 0; i < clipData.getItemCount(); i++) {
+                            results[i] = clipData.getItemAt(i).getUri();
+                        }
+                    } else {
+                        Uri uri = data.getData();
+                        if (uri != null) results = new Uri[]{uri};
+                    }
                 }
                 fileCallback.onReceiveValue(results);
                 fileCallback = null;

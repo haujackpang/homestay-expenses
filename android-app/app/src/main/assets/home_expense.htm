@@ -140,7 +140,7 @@ var empExpandMap={},editingBankEmp=null;
 var claims=[],BANK_INFO={},EMPS=[],ACTIVE_EMPS=[];
 var authError='',authLoading=false;
 var isSystemAdmin=false,allUsers=[],editingUser=null,userFormError='';
-var pendingReceipt=null,pendingReceiptName='';
+var pendingFiles=[],pendingFileNames=[];
 
 // ===== CONSTANTS =====
 var MONTHS={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
@@ -372,7 +372,7 @@ function ccCard(c,fn){
   return '<div class="cc" onclick="'+fn+'"><div style="flex:1;min-width:0"><div class="cc-id">'+c.id+'</div><div class="cc-desc">'+c.desc+'</div><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px">'+(c.category?'<span style="font-size:10px;color:#6b7280">'+c.category+'</span>':'<span style="font-size:10px;color:#9ca3af;font-style:italic">No category</span>')+(R==='admin'&&c.emp?'<span style="font-size:10px;color:#9ca3af">· '+c.emp.split(' ')[0]+'</span>'+byTag:'')+unitTag+'</div></div><div class="cc-r"><div class="cc-amt">RM '+c.amount.toFixed(2)+'</div>'+sbadge(dstat(c.status))+'</div></div>';
 }
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
-function ss(s,p){PS=p||S;S=s;pendingReceipt=null;pendingReceiptName='';render();}
+function ss(s,p){PS=p||S;S=s;pendingFiles=[];pendingFileNames=[];render();}
 function goBack(){ss(PS||(R==='admin'?'adminDash':'empHome'));}
 
 // ===== RECEIPT UPLOAD =====
@@ -386,32 +386,59 @@ function togglePayType(t){
 window.togglePayType=togglePayType;
 function pickReceipt(){
   var inp=document.getElementById('receipt-input');
-  if(!inp){inp=document.createElement('input');inp.type='file';inp.id='receipt-input';inp.accept='image/*,.pdf,.doc,.docx';inp.style.display='none';inp.setAttribute('capture','environment');document.body.appendChild(inp);}
+  if(!inp){inp=document.createElement('input');inp.type='file';inp.id='receipt-input';inp.accept='image/*,.pdf,.doc,.docx';inp.style.display='none';inp.setAttribute('capture','environment');inp.setAttribute('multiple','multiple');document.body.appendChild(inp);}
   inp.value='';
   inp.onchange=function(){
-    if(inp.files&&inp.files[0]){
-      pendingReceipt=inp.files[0];
-      pendingReceiptName=inp.files[0].name;
+    if(inp.files&&inp.files.length){
+      for(var i=0;i<inp.files.length;i++){pendingFiles.push(inp.files[i]);pendingFileNames.push(inp.files[i].name);}
       var rbox=document.getElementById('rbox');
       if(rbox)rbox.innerHTML=receiptBox('');
     }
   };
   inp.click();
 }
-async function uploadReceiptFile(claimId){
-  if(!pendingReceipt)return '';
-  var ext=pendingReceiptName.split('.').pop().toLowerCase();
-  var path='receipts/'+claimId+'/receipt_'+Date.now()+'.'+ext;
-  var{data,error}=await sb.storage.from('receipts').upload(path,pendingReceipt,{upsert:true});
-  if(error){console.error('Upload error:',error);toast('Receipt upload failed: '+error.message);return '';}
-  var{data:urlData}=sb.storage.from('receipts').getPublicUrl(path);
-  pendingReceipt=null;pendingReceiptName='';
-  return urlData.publicUrl||'';
+function removePendingFile(idx){
+  pendingFiles.splice(idx,1);pendingFileNames.splice(idx,1);
+  var rbox=document.getElementById('rbox');
+  if(rbox)rbox.innerHTML=receiptBox('');
+}
+window.removePendingFile=removePendingFile;
+async function uploadAllFiles(claimId){
+  if(!pendingFiles.length)return '';
+  var urls=[];
+  for(var i=0;i<pendingFiles.length;i++){
+    var f=pendingFiles[i];
+    var ext=f.name.split('.').pop().toLowerCase();
+    var path='receipts/'+claimId+'/receipt_'+Date.now()+'_'+i+'.'+ext;
+    var res=await sb.storage.from('receipts').upload(path,f,{upsert:true});
+    if(res.error){console.error('Upload error:',res.error);toast('Upload failed: '+f.name);continue;}
+    var{data:urlData}=sb.storage.from('receipts').getPublicUrl(path);
+    if(urlData.publicUrl)urls.push(urlData.publicUrl);
+  }
+  pendingFiles=[];pendingFileNames=[];
+  return urls.join(',');
 }
 function receiptBox(existingUrl){
-  if(pendingReceiptName)return '<div class="up-box" onclick="pickReceipt()" style="border-color:#059669;background:#f0fdf4"><div style="font-size:20px">✅</div><div style="font-size:12px;color:#059669;margin-top:3px;font-weight:600">'+pendingReceiptName+'</div><div style="font-size:10px;color:#6b7280">Tap to change</div></div>';
-  if(existingUrl)return '<div style="margin:6px 0"><a href="'+existingUrl+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:10px;background:#f0fdf4;border:1px dashed #059669;border-radius:12px;text-decoration:none"><span style="font-size:20px">🧾</span><span style="font-size:12px;color:#059669;font-weight:600">View receipt</span></a></div>';
-  return '<div class="up-box" onclick="pickReceipt()"><div style="font-size:20px">📷</div><div style="font-size:12px;color:#6b7280;margin-top:3px">Tap to upload receipt</div><div style="font-size:10px;color:#9ca3af">Photo, image or document</div></div>';
+  var html='';
+  var existingUrls=existingUrl?existingUrl.split(',').filter(function(u){return u.trim();}):[];
+  if(existingUrls.length){
+    html+='<div style="margin:4px 0;display:flex;flex-direction:column;gap:4px">';
+    existingUrls.forEach(function(u,i){
+      var name=decodeURIComponent(u.split('/').pop()).replace(/^receipt_/,'');
+      var isImg=/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(name);
+      html+='<a href="'+u.trim()+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f0fdf4;border:1px dashed #059669;border-radius:10px;text-decoration:none"><span style="font-size:16px">'+(isImg?'🖼️':'📄')+'</span><span style="font-size:11px;color:#059669;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">File '+(i+1)+'</span><span style="font-size:10px;color:#6b7280">View →</span></a>';
+    });
+    html+='</div>';
+  }
+  if(pendingFileNames.length){
+    html+='<div style="margin:4px 0;display:flex;flex-direction:column;gap:4px">';
+    pendingFileNames.forEach(function(n,i){
+      html+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f0fdf4;border:1px solid #059669;border-radius:10px"><span style="font-size:16px">✅</span><span style="font-size:11px;color:#059669;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+n+'</span><span onclick="removePendingFile('+i+')" style="font-size:14px;color:#991b1b;cursor:pointer;padding:2px 6px">✕</span></div>';
+    });
+    html+='</div>';
+  }
+  html+='<div class="up-box" onclick="pickReceipt()"><div style="font-size:20px">'+(existingUrls.length||pendingFileNames.length?'➕':'📷')+'</div><div style="font-size:12px;color:#6b7280;margin-top:3px">'+(existingUrls.length||pendingFileNames.length?'Add more files':'Tap to upload receipt')+'</div><div style="font-size:10px;color:#9ca3af">Photos, images or documents</div></div>';
+  return html;
 }
 window.pickReceipt=pickReceipt;
 
@@ -453,7 +480,7 @@ async function saveEmpEdit(){
   var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date');
   if(!desc||!amt||!dt||!desc.value||!amt.value||!dt.value){toast('Please fill all required fields');return;}
   var upd={desc:desc.value,amount:parseFloat(amt.value),date:dt.value};
-  if(pendingReceipt){var url=await uploadReceiptFile(editingId);if(url)upd.slipRef=url;}
+  if(pendingFiles.length){var urls=await uploadAllFiles(editingId);if(urls){var c=claims.filter(function(x){return x.id===editingId;})[0];upd.slipRef=c&&c.slipRef?(c.slipRef+','+urls):urls;}}
   await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim updated');editingId=null;ss('claimDetail',PS);
 }
@@ -461,7 +488,7 @@ async function submitEmpEdit(){
   var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date');
   if(!desc||!amt||!dt||!desc.value||!amt.value||!dt.value){toast('Please fill all required fields');return;}
   var upd={desc:desc.value,amount:parseFloat(amt.value),date:dt.value,status:'Submitted'};
-  if(pendingReceipt){var url=await uploadReceiptFile(editingId);if(url)upd.slipRef=url;}
+  if(pendingFiles.length){var urls=await uploadAllFiles(editingId);if(urls){var c=claims.filter(function(x){return x.id===editingId;})[0];upd.slipRef=c&&c.slipRef?(c.slipRef+','+urls):urls;}}
   await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim re-submitted');editingId=null;ss('empList','empHome');
 }
@@ -479,7 +506,7 @@ async function submitNewClaim(asDraft){
   if(!asDraft&&(!dv||!av||!dtv)){toast('Please fill all required fields');return;}
   var cid=await getNextClaimId('HE');
   var nc={id:cid,emp:myName(),unit:'',category:'',desc:dv||'(untitled)',amount:av||0,date:dtv||new Date().toISOString().slice(0,10),status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'};
-  if(pendingReceipt){var url=await uploadReceiptFile(cid);if(url)nc.slipRef=url;}
+  if(pendingFiles.length){var urls=await uploadAllFiles(cid);if(urls)nc.slipRef=urls;}
   await dbInsertClaim(nc);
   await loadClaims();toast(asDraft?'Draft saved':'Claim '+cid+' submitted!');ss('empList','empHome');
 }
@@ -491,7 +518,7 @@ async function submitMgrClaim(){
   var isCompany=mgrFormPayType==='company';
   var cid=await getNextClaimId(isCompany?'CO':'MGR');
   var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,category:cv,desc:dv,amount:av,date:dtv,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager'};
-  if(pendingReceipt){var url=await uploadReceiptFile(cid);if(url)nc.slipRef=url;}
+  if(pendingFiles.length){var urls=await uploadAllFiles(cid);if(urls)nc.slipRef=urls;}
   await dbInsertClaim(nc);
   await loadClaims();toast(isCompany?'Recorded as Company-Paid':'Auto-approved for '+mgrFormEmp);
   mgrFormPayType='employee';mgrFormEmp=EMPS.length?EMPS[0]:'';ss('adminDash');
