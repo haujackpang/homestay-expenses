@@ -140,6 +140,7 @@ var empExpandMap={},editingBankEmp=null;
 var claims=[],BANK_INFO={},EMPS=[],ACTIVE_EMPS=[];
 var authError='',authLoading=false;
 var isSystemAdmin=false,allUsers=[],editingUser=null,userFormError='';
+var pendingReceipt=null,pendingReceiptName='';
 
 // ===== CONSTANTS =====
 var MONTHS={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
@@ -371,8 +372,39 @@ function ccCard(c,fn){
   return '<div class="cc" onclick="'+fn+'"><div style="flex:1;min-width:0"><div class="cc-id">'+c.id+'</div><div class="cc-desc">'+c.desc+'</div><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px">'+(c.category?'<span style="font-size:10px;color:#6b7280">'+c.category+'</span>':'<span style="font-size:10px;color:#9ca3af;font-style:italic">No category</span>')+(R==='admin'&&c.emp?'<span style="font-size:10px;color:#9ca3af">· '+c.emp.split(' ')[0]+'</span>'+byTag:'')+unitTag+'</div></div><div class="cc-r"><div class="cc-amt">RM '+c.amount.toFixed(2)+'</div>'+sbadge(dstat(c.status))+'</div></div>';
 }
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
-function ss(s,p){PS=p||S;S=s;render();}
+function ss(s,p){PS=p||S;S=s;pendingReceipt=null;pendingReceiptName='';render();}
 function goBack(){ss(PS||(R==='admin'?'adminDash':'empHome'));}
+
+// ===== RECEIPT UPLOAD =====
+function pickReceipt(){
+  var inp=document.getElementById('receipt-input');
+  if(!inp){inp=document.createElement('input');inp.type='file';inp.id='receipt-input';inp.accept='image/*,.pdf,.doc,.docx';inp.style.display='none';inp.setAttribute('capture','environment');document.body.appendChild(inp);}
+  inp.value='';
+  inp.onchange=function(){
+    if(inp.files&&inp.files[0]){
+      pendingReceipt=inp.files[0];
+      pendingReceiptName=inp.files[0].name;
+      render();
+    }
+  };
+  inp.click();
+}
+async function uploadReceiptFile(claimId){
+  if(!pendingReceipt)return '';
+  var ext=pendingReceiptName.split('.').pop().toLowerCase();
+  var path='receipts/'+claimId+'/receipt_'+Date.now()+'.'+ext;
+  var{data,error}=await sb.storage.from('receipts').upload(path,pendingReceipt,{upsert:true});
+  if(error){console.error('Upload error:',error);toast('Receipt upload failed: '+error.message);return '';}
+  var{data:urlData}=sb.storage.from('receipts').getPublicUrl(path);
+  pendingReceipt=null;pendingReceiptName='';
+  return urlData.publicUrl||'';
+}
+function receiptBox(existingUrl){
+  if(pendingReceiptName)return '<div class="up-box" onclick="pickReceipt()" style="border-color:#059669;background:#f0fdf4"><div style="font-size:20px">✅</div><div style="font-size:12px;color:#059669;margin-top:3px;font-weight:600">'+pendingReceiptName+'</div><div style="font-size:10px;color:#6b7280">Tap to change</div></div>';
+  if(existingUrl)return '<div style="margin:6px 0"><a href="'+existingUrl+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:10px;background:#f0fdf4;border:1px dashed #059669;border-radius:12px;text-decoration:none"><span style="font-size:20px">🧾</span><span style="font-size:12px;color:#059669;font-weight:600">View receipt</span></a></div>';
+  return '<div class="up-box" onclick="pickReceipt()"><div style="font-size:20px">📷</div><div style="font-size:12px;color:#6b7280;margin-top:3px">Tap to upload receipt</div><div style="font-size:10px;color:#9ca3af">Photo, image or document</div></div>';
+}
+window.pickReceipt=pickReceipt;
 
 function filterClaims(list,st,mo,yr,em){
   return list.filter(function(c){
@@ -411,13 +443,17 @@ async function saveBankInfo(){
 async function saveEmpEdit(){
   var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date');
   if(!desc||!amt||!dt||!desc.value||!amt.value||!dt.value){toast('Please fill all required fields');return;}
-  await dbUpdateClaim(editingId,{desc:desc.value,amount:parseFloat(amt.value),date:dt.value});
+  var upd={desc:desc.value,amount:parseFloat(amt.value),date:dt.value};
+  if(pendingReceipt){var url=await uploadReceiptFile(editingId);if(url)upd.slipRef=url;}
+  await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim updated');editingId=null;ss('claimDetail',PS);
 }
 async function submitEmpEdit(){
   var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date');
   if(!desc||!amt||!dt||!desc.value||!amt.value||!dt.value){toast('Please fill all required fields');return;}
-  await dbUpdateClaim(editingId,{desc:desc.value,amount:parseFloat(amt.value),date:dt.value,status:'Submitted'});
+  var upd={desc:desc.value,amount:parseFloat(amt.value),date:dt.value,status:'Submitted'};
+  if(pendingReceipt){var url=await uploadReceiptFile(editingId);if(url)upd.slipRef=url;}
+  await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim re-submitted');editingId=null;ss('empList','empHome');
 }
 async function saveMgrEdit(){
@@ -434,6 +470,7 @@ async function submitNewClaim(asDraft){
   if(!asDraft&&(!dv||!av||!dtv)){toast('Please fill all required fields');return;}
   var cid=await getNextClaimId('HE');
   var nc={id:cid,emp:myName(),unit:'',category:'',desc:dv||'(untitled)',amount:av||0,date:dtv||new Date().toISOString().slice(0,10),status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'};
+  if(pendingReceipt){var url=await uploadReceiptFile(cid);if(url)nc.slipRef=url;}
   await dbInsertClaim(nc);
   await loadClaims();toast(asDraft?'Draft saved':'Claim '+cid+' submitted!');ss('empList','empHome');
 }
@@ -445,6 +482,7 @@ async function submitMgrClaim(){
   var isCompany=mgrFormPayType==='company';
   var cid=await getNextClaimId(isCompany?'CO':'MGR');
   var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,category:cv,desc:dv,amount:av,date:dtv,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager'};
+  if(pendingReceipt){var url=await uploadReceiptFile(cid);if(url)nc.slipRef=url;}
   await dbInsertClaim(nc);
   await loadClaims();toast(isCompany?'Recorded as Company-Paid':'Auto-approved for '+mgrFormEmp);
   mgrFormPayType='employee';mgrFormEmp=EMPS.length?EMPS[0]:'';ss('adminDash');
@@ -510,7 +548,7 @@ function render(){
     var byMgr=c.submittedBy==='manager'?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Submitted by manager</span> on your behalf.</div></div>':'';
     var rejBox=c.status==='Rejected'&&c.rejectReason?'<div class="rbox"><div style="font-size:10px;font-weight:600;color:#991b1b">Rejection reason</div><div style="font-size:12px;color:#991b1b;margin-top:1px">'+c.rejectReason+'</div></div>':'';
     var claimedBox=c.status==='Claimed'?'<div class="slip-box"><span>💳</span><span style="font-size:12px;color:#92400e;font-weight:600;margin-left:4px">Payment processed · '+c.slipRef+'</span></div>':'';
-    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(dstat(c.status))+'</div><div class="dgrid">'+['Category','Amount','Date','Unit','Status'].map(function(l,i){var v=[c.category||'—','RM '+c.amount.toFixed(2),c.date,c.unit||'—',dstat(c.status)];return'<div class="di"><div class="dil">'+l+'</div><div class="div_">'+v[i]+'</div></div>';}).join('')+'</div>'+rejBox+claimedBox+(!c.category?'<div class="info-box" style="background:#fef3c7;margin-top:6px"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Category pending</span> — manager will assign on review.</div></div>':'')+'</div><div class="up-box"><div style="font-size:20px">🧾</div><div style="font-size:12px;color:#6b7280;margin-top:3px">receipt_'+c.date+'.jpg</div></div></div>';
+    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(dstat(c.status))+'</div><div class="dgrid">'+['Category','Amount','Date','Unit','Status'].map(function(l,i){var v=[c.category||'—','RM '+c.amount.toFixed(2),c.date,c.unit||'—',dstat(c.status)];return'<div class="di"><div class="dil">'+l+'</div><div class="div_">'+v[i]+'</div></div>';}).join('')+'</div>'+rejBox+claimedBox+(!c.category?'<div class="info-box" style="background:#fef3c7;margin-top:6px"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Category pending</span> — manager will assign on review.</div></div>':'')+'</div>'+receiptBox(c.slipRef)+'</div>';
   }
   else if(S==='empEdit'){
     var c=claims.filter(function(x){return x.id===editingId;})[0];if(!c){ss('empList');return;}
@@ -519,7 +557,7 @@ function render(){
   }
   else if(S==='newClaim'){
     tbt_el.textContent='New Claim';bb_el.style.display='block';empNav('');
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">No category needed</span> — manager assigns during review.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. TNB Bill March"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date"/></div></div><div class="fg"><label class="fl">Remarks</label><input class="fi" placeholder="Optional notes..."/></div><div class="up-box" onclick="toast(\'Camera unavailable in demo\')"><div style="font-size:20px">📷</div><div style="font-size:12px;color:#6b7280;margin-top:3px">Tap to upload receipt</div></div><div class="arow"><button class="pbtn btn-o" onclick="submitNewClaim(true)">Save Draft</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div></div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">No category needed</span> — manager assigns during review.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. TNB Bill March"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date"/></div></div><div class="fg"><label class="fl">Remarks</label><input class="fi" placeholder="Optional notes..."/></div>'+receiptBox('')+'<div class="arow"><button class="pbtn btn-o" onclick="submitNewClaim(true)">Save Draft</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div></div>';
   }
   else if(S==='adminDash'){
     tbt_el.textContent='Manager Dashboard';adminNav('dash');
@@ -560,7 +598,7 @@ function render(){
     var byMgr=c.submittedBy==='manager'?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Submitted by manager</span>'+(c.emp?' for '+c.emp:'')+'</div></div>':'';
     var rejBox=c.status==='Rejected'&&c.rejectReason?'<div class="rbox"><div style="font-size:10px;font-weight:600;color:#991b1b">Rejection reason</div><div style="font-size:12px;color:#991b1b;margin-top:1px">'+c.rejectReason+'</div></div>':'';
     var claimedBox=c.status==='Claimed'?'<div class="slip-box"><span>💳</span><span style="font-size:12px;color:#92400e;font-weight:600;margin-left:4px">Paid · '+c.slipRef+'</span></div>':'';
-    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(c.status)+'</div><div class="dgrid">'+(c.emp?'<div class="di"><div class="dil">Employee</div><div class="div_">'+c.emp+'</div></div>':'')+'<div class="di"><div class="dil">Amount</div><div class="div_">RM '+c.amount.toFixed(2)+'</div></div><div class="di"><div class="dil">Date</div><div class="div_">'+c.date+'</div></div><div class="di"><div class="dil">Category</div><div class="div_">'+(c.category||'—')+'</div></div><div class="di"><div class="dil">Unit</div><div class="div_">'+(c.unit||'—')+'</div></div><div class="di"><div class="dil">Payment</div><div class="div_">'+(c.payType==='company'?'Company':'Employee')+'</div></div></div>'+rejBox+claimedBox+'</div><div class="up-box"><div style="font-size:20px">🧾</div><div style="font-size:12px;color:#6b7280;margin-top:3px">receipt_'+c.date+'.jpg</div></div>'+actionArea+'</div>';
+    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(c.status)+'</div><div class="dgrid">'+(c.emp?'<div class="di"><div class="dil">Employee</div><div class="div_">'+c.emp+'</div></div>':'')+'<div class="di"><div class="dil">Amount</div><div class="div_">RM '+c.amount.toFixed(2)+'</div></div><div class="di"><div class="dil">Date</div><div class="div_">'+c.date+'</div></div><div class="di"><div class="dil">Category</div><div class="div_">'+(c.category||'—')+'</div></div><div class="di"><div class="dil">Unit</div><div class="div_">'+(c.unit||'—')+'</div></div><div class="di"><div class="dil">Payment</div><div class="div_">'+(c.payType==='company'?'Company':'Employee')+'</div></div></div>'+rejBox+claimedBox+'</div>'+receiptBox(c.slipRef)+actionArea+'</div>';
   }
   else if(S==='mgrEdit'){
     var c=SEL;tbt_el.textContent='Edit Decision';bb_el.style.display='block';adminNav('list');
@@ -632,7 +670,7 @@ function render(){
     var empOpts=ACTIVE_EMPS.map(function(e){return'<option value="'+e+'"'+(mgrFormEmp===e?' selected':'')+'>'+e+'</option>';}).join('');
     var catOpts=CATS.map(function(c){return'<option>'+c+'</option>';}).join('');
     var unitOpts=UNITS.map(function(u){return'<option>'+u+'</option>';}).join('');
-    ms.innerHTML='<div class="scr"><div style="display:flex;flex-direction:column;gap:7px"><div class="ptype-card'+(isCompany?'':' on')+'" onclick="mgrFormPayType=\'employee\';render()"><div style="font-size:20px">👤</div><div><div class="ptype-title">Employee paid</div><div class="ptype-desc">Needs reimbursement — auto-approved</div></div></div><div class="ptype-card'+(isCompany?' on':'')+'" onclick="mgrFormPayType=\'company\';render()"><div style="font-size:20px">🏢</div><div><div class="ptype-title">Company paid</div><div class="ptype-desc">No reimbursement — tracking only</div></div></div></div>'+(isCompany?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid:</span> No employee assigned.</div></div>':'<div class="fg"><label class="fl">Submit for employee *</label><select class="fi" id="f-emp" onchange="mgrFormEmp=this.value">'+empOpts+'</select></div>')+'<div class="fg"><label class="fl">Category *</label><select class="fi" id="f-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location *</label><select class="fi" id="f-unit"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. TNB Bill March"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date"/></div></div><div class="up-box" onclick="toast(\'Camera unavailable in demo\')"><div style="font-size:20px">📷</div><div style="font-size:12px;color:#6b7280;margin-top:3px">Tap to upload receipt</div></div><button class="pbtn '+(isCompany?'btn-s':'btn-p')+'" onclick="submitMgrClaim()">'+(isCompany?'Record as Company-Paid':'Submit (Auto-Approved)')+'</button></div>';
+    ms.innerHTML='<div class="scr"><div style="display:flex;flex-direction:column;gap:7px"><div class="ptype-card'+(isCompany?'':' on')+'" onclick="mgrFormPayType=\'employee\';render()"><div style="font-size:20px">👤</div><div><div class="ptype-title">Employee paid</div><div class="ptype-desc">Needs reimbursement — auto-approved</div></div></div><div class="ptype-card'+(isCompany?' on':'')+'" onclick="mgrFormPayType=\'company\';render()"><div style="font-size:20px">🏢</div><div><div class="ptype-title">Company paid</div><div class="ptype-desc">No reimbursement — tracking only</div></div></div></div>'+(isCompany?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid:</span> No employee assigned.</div></div>':'<div class="fg"><label class="fl">Submit for employee *</label><select class="fi" id="f-emp" onchange="mgrFormEmp=this.value">'+empOpts+'</select></div>')+'<div class="fg"><label class="fl">Category *</label><select class="fi" id="f-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location *</label><select class="fi" id="f-unit"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. TNB Bill March"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date"/></div></div>'+receiptBox('')+'<button class="pbtn '+(isCompany?'btn-s':'btn-p')+'" onclick="submitMgrClaim()">'+(isCompany?'Record as Company-Paid':'Submit (Auto-Approved)')+'</button></div>';
   }
 }
 
