@@ -137,7 +137,7 @@ var dashFltMonth='All',dashFltYear='All',dashFltUnit='All';
 var checkedClaims={},slipUploaded=false;
 var mgrFormEmp='',mgrFormPayType='employee';
 var empExpandMap={},editingBankEmp=null;
-var claims=[],BANK_INFO={},EMPS=[];
+var claims=[],BANK_INFO={},EMPS=[],ACTIVE_EMPS=[];
 var authError='',authLoading=false;
 var isSystemAdmin=false,allUsers=[],editingUser=null,userFormError='';
 
@@ -160,7 +160,12 @@ async function loadBankInfo(){
   if(error){console.error('loadBankInfo:',error);return;}
   BANK_INFO={};data.forEach(function(r){BANK_INFO[r.employee_name]={bank:r.bank||'',acc:r.acc||'',fullName:r.full_name||''};});
   EMPS=Object.keys(BANK_INFO);
-  if(mgrFormEmp===''&&EMPS.length)mgrFormEmp=EMPS[0];
+  // Build active employees list (exclude deactivated)
+  var{data:profs}=await sb.from('profiles').select('full_name,active').in('role',['employee']);
+  var inactiveNames={};
+  if(profs)profs.forEach(function(p){if(p.active===false)inactiveNames[p.full_name]=true;});
+  ACTIVE_EMPS=EMPS.filter(function(e){return!inactiveNames[e];});
+  if(mgrFormEmp===''&&ACTIVE_EMPS.length)mgrFormEmp=ACTIVE_EMPS[0];
 }
 async function loadAll(){await loadClaims();await loadBankInfo();}
 
@@ -217,7 +222,7 @@ async function doLogin(){
 }
 async function doLogout(){
   await sb.auth.signOut();
-  currentUser=null;currentProfile=null;R=null;S='auth';PS=null;claims=[];BANK_INFO={};EMPS=[];
+  currentUser=null;currentProfile=null;R=null;S='auth';PS=null;claims=[];BANK_INFO={};EMPS=[];ACTIVE_EMPS=[];
   isSystemAdmin=false;allUsers=[];editingUser=null;userFormError='';
   render();
 }
@@ -624,7 +629,7 @@ function render(){
   else if(S==='mgrNewClaim'){
     tbt_el.textContent='Submit Expense';bb_el.style.display='block';adminNav('sub');
     var isCompany=mgrFormPayType==='company';
-    var empOpts=EMPS.map(function(e){return'<option value="'+e+'"'+(mgrFormEmp===e?' selected':'')+'>'+e+'</option>';}).join('');
+    var empOpts=ACTIVE_EMPS.map(function(e){return'<option value="'+e+'"'+(mgrFormEmp===e?' selected':'')+'>'+e+'</option>';}).join('');
     var catOpts=CATS.map(function(c){return'<option>'+c+'</option>';}).join('');
     var unitOpts=UNITS.map(function(u){return'<option>'+u+'</option>';}).join('');
     ms.innerHTML='<div class="scr"><div style="display:flex;flex-direction:column;gap:7px"><div class="ptype-card'+(isCompany?'':' on')+'" onclick="mgrFormPayType=\'employee\';render()"><div style="font-size:20px">👤</div><div><div class="ptype-title">Employee paid</div><div class="ptype-desc">Needs reimbursement — auto-approved</div></div></div><div class="ptype-card'+(isCompany?' on':'')+'" onclick="mgrFormPayType=\'company\';render()"><div style="font-size:20px">🏢</div><div><div class="ptype-title">Company paid</div><div class="ptype-desc">No reimbursement — tracking only</div></div></div></div>'+(isCompany?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid:</span> No employee assigned.</div></div>':'<div class="fg"><label class="fl">Submit for employee *</label><select class="fi" id="f-emp" onchange="mgrFormEmp=this.value">'+empOpts+'</select></div>')+'<div class="fg"><label class="fl">Category *</label><select class="fi" id="f-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location *</label><select class="fi" id="f-unit"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. TNB Bill March"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date"/></div></div><div class="up-box" onclick="toast(\'Camera unavailable in demo\')"><div style="font-size:20px">📷</div><div style="font-size:12px;color:#6b7280;margin-top:3px">Tap to upload receipt</div></div><button class="pbtn '+(isCompany?'btn-s':'btn-p')+'" onclick="submitMgrClaim()">'+(isCompany?'Record as Company-Paid':'Submit (Auto-Approved)')+'</button></div>';
