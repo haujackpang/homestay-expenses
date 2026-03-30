@@ -149,7 +149,8 @@ var dashFltMonth='All',dashFltYear='All',dashFltUnit='All';
 var checkedClaims={},slipFiles=[],slipFileNames=[];
 var mgrFormEmp='',mgrFormPayType='employee';
 var empExpandMap={},editingBankEmp=null;
-var claims=[],BANK_INFO={},EMPS=[],ACTIVE_EMPS=[];
+var claims=[],BANK_INFO={},EMPS=[],ACTIVE_EMPS=[],UNITS_DATA=[];
+var editingUnit=null,unitFormError='';
 var authError='',authLoading=false;
 var isSystemAdmin=false,allUsers=[],editingUser=null,userFormError='';
 var pendingFiles=[],pendingFileNames=[];
@@ -175,7 +176,7 @@ async function loadErrorLogs(){
 // ===== CONSTANTS =====
 var MONTHS={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
 var YEARS=['2025','2026','2027'];
-var UNITS=['Villa Dahlia','Villa Mawar','Office KL','Office JB'];
+var UNITS=['KT11','150A','14A','LC03','IR B1506','IR B1631','IR B1913B','IR A2109','CL B0207','BR B2305','AR C3706','AR D1503','SH P0403','AC 1025','ACc 1027','34F','MP Office'];
 var CATS=['Utilities','Maintenance & Repair','Housekeeping & Cleaning','Laundry','Daily Products','Hospitality Items','Electrical & Unit Setup','Office Expenses','Employee Welfare','Outsource Cleaning Staff','Unit Renovation','Other'];
 var CAT_COLORS={'Utilities':'#185FA5','Maintenance & Repair':'#854F0B','Housekeeping & Cleaning':'#3B6D11','Laundry':'#534AB7','Daily Products':'#0F6E56','Hospitality Items':'#993556','Electrical & Unit Setup':'#993C1D','Office Expenses':'#5F5E5A','Employee Welfare':'#185FA5','Outsource Cleaning Staff':'#854F0B','Unit Renovation':'#A32D2D','Other':'#888780'};
 
@@ -198,7 +199,25 @@ async function loadBankInfo(){
     ACTIVE_EMPS=EMPS.filter(function(e){return!inactiveNames[e]&&!adminNames[e];});
   if(mgrFormEmp===''&&ACTIVE_EMPS.length)mgrFormEmp=ACTIVE_EMPS[0];
 }
-async function loadAll(){await loadClaims();await loadBankInfo();}
+async function loadUnits(){
+  var{data,error}=await sb.from('units').select('*').order('name');
+  if(error){console.error('loadUnits:',error);return;}
+  if(data&&data.length){
+    UNITS_DATA=data;
+    UNITS=UNITS_DATA.filter(function(u){return u.active!==false;}).map(function(u){return u.name;});
+  }
+}
+async function dbInsertUnit(name){
+  var{error}=await sb.from('units').insert({name:name.trim()});
+  if(error)console.error('dbInsertUnit:',error);
+  return !error;
+}
+async function dbUpdateUnit(id,fields){
+  var{error}=await sb.from('units').update(fields).eq('id',id);
+  if(error)console.error('dbUpdateUnit:',error);
+  return !error;
+}
+async function loadAll(){await loadClaims();await loadBankInfo();await loadUnits();}
 
 async function getNextClaimId(prefix){
   var now=new Date();var yr=now.getFullYear();
@@ -258,8 +277,8 @@ async function doLogin(){
 }
 async function doLogout(){
   await sb.auth.signOut();
-  currentUser=null;currentProfile=null;R=null;S='auth';PS=null;claims=[];BANK_INFO={};EMPS=[];ACTIVE_EMPS=[];
-  isSystemAdmin=false;allUsers=[];editingUser=null;userFormError='';
+  currentUser=null;currentProfile=null;R=null;S='auth';PS=null;claims=[];BANK_INFO={};EMPS=[];ACTIVE_EMPS=[];UNITS_DATA=[];
+  isSystemAdmin=false;allUsers=[];editingUser=null;userFormError='';editingUnit=null;unitFormError='';
   render();
 }
 async function initSession(user){
@@ -390,7 +409,7 @@ function setupRealtime(){
 
 // ===== HELPERS =====
 function isPaidOut(c){return c.status==='Claimed'||c.status==='Company-Paid';}
-function empCanEdit(c){return(c.status==='Submitted'||c.status==='Draft'||c.status==='Auto-Approved')&&!isPaidOut(c);}
+function empCanEdit(c){return(c.status==='Submitted'||c.status==='Draft')&&!isPaidOut(c);}
 function empCanDelete(c){return(c.status==='Submitted'||c.status==='Draft')&&!isPaidOut(c);}
 function mgrCanEdit(c){return(c.status==='Approved'||c.status==='Rejected'||c.status==='Auto-Approved')&&!isPaidOut(c);}
 function initials(n){var p=n.split(' ');return(p[0][0]+(p[1]?p[1][0]:'')).toUpperCase();}
@@ -726,9 +745,9 @@ async function submitEmpEdit(){
   await loadClaims();toast('Claim re-submitted');editingId=null;ss('empList','empHome');
 }
 async function saveMgrEdit(){
-  var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),amt=document.getElementById('rv-amt');
+  var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),amt=document.getElementById('rv-amt'),desc=document.getElementById('rv-desc'),dt=document.getElementById('rv-date');
   var upd={};
-  if(cat&&cat.value)upd.category=cat.value;if(unit&&unit.value)upd.unit=unit.value;if(amt&&amt.value)upd.amount=parseFloat(amt.value);
+  if(cat&&cat.value)upd.category=cat.value;if(unit&&unit.value)upd.unit=unit.value;if(amt&&amt.value)upd.amount=parseFloat(amt.value);if(desc&&desc.value)upd.desc=desc.value;if(dt&&dt.value)upd.date=dt.value;
   await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim updated');editingId=null;ss('adminList','adminDash');
 }
@@ -780,7 +799,7 @@ function render(){
     if(isSystemAdmin){
       var its=[['users','👥','Users',"openUsers()"],['logs','🪵','Logs',"openErrorLogs()"]];
     } else {
-      var its=[['dash','⊞','Dash',"ss('adminDash')"],['list','☰','Claims',"ss('adminList','adminDash')"],['pay','💳','Pay',"ss('adminPay','adminDash')"],['emps','👥','Staff',"ss('adminEmployees','adminDash')"],['sub','＋','Submit',"ss('mgrNewClaim','adminDash')"],['logs','🪵','Logs',"openErrorLogs()"]];
+      var its=[['dash','⊞','Dash',"ss('adminDash')"],['list','☰','Claims',"ss('adminList','adminDash')"],['pay','💳','Pay',"ss('adminPay','adminDash')"],['emps','👥','Staff',"ss('adminEmployees','adminDash')"],['units','🏘','Units',"ss('adminUnits','adminDash')"],['sub','＋','Submit',"ss('mgrNewClaim','adminDash')"],['logs','🪵','Logs',"openErrorLogs()"]];
     }
     nav.innerHTML=its.map(function(x){return'<div class="ni'+(a===x[0]?' on':'')+'" onclick="'+x[3]+'"><span class="ni-ic">'+x[1]+'</span>'+x[2]+'</div>';}).join('');
     lo.style.display='block';
@@ -904,7 +923,7 @@ function render(){
     var catOpts=CATS.map(function(cat){return'<option value="'+cat+'"'+(c.category===cat?' selected':'')+'>'+cat+'</option>';}).join('');
     var unitOpts=UNITS.map(function(u){return'<option value="'+u+'"'+(c.unit===u?' selected':'')+'>'+u+'</option>';}).join('');
     var isAppr=c.status==='Approved'||c.status==='Auto-Approved';
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Modifying '+c.id+'</span> — currently '+c.status+'. Not yet paid out.</div></div><div class="fg"><label class="fl">Category</label><select class="fi" id="rv-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location</label><select class="fi" id="rv-unit">'+unitOpts+'</select></div><div class="fg"><label class="fl">Amount (RM)</label><input class="fi" id="rv-amt" type="number" value="'+c.amount+'"/></div>'+(isAppr?'<div class="arow"><button class="pbtn btn-d" onclick="mgrChangeToReject()">Change to Reject</button><button class="pbtn btn-s" onclick="saveMgrEdit()">Save Changes</button></div>':'<div class="arow"><button class="pbtn btn-s" onclick="mgrChangeToApprove()">Change to Approve</button><button class="pbtn btn-o" onclick="saveMgrEdit()">Save Changes</button></div>')+'</div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Modifying '+c.id+'</span> — currently '+c.status+'. Not yet paid out.</div></div><div class="fg"><label class="fl">Description</label><input class="fi" id="rv-desc" value="'+c.desc+'"/></div><div class="fg"><label class="fl">Category</label><select class="fi" id="rv-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location</label><select class="fi" id="rv-unit">'+unitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM)</label><input class="fi" id="rv-amt" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date</label><input class="fi" id="rv-date" type="date" value="'+c.date+'"/></div></div>'+(isAppr?'<div class="arow"><button class="pbtn btn-d" onclick="mgrChangeToReject()">Change to Reject</button><button class="pbtn btn-s" onclick="saveMgrEdit()">Save Changes</button></div>':'<div class="arow"><button class="pbtn btn-s" onclick="mgrChangeToApprove()">Change to Approve</button><button class="pbtn btn-o" onclick="saveMgrEdit()">Save Changes</button></div>')+'</div>';
   }
   else if(S==='adminEmployees'){
     tbt_el.textContent='Staff & Bank Info';bb_el.style.display='block';adminNav('emps');
@@ -921,6 +940,19 @@ function render(){
     tbt_el.textContent='Bank Info';bb_el.style.display='block';adminNav('emps');
     ms.innerHTML='<div class="scr"><div style="display:flex;align-items:center;gap:12px;background:#f9fafb;border-radius:12px;padding:12px;border:1px solid #e5e7eb"><div class="avatar" style="width:44px;height:44px;font-size:16px">'+ini+'</div><div><div style="font-size:15px;font-weight:600;color:#111">'+emp+'</div><div style="font-size:12px;color:#6b7280">Employee</div></div></div><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">This bank info will be shown during pay out for accurate transfer.</div></div><div class="fg"><label class="fl">Bank name *</label><input class="fi" id="p-bank" value="'+(bi.bank||'')+'" placeholder="e.g. Maybank, CIMB, Public Bank"/></div><div class="fg"><label class="fl">Account number *</label><input class="fi" id="p-acc" value="'+(bi.acc||'')+'" placeholder="e.g. 1234 5678 9012"/></div><div class="fg"><label class="fl">Full name (as per bank) *</label><input class="fi" id="p-name" value="'+(bi.fullName||'')+'" placeholder="Full legal name"/></div><button class="pbtn btn-p" onclick="saveBankInfo()">Save Bank Info</button>'+(bi.bank?'<button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminEmployees\',\'adminDash\')">Cancel</button>':'')+'</div>';
   }
+  else if(S==='adminUnits'){
+    tbt_el.textContent='Units';bb_el.style.display='block';adminNav('units');
+    var activeCount=UNITS_DATA.filter(function(u){return u.active!==false;}).length;
+    var rows=UNITS_DATA.length?UNITS_DATA.map(function(u){
+      var isActive=u.active!==false;
+      return'<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#111">'+u.name+'</div>'+(isActive?'<div style="font-size:11px;color:#065f46">Active</div>':'<div style="font-size:11px;color:#991b1b">Deactivated</div>')+'</div><div style="display:flex;gap:10px;align-items:center"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnit(\''+u.id+'\')">Edit</span>'+(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',false)">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',true)">Activate</span>')+'</div></div>';
+    }).join(''):'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No units yet — units are loaded from database.</div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+UNITS_DATA.length+' unit(s) total · '+activeCount+' active</span> — deactivated units won\'t appear in dropdowns.</div></div>'+rows+'<button class="pbtn btn-p" onclick="editingUnit=null;unitFormError=\'\';ss(\'unitForm\',\'adminUnits\')">+ Add New Unit</button></div>';
+  }
+  else if(S==='unitForm'){
+    tbt_el.textContent=editingUnit?'Edit Unit':'New Unit';bb_el.style.display='block';adminNav('units');
+    ms.innerHTML='<div class="scr">'+(unitFormError?'<div class="info-box" style="background:#fee2e2"><div style="font-size:11px;color:#991b1b">'+unitFormError+'</div></div>':'')+'<div class="fg"><label class="fl">Unit name *</label><input class="fi" id="unit-name" value="'+(editingUnit?editingUnit.name:'')+'" placeholder="e.g. KT11, IR B1506"/></div><button class="pbtn btn-p" onclick="saveUnit()">'+(editingUnit?'Save Changes':'Add Unit')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminUnits\',\'adminDash\')">Cancel</button></div>';
+  }
   else if(S==='adminPay'){
     tbt_el.textContent='Pay Out';bb_el.style.display='block';adminNav('pay');
     var appClaims=claims.filter(function(c){return(c.status==='Approved'||c.status==='Auto-Approved')&&c.payType==='employee';});
@@ -930,7 +962,9 @@ function render(){
     function toggleExpand(emp){empExpandMap[emp]=!empExpandMap[emp];render();}
     window.toggleAll=toggleAll;window.toggleExpand=toggleExpand;
     var byEmpHTML='';
-    EMPS.forEach(function(emp){
+    var claimEmpSet=[];appClaims.forEach(function(c){if(c.emp&&claimEmpSet.indexOf(c.emp)===-1)claimEmpSet.push(c.emp);});
+    var payEmps=EMPS.filter(function(e){return claimEmpSet.indexOf(e)!==-1;}).concat(claimEmpSet.filter(function(e){return EMPS.indexOf(e)===-1;}));
+    payEmps.forEach(function(emp){
       var ec=appClaims.filter(function(c){return c.emp===emp;});if(!ec.length)return;
       var bi=BANK_INFO[emp];var hasBi=hasBankInfo(emp);
       var empTotal=ec.reduce(function(s,c){return s+c.amount;},0);
@@ -1033,6 +1067,26 @@ window.doReject=async function(){var r=document.getElementById('rv-reason');awai
 window.saveMgrEdit=saveMgrEdit;window.saveEmpEdit=saveEmpEdit;window.submitEmpEdit=submitEmpEdit;
 window.submitNewClaim=submitNewClaim;window.submitMgrClaim=submitMgrClaim;
 window.markClaimed=markClaimed;window.saveBankInfo=saveBankInfo;
+window.editUnit=function(id){editingUnit=UNITS_DATA.filter(function(u){return u.id===id;})[0];unitFormError='';ss('unitForm','adminUnits');};
+window.toggleUnitActive=async function(id,active){
+  var ok=await dbUpdateUnit(id,{active:active});
+  if(ok){await loadUnits();render();toast(active?'Unit activated':'Unit deactivated');}
+  else toast('Failed to update unit');
+};
+window.saveUnit=async function(){
+  var nameEl=document.getElementById('unit-name');
+  if(!nameEl||!nameEl.value.trim()){unitFormError='Unit name is required';render();return;}
+  var name=nameEl.value.trim();
+  if(editingUnit){
+    var ok=await dbUpdateUnit(editingUnit.id,{name:name});
+    if(ok){await loadUnits();toast('Unit updated');editingUnit=null;ss('adminUnits','adminDash');}
+    else{unitFormError='Failed to update. Name may already exist.';render();}
+  }else{
+    var ok=await dbInsertUnit(name);
+    if(ok){await loadUnits();toast('Unit "'+name+'" added');ss('adminUnits','adminDash');}
+    else{unitFormError='Failed to add. Name may already exist.';render();}
+  }
+};
 window.mgrScanReceipt=function(){
   var inp=document.getElementById('receipt-input');
   if(!inp){inp=document.createElement('input');inp.type='file';inp.id='receipt-input';inp.accept='image/*,.pdf';inp.style.display='none';inp.setAttribute('capture','environment');document.body.appendChild(inp);}

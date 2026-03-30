@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Homestay Expense System — User Manual 使用手册</title>
+<style>
+  :root {
+    --blue: #1d4ed8; --blue-bg: #dbeafe; --blue-border: #93c5fd;
+    --green: #065f46; --green-bg: #d1fae5; --green-border: #6ee7b7;
+    --amber: #92400e; --amber-bg: #fef3c7; --amber-border: #f59e0b;
+    --red: #991b1b; --red-bg: #fee2e2; --red-border: #fca5a5;
+    --grey: #6b7280; --grey-bg: #f9fafb; --grey-border: #e5e7eb;
+    --purple: #5b21b6; --purple-bg: #ede9fe; --purple-border: #a78bfa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f3f4f6; color: #111; line-height: 1.6; }
+
+  /* Header */
+  .site-header { background: linear-gradient(135deg, #1e3a5f 0%, #1d4ed8 100%); color: #fff; padding: 32px 24px 40px; text-align: center; }
+  .site-header h1 { font-size: 26px; font-weight: 800; margin-bottom: 4px; }
+  .site-header p { font-size: 14px; opacity: .8; }
+  .site-header .version { display: inline-block; background: rgba(255,255,255,.2); border-radius: 99px; padding: 2px 10px; font-size: 11px; margin-top: 8px; }
+
+  /* Nav / TOC */
+  .toc { background: #fff; border-bottom: 1px solid #e5e7eb; position: sticky; top: 0; z-index: 100; padding: 0 16px; overflow-x: auto; white-space: nowrap; }
+  .toc a { display: inline-block; padding: 12px 14px; font-size: 13px; font-weight: 600; color: #6b7280; text-decoration: none; border-bottom: 3px solid transparent; }
+  .toc a:hover { color: #1d4ed8; }
+  .toc a.emp { color: #065f46; } .toc a.emp:hover { border-color: #065f46; }
+  .toc a.mgr { color: #1d4ed8; } .toc a.mgr:hover { border-color: #1d4ed8; }
+  .toc a.adm { color: #5b21b6; } .toc a.adm:hover { border-color: #5b21b6; }
+
+  /* Layout */
+  .page { max-width: 900px; margin: 0 auto; padding: 24px 16px 60px; }
+  section { margin-bottom: 40px; }
+
+  /* Role Banner */
+  .role-banner { border-radius: 14px; padding: 20px 22px; margin-bottom: 28px; display: flex; align-items: center; gap: 14px; }
+  .role-banner.emp { background: var(--green-bg); border: 1.5px solid var(--green-border); }
+  .role-banner.mgr { background: var(--blue-bg); border: 1.5px solid var(--blue-border); }
+  .role-banner.adm { background: var(--purple-bg); border: 1.5px solid var(--purple-border); }
+  .role-icon { font-size: 36px; flex-shrink: 0; }
+  .role-banner h2 { font-size: 20px; font-weight: 800; }
+  .role-banner p { font-size: 12px; margin-top: 2px; opacity: .8; }
+  .role-banner.emp h2 { color: var(--green); }
+  .role-banner.mgr h2 { color: var(--blue); }
+  .role-banner.adm h2 { color: var(--purple); }
+
+  /* Section title */
+  .sec-title { font-size: 17px; font-weight: 700; color: #111; margin: 28px 0 12px; padding-left: 10px; border-left: 4px solid #1d4ed8; }
+  .sec-title.green { border-color: #059669; }
+  .sec-title.purple { border-color: #7c3aed; }
+
+  /* Cards */
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; }
+  .card h3 { font-size: 14px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 7px; }
+
+  /* Steps */
+  .steps { counter-reset: step; display: flex; flex-direction: column; gap: 14px; }
+  .step { display: flex; gap: 14px; align-items: flex-start; }
+  .step-num { width: 28px; height: 28px; border-radius: 50%; background: #1d4ed8; color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+  .step-num.green { background: #059669; }
+  .step-num.purple { background: #7c3aed; }
+  .step-body { flex: 1; }
+  .step-body strong { font-size: 13px; font-weight: 700; color: #111; }
+  .step-body p, .step-body .sub { font-size: 12px; color: #6b7280; margin-top: 2px; }
+  .step-body .en { font-size: 11px; color: #9ca3af; font-style: italic; margin-top: 1px; }
+
+  /* Mock screens */
+  .mockup { background: #f9fafb; border: 1.5px solid #e5e7eb; border-radius: 14px; padding: 14px 16px; margin: 10px 0 16px; }
+  .mockup-title { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+  .m-topbar { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .m-topbar span { font-size: 12px; font-weight: 700; }
+  .m-badge { font-size: 10px; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
+  .m-badge.sub { background: #dbeafe; color: #1d4ed8; }
+  .m-badge.appr { background: #d1fae5; color: #065f46; }
+  .m-badge.rej { background: #fee2e2; color: #991b1b; }
+  .m-badge.draft { background: #f3f4f6; color: #6b7280; }
+  .m-badge.claimed { background: #fef3c7; color: #92400e; }
+  .m-badge.auto { background: #d1fae5; color: #065f46; }
+  .m-badge.cpaid { background: #f3f4f6; color: #374151; }
+  .m-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 5px; font-size: 12px; }
+  .m-row .label { color: #9ca3af; font-size: 10px; }
+  .m-row .val { font-weight: 600; color: #111; }
+  .m-stat { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; text-align: center; }
+  .m-stat .num { font-size: 20px; font-weight: 800; color: #1d4ed8; }
+  .m-stat .lbl { font-size: 10px; color: #9ca3af; }
+  .sgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+  .sgrid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+  .m-btn { display: inline-block; padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; }
+  .m-btn.primary { background: #1d4ed8; color: #fff; }
+  .m-btn.success { background: #059669; color: #fff; }
+  .m-btn.danger { background: #dc2626; color: #fff; }
+  .m-btn.outline { background: #fff; border: 1px solid #e5e7eb; color: #374151; }
+  .m-btn.amber { background: #f59e0b; color: #fff; }
+  .m-zone { background: #eff6ff; border: 1.5px dashed #93c5fd; border-radius: 10px; padding: 18px; text-align: center; margin-bottom: 8px; }
+  .m-zone .icon { font-size: 28px; margin-bottom: 6px; }
+  .m-zone p { font-size: 12px; color: #1d4ed8; font-weight: 600; }
+  .m-zone small { font-size: 10px; color: #9ca3af; }
+  .m-ai { background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  .m-ai .ai-title { font-size: 11px; font-weight: 700; color: #065f46; display: flex; align-items: center; gap: 5px; margin-bottom: 8px; }
+  .m-ai table { width: 100%; font-size: 11px; border-collapse: collapse; }
+  .m-ai th { color: #9ca3af; font-weight: 600; text-align: left; padding-bottom: 4px; border-bottom: 1px solid #d1fae5; }
+  .m-ai td { padding: 3px 0; color: #374151; }
+  .m-ai .total { display: flex; justify-content: space-between; background: #d1fae5; border-radius: 6px; padding: 5px 8px; margin-top: 7px; font-size: 12px; font-weight: 700; color: #065f46; }
+  .m-warn { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 8px 10px; font-size: 11px; color: #92400e; margin-bottom: 8px; }
+  .m-warn strong { display: block; margin-bottom: 2px; }
+  .m-bottomnav { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; display: flex; margin-top: 10px; }
+  .m-bottomnav span { flex: 1; text-align: center; padding: 8px 4px; font-size: 10px; color: #9ca3af; }
+  .m-bottomnav span.active { color: #1d4ed8; font-weight: 700; }
+  .m-info { border-radius: 8px; padding: 8px 10px; font-size: 11px; margin-bottom: 6px; }
+  .m-info.blue { background: #dbeafe; color: #1d4ed8; }
+  .m-info.green { background: #d1fae5; color: #065f46; }
+  .m-info.red { background: #fee2e2; color: #991b1b; }
+  .m-rcpt { display: flex; align-items: center; gap: 8px; padding: 9px 10px; background: #f0fdf4; border: 1px solid #059669; border-radius: 8px; margin-bottom: 5px; font-size: 11px; color: #059669; font-weight: 600; }
+
+  /* Info / tip boxes */
+  .tip { border-radius: 10px; padding: 10px 12px; margin: 10px 0; font-size: 12px; display: flex; gap: 9px; }
+  .tip.blue { background: var(--blue-bg); color: var(--blue); border: 1px solid var(--blue-border); }
+  .tip.green { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+  .tip.amber { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
+  .tip.red { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
+  .tip-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .tip-body strong { font-weight: 700; display: block; margin-bottom: 1px; }
+
+  /* Status table */
+  .status-table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border-radius: 10px; overflow: hidden; border: 1px solid #e5e7eb; }
+  .status-table th { background: #f9fafb; padding: 9px 12px; text-align: left; font-size: 11px; color: #6b7280; font-weight: 700; border-bottom: 1px solid #e5e7eb; }
+  .status-table td { padding: 9px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+  .status-table tr:last-child td { border-bottom: none; }
+
+  /* Flow diagram */
+  .flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 12px 0; }
+  .flow-box { border-radius: 8px; padding: 6px 12px; font-size: 11px; font-weight: 600; text-align: center; }
+  .flow-arr { color: #9ca3af; font-size: 14px; }
+
+  /* Divider */
+  .divider { border: none; border-top: 2px dashed #e5e7eb; margin: 32px 0; }
+
+  /* Role color accents */
+  .emp-accent { border-left: 4px solid #059669; }
+  .mgr-accent { border-left: 4px solid #1d4ed8; }
+  .adm-accent { border-left: 4px solid #7c3aed; }
+
+  /* Footer */
+  footer { background: #1e3a5f; color: rgba(255,255,255,.6); text-align: center; padding: 20px; font-size: 12px; }
+
+  @media(max-width:600px){
+    .site-header h1{font-size:20px;}
+    .sgrid{grid-template-columns:1fr 1fr;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<div class="site-header">
+  <h1>🏠 Homestay Expense System</h1>
+  <p>使用手册 User Manual</p>
+  <span class="version">v2026.03</span>
+</div>
+
+<!-- ═══ TOC ═══ -->
+<div class="toc">
+  <a href="#login">🔐 登录</a>
+  <a href="#employee" class="emp">👤 Employee</a>
+  <a href="#manager" class="mgr">👔 Manager</a>
+  <a href="#admin" class="adm">🛡️ Admin</a>
+  <a href="#statuses">📊 状态说明</a>
+</div>
+
+<div class="page">
+
+<!-- ═══════════════════════════════════════════
+     INTRO
+════════════════════════════════════════════ -->
+<section id="intro">
+  <div class="card" style="margin-top:16px">
+    <h3>📖 关于本系统 About This System</h3>
+    <p style="font-size:13px;color:#374151;margin-bottom:8px">
+      本系统用于管理 Homestay 员工的日常报销申请，支持 AI 自动识别单据、多角色流程审批和银行转账记录。
+    </p>
+    <p style="font-size:12px;color:#6b7280">
+      This system manages homestay employee expense claims — with AI receipt scanning, multi-role approval workflow, and bank transfer tracking.
+    </p>
+    <div style="margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+      <div style="background:#d1fae5;border-radius:10px;padding:10px;text-align:center">
+        <div style="font-size:22px">👤</div>
+        <div style="font-size:12px;font-weight:700;color:#065f46;margin-top:3px">Employee</div>
+        <div style="font-size:10px;color:#6b7280">Submit claims</div>
+      </div>
+      <div style="background:#dbeafe;border-radius:10px;padding:10px;text-align:center">
+        <div style="font-size:22px">👔</div>
+        <div style="font-size:12px;font-weight:700;color:#1d4ed8;margin-top:3px">Manager</div>
+        <div style="font-size:10px;color:#6b7280">Approve & pay</div>
+      </div>
+      <div style="background:#ede9fe;border-radius:10px;padding:10px;text-align:center">
+        <div style="font-size:22px">🛡️</div>
+        <div style="font-size:12px;font-weight:700;color:#5b21b6;margin-top:3px">Admin</div>
+        <div style="font-size:10px;color:#6b7280">Manage users</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════
+     LOGIN
+════════════════════════════════════════════ -->
+<section id="login">
+  <div class="role-banner mgr" style="background:#f0f9ff;border-color:#bae6fd">
+    <div class="role-icon">🔐</div>
+    <div>
+      <h2 style="color:#0369a1">登录系统 Login</h2>
+      <p style="color:#0369a1">所有用户 / All users</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>📱 如何登录 How to Login</h3>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>打开 App 或网页 Open the App or Website</strong>
+          <p>手机：打开 Homestay Expense App</p>
+          <p class="en">Mobile: Open the Homestay Expense App | Web: Open the website link</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>输入用户名和密码 Enter username & password</strong>
+          <p>由管理员提供。密码区分大小写。</p>
+          <p class="en">Provided by your admin. Password is case-sensitive.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>点击"Login" 按钮</strong>
+          <p>系统根据角色自动跳转到对应页面。</p>
+          <p class="en">System auto-redirects to your role's home screen.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mock: Login screen -->
+    <div class="mockup" style="max-width:300px;margin:16px auto 0">
+      <div class="mockup-title">登录页面 Login Screen</div>
+      <div style="text-align:center;padding:8px 0 14px">
+        <div style="font-size:28px">🏠</div>
+        <div style="font-size:14px;font-weight:800;color:#1e3a5f">Home Expense System</div>
+      </div>
+      <div style="background:#f3f4f6;border-radius:8px;padding:8px 12px;margin-bottom:7px;font-size:12px;color:#9ca3af">Username</div>
+      <div style="background:#f3f4f6;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#9ca3af">Password</div>
+      <div class="m-btn primary" style="width:100%;text-align:center;border-radius:8px">Login</div>
+    </div>
+
+    <div class="tip amber" style="margin-top:14px">
+      <span class="tip-icon">⚠️</span>
+      <div class="tip-body"><strong>忘记密码？ Forgot password?</strong>联系管理员重置密码。Contact admin to reset your password.</div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ═══════════════════════════════════════════
+     EMPLOYEE
+════════════════════════════════════════════ -->
+<section id="employee">
+  <div class="role-banner emp">
+    <div class="role-icon">👤</div>
+    <div>
+      <h2>员工操作指南 Employee Guide</h2>
+      <p>提交报销、查看进度、上传单据 / Submit claims, track status, upload receipts</p>
+    </div>
+  </div>
+
+  <!-- 1. Home Dashboard -->
+  <div class="sec-title green">1. 主页仪表板 Home Dashboard</div>
+  <div class="card emp-accent">
+    <h3>⊞ 登录后的主页 After Login</h3>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:12px">主页显示你的报销摘要，可按月份/年份筛选。<br><em>Home shows your expense summary. Filter by month or year.</em></p>
+
+    <div class="mockup">
+      <div class="mockup-title">主页 empHome</div>
+      <div class="m-topbar"><span>⊞ My Dashboard</span><span style="font-size:11px;color:#6b7280">Employee · Ahmad</span></div>
+      <div style="display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="background:#dbeafe;border-radius:99px;padding:2px 10px;font-size:10px;color:#1d4ed8;font-weight:600">Mar</span>
+        <span style="background:#f3f4f6;border-radius:99px;padding:2px 10px;font-size:10px;color:#9ca3af">Apr</span>
+        <span style="background:#f3f4f6;border-radius:99px;padding:2px 10px;font-size:10px;color:#9ca3af">2026</span>
+      </div>
+      <div style="background:#d1fae5;border-radius:10px;padding:12px;margin-bottom:8px;text-align:center">
+        <div style="font-size:11px;color:#065f46">Total Submitted</div>
+        <div style="font-size:24px;font-weight:800;color:#065f46">RM 285.00</div>
+      </div>
+      <div class="sgrid">
+        <div class="m-stat"><div class="num" style="font-size:16px;color:#1d4ed8">2</div><div class="lbl">Submitted</div></div>
+        <div class="m-stat"><div class="num" style="font-size:16px;color:#065f46">1</div><div class="lbl">Approved</div></div>
+        <div class="m-stat"><div class="num" style="font-size:16px;color:#9ca3af">0</div><div class="lbl">Draft</div></div>
+      </div>
+      <div style="font-size:11px;font-weight:700;color:#374151;margin:8px 0 5px">Recent Claims</div>
+      <div class="m-row"><span style="font-size:10px;color:#9ca3af;font-family:monospace">HE-2026-03-00002</span><span style="flex:1;font-size:11px;font-weight:600">Housekeeping</span><span class="m-badge sub">Submitted</span></div>
+      <div class="m-row"><span style="font-size:10px;color:#9ca3af;font-family:monospace">HE-2026-03-00001</span><span style="flex:1;font-size:11px;font-weight:600">TNB Bill</span><span class="m-badge appr">Approved</span></div>
+      <div class="m-bottomnav">
+        <span class="active">⊞ Home</span><span>☰ Claims</span><span>＋ New</span>
+      </div>
+    </div>
+
+    <div class="tip blue">
+      <span class="tip-icon">💡</span>
+      <div class="tip-body"><strong>底部导航栏 Bottom Navigation</strong>
+        <br>⊞ Home — 主页总览 | ☰ Claims — 所有申请 | ＋ New — 新建申请
+       <br><em>Three tabs: Home overview | All claims | Submit new claim</em></div>
+    </div>
+  </div>
+
+  <!-- 2. New Claim — AI Scan -->
+  <div class="sec-title green">2. 提交新报销 Submit New Claim</div>
+  <div class="card emp-accent">
+    <h3>📷 方法 A：AI 扫描单据（推荐）Method A: AI Scan (Recommended)</h3>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:14px">上传单据照片或PDF，AI 自动读取金额、日期和项目。<br><em>Upload a receipt photo or PDF — AI auto-reads the amount, date, and items.</em></p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num green">1</div>
+        <div class="step-body">
+          <strong>点击底部 ＋ New Tap "＋ New" tab</strong>
+          <p>进入新建报销流程。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num green">2</div>
+        <div class="step-body">
+          <strong>点击上传区域，拍照或选择文件</strong>
+          <p>支持：JPG、PNG、PDF（多页）<br><em>Supports: photos, images, PDF (multi-page)</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num green">3</div>
+        <div class="step-body">
+          <strong>等待 AI 分析 Wait for AI to analyze</strong>
+          <p>通常需要 5-15 秒。请保持网络连接。<br><em>Usually takes 5–15 seconds. Stay connected.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num green">4</div>
+        <div class="step-body">
+          <strong>检查并确认 AI 结果 Review AI results</strong>
+          <p>AI 会自动填入：类别、描述、金额、日期。如有错误可手动修改。<br><em>AI pre-fills category, description, amount, date. Edit if needed.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num green">5</div>
+        <div class="step-body">
+          <strong>点击 "Submit Claim" 提交</strong>
+          <p>或点击 "Save as Draft" 暂存草稿。<br><em>Or "Save as Draft" to save without submitting.</em></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mock: AI Scan Flow -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">
+      <div class="mockup">
+        <div class="mockup-title">步骤2：上传 Upload</div>
+        <div class="m-info blue">Upload receipt first — AI will auto-extract details</div>
+        <div class="m-zone">
+          <div class="icon">📷</div>
+          <p>Tap to upload receipt</p>
+          <small>Photo, image or PDF</small>
+        </div>
+        <div style="text-align:center;font-size:11px;color:#9ca3af">or fill in manually →</div>
+      </div>
+      <div class="mockup">
+        <div class="mockup-title">步骤4：AI结果 Review</div>
+        <div class="m-ai">
+          <div class="ai-title">🤖 AI Analysis Complete <span style="background:#d1fae5;color:#065f46;font-size:9px;padding:1px 6px;border-radius:99px">Auto-filled</span></div>
+          <table>
+            <tr><th>Item</th><th>Qty</th><th>RM</th></tr>
+            <tr><td>Cleaning Service</td><td>1</td><td>120.00</td></tr>
+            <tr><td>Supplies</td><td>1</td><td>15.50</td></tr>
+          </table>
+          <div class="total"><span>Total</span><span>RM 135.50</span></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <div class="m-btn outline" style="font-size:10px">↻ Re-scan</div>
+          <div class="m-btn success" style="font-size:10px;flex:1;text-align:center">Submit Claim</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tip amber" style="margin-top:8px">
+      <span class="tip-icon">⚠️</span>
+      <div class="tip-body"><strong>出现"May not be a receipt"警告？</strong>AI 认为上传的文件可能不是单据。请确认文件正确，或点击"↻ Re-scan"重新上传。<br><em>If you see this warning, AI couldn't confirm it's a receipt. Verify your file or re-scan.</em></div>
+    </div>
+  </div>
+
+  <div class="card emp-accent">
+    <h3>✏️ 方法 B：手动填写 Method B: Manual Entry</h3>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:12px">没有单据或 AI 无法识别时，手动填写报销内容。<br><em>Use when no receipt is available or AI cannot read it.</em></p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>在上传页面点击 "fill in manually"</strong>
+          <p>跳过 AI 扫描，直接进入填写表格。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>填写描述、金额、日期 Fill in description, amount, date</strong>
+          <p>三项为必填。<br><em>All three fields are required.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>（可选）上传单据照片 (Optional) Upload receipt</strong>
+          <p>可后续添加。<br><em>Can be added later when editing.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>提交或保存草稿 Submit or Save Draft</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. View Claims -->
+  <div class="sec-title green">3. 查看我的申请 View My Claims</div>
+  <div class="card emp-accent">
+    <h3>☰ 所有申请列表 All Claims List</h3>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:12px">点击底部 ☰ Claims 进入列表，可按状态/月份/年份筛选。<br><em>Tap "☰ Claims" tab. Filter by status, month, or year.</em></p>
+
+    <div class="mockup" style="max-width:320px">
+      <div class="mockup-title">申请列表 empList</div>
+      <div style="display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="background:#1d4ed8;border-radius:99px;padding:2px 10px;font-size:10px;color:#fff;font-weight:600">All</span>
+        <span style="background:#f3f4f6;border-radius:99px;padding:2px 10px;font-size:10px;color:#6b7280">Submitted</span>
+        <span style="background:#f3f4f6;border-radius:99px;padding:2px 10px;font-size:10px;color:#6b7280">Approved</span>
+        <span style="background:#f3f4f6;border-radius:99px;padding:2px 10px;font-size:10px;color:#6b7280">Draft</span>
+      </div>
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:6px">3 claims · RM 420.50</div>
+      <div class="m-row" style="flex-direction:column;align-items:flex-start;gap:3px">
+        <div style="display:flex;width:100%;justify-content:space-between">
+          <span style="font-size:12px;font-weight:700">Housekeeping & Cleaning</span>
+          <span class="m-badge sub">Submitted</span>
+        </div>
+        <span style="font-size:10px;color:#9ca3af;font-family:monospace">HE-2026-03-00002 · RM 135.50</span>
+      </div>
+      <div class="m-row" style="flex-direction:column;align-items:flex-start;gap:3px">
+        <div style="display:flex;width:100%;justify-content:space-between">
+          <span style="font-size:12px;font-weight:700">TNB Electricity Bill</span>
+          <span class="m-badge appr">Approved</span>
+        </div>
+        <span style="font-size:10px;color:#9ca3af;font-family:monospace">HE-2026-03-00001 · RM 98.40</span>
+      </div>
+    </div>
+
+    <div class="tip blue" style="margin-top:12px">
+      <span class="tip-icon">👆</span>
+      <div class="tip-body"><strong>点击申请卡片 Tap any claim card</strong> → 查看详情 View full details</div>
+    </div>
+  </div>
+
+  <!-- 4. Claim Detail -->
+  <div class="sec-title green">4. 查看申请详情 Claim Detail</div>
+  <div class="card emp-accent">
+    <h3>📋 申请详情页 Claim Detail Page</h3>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:12px">显示申请的完整信息、附件单据、以及可用操作。<br><em>Shows full claim info, receipt attachments, and available actions.</em></p>
+
+    <div class="mockup" style="max-width:320px">
+      <div class="mockup-title">申请详情 claimDetail</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+        <div>
+          <div style="font-size:10px;color:#9ca3af;font-family:monospace">HE-2026-03-00002</div>
+          <div style="font-size:14px;font-weight:700">Housekeeping & Cleaning</div>
+        </div>
+        <span class="m-badge sub">Submitted</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+        <div style="background:#f9fafb;border-radius:8px;padding:8px"><div style="font-size:10px;color:#9ca3af">Category</div><div style="font-size:11px;font-weight:700">Housekeeping</div></div>
+        <div style="background:#f9fafb;border-radius:8px;padding:8px"><div style="font-size:10px;color:#9ca3af">Amount</div><div style="font-size:11px;font-weight:700">RM 135.50</div></div>
+        <div style="background:#f9fafb;border-radius:8px;padding:8px"><div style="font-size:10px;color:#9ca3af">Date</div><div style="font-size:11px;font-weight:700">2026-03-15</div></div>
+        <div style="background:#f9fafb;border-radius:8px;padding:8px"><div style="font-size:10px;color:#9ca3af">Status</div><div style="font-size:11px;font-weight:700">Submitted</div></div>
+      </div>
+      <div class="m-rcpt">🖼️ <span style="flex:1">Receipt 1</span> <span style="color:#9ca3af">Tap to view →</span></div>
+      <div class="m-rcpt">🖼️ <span style="flex:1">Receipt 2</span> <span style="color:#9ca3af">Tap to view →</span></div>
+      <div class="m-btn danger" style="width:100%;text-align:center;margin-top:10px;border-radius:8px">🗑 Delete Claim</div>
+    </div>
+  </div>
+
+  <!-- 5. Edit & Delete -->
+  <div class="sec-title green">5. 编辑与删除 Edit & Delete</div>
+  <div class="card emp-accent">
+    <h3>✏️ 何时可以编辑 When can I edit?</h3>
+    <table class="status-table" style="margin-top:8px">
+      <tr><th>状态 Status</th><th>可以编辑？ Can Edit?</th><th>可以删除？ Can Delete?</th></tr>
+      <tr><td><span class="m-badge draft" style="font-size:10px">Draft 草稿</span></td><td>✅ 是 Yes</td><td>✅ 是 Yes</td></tr>
+      <tr><td><span class="m-badge sub">Submitted 已提交</span></td><td>✅ 是 Yes</td><td>✅ 是 Yes</td></tr>
+      <tr><td><span class="m-badge appr">Approved 已批准</span></td><td>❌ 否 No</td><td>❌ 否 No</td></tr>
+      <tr><td><span class="m-badge rej">Rejected 已拒绝</span></td><td>❌ 否 No</td><td>❌ 否 No</td></tr>
+      <tr><td><span class="m-badge claimed">Claimed 已付款</span></td><td>🔒 锁定 Locked</td><td>🔒 锁定 Locked</td></tr>
+    </table>
+    <div class="tip amber" style="margin-top:10px">
+      <span class="tip-icon">⚠️</span>
+      <div class="tip-body"><strong>删除后无法恢复！Delete is permanent!</strong> 确认后无法撤销。<br><em>Once confirmed, the claim is permanently deleted.</em></div>
+    </div>
+  </div>
+
+</section>
+
+<hr class="divider">
+
+<!-- ═══════════════════════════════════════════
+     MANAGER
+════════════════════════════════════════════ -->
+<section id="manager">
+  <div class="role-banner mgr">
+    <div class="role-icon">👔</div>
+    <div>
+      <h2>经理操作指南 Manager Guide</h2>
+      <p>审批报销、记录费用、支付出款 / Approve claims, record expenses, process payouts</p>
+    </div>
+  </div>
+
+  <!-- Manager Dashboard -->
+  <div class="sec-title">1. 经理主页 Manager Dashboard</div>
+  <div class="card mgr-accent">
+    <h3>⊞ 仪表板总览 Dashboard Overview</h3>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:12px">登录后进入经理仪表板，显示总体报销状况和待处理申请。可按月份、年份、单位筛选。<br><em>After login, manager dashboard shows overall expense status and pending items. Filter by month, year, or unit.</em></p>
+
+    <div class="mockup">
+      <div class="mockup-title">经理仪表板 adminDash</div>
+      <div class="m-topbar"><span>⊞ Manager Dashboard</span><span style="font-size:10px;color:#9ca3af">Jack · Manager</span></div>
+      <div style="display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="background:#1d4ed8;color:#fff;border-radius:99px;padding:2px 10px;font-size:10px;font-weight:600">Mar</span>
+        <span style="background:#f3f4f6;border-radius:99px;padding:2px 10px;font-size:10px;color:#9ca3af">All</span>
+        <span style="background:#f3f4f6;border-radius:99px;padding:2px 10px;font-size:10px;color:#9ca3af">Unit A</span>
+      </div>
+      <div class="sgrid2">
+        <div style="background:#d1fae5;border-radius:10px;padding:10px"><div style="font-size:10px;color:#065f46">Reimbursable</div><div style="font-size:18px;font-weight:800;color:#065f46">RM 412.90</div><div style="font-size:10px;color:#065f46">2 claimed</div></div>
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px"><div style="font-size:10px;color:#9ca3af">Company paid</div><div style="font-size:18px;font-weight:800;color:#111">RM 560.00</div><div style="font-size:10px;color:#9ca3af">No reimbursement</div></div>
+      </div>
+      <div class="sgrid">
+        <div class="m-stat"><div class="num" style="color:#92400e">3</div><div class="lbl">Pending</div></div>
+        <div class="m-stat"><div class="num" style="color:#065f46">5</div><div class="lbl">Approved</div></div>
+        <div class="m-stat"><div class="num" style="color:#92400e">2</div><div class="lbl">Claimed</div></div>
+      </div>
+      <div style="font-size:11px;font-weight:700;color:#374151;margin:8px 0 5px">Pending Approval</div>
+      <div class="m-row"><span style="flex:1;font-size:11px;font-weight:600">Housekeeping — Ahmad</span><span class="m-badge sub">Submitted</span></div>
+      <div class="m-bottomnav">
+        <span class="active">⊞ Dash</span><span>☰ List</span><span>💳 Pay</span><span>👥 Staff</span><span>＋ Add</span>
+      </div>
+    </div>
+
+    <div class="tip blue" style="margin-top:12px">
+      <span class="tip-icon">📌</span>
+      <div class="tip-body"><strong>经理底部导航 Manager Navigation</strong><br>
+      ⊞ Dash — 仪表板 | ☰ List — 所有申请 | 💳 Pay — 付款 | 👥 Staff — 员工银行信息 | ＋ Add — 提交费用</div>
+    </div>
+  </div>
+
+  <!-- Review / Approve / Reject -->
+  <div class="sec-title">2. 审批申请 Review, Approve & Reject</div>
+  <div class="card mgr-accent">
+    <h3>✓ 如何审批 How to Approve/Reject</h3>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>点击仪表板上的待处理申请 Tap a pending claim on dashboard</strong>
+          <p>或点击底部导航 ☰ List → 筛选 "Submitted"<br><em>Or go to ☰ List and filter by "Submitted"</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>查看申请详情 Review claim details</strong>
+          <p>查看员工名字、金额、日期、单据。点击单据可放大查看。<br><em>Check employee, amount, date, receipt. Tap receipt to view.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>指定类别和单位 Assign category & unit</strong>
+          <p>从下拉列表选择。两项均为必填。<br><em>Select from dropdown. Both are required.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>批准或拒绝 Approve or Reject</strong>
+          <p>✓ Approve — 批准报销 | ✕ Reject — 需填写拒绝原因<br><em>✓ Approve the claim | ✕ Reject with a reason</em></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="mockup" style="max-width:320px;margin-top:14px">
+      <div class="mockup-title">审核页面 adminReview (Submitted)</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div><div style="font-size:10px;color:#9ca3af;font-family:monospace">HE-2026-03-00003</div><div style="font-size:13px;font-weight:700">Laundry Service</div></div>
+        <span class="m-badge sub">Submitted</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:10px">
+        <div style="background:#f9fafb;border-radius:7px;padding:7px"><div style="font-size:9px;color:#9ca3af">Employee</div><div style="font-size:10px;font-weight:700">Ahmad Razif</div></div>
+        <div style="background:#f9fafb;border-radius:7px;padding:7px"><div style="font-size:9px;color:#9ca3af">Amount</div><div style="font-size:10px;font-weight:700">RM 45.00</div></div>
+      </div>
+      <div class="m-rcpt">📄 <span style="flex:1">Receipt 1</span> <span style="color:#9ca3af">Tap to view →</span></div>
+      <div style="background:#f3f4f6;border-radius:7px;padding:7px;margin:8px 0 5px;font-size:11px;color:#9ca3af">Assign category ▼</div>
+      <div style="background:#f3f4f6;border-radius:7px;padding:7px;margin-bottom:8px;font-size:11px;color:#9ca3af">Assign unit ▼</div>
+      <div style="background:#f3f4f6;border-radius:7px;padding:7px;margin-bottom:8px;font-size:11px;color:#9ca3af">Rejection reason (optional)</div>
+      <div style="display:flex;gap:8px">
+        <div class="m-btn danger" style="flex:1;text-align:center">✕ Reject</div>
+        <div class="m-btn success" style="flex:1;text-align:center">✓ Approve</div>
+      </div>
+    </div>
+
+    <div class="tip amber" style="margin-top:10px">
+      <span class="tip-icon">✏️</span>
+      <div class="tip-body"><strong>批准后还能修改？Can I edit after approval?</strong> 是的，只要还没付款，点击左上角 "Edit →" 即可修改分类、单位、金额。<br><em>Yes! As long as not yet paid out, tap "Edit →" in the top bar.</em></div>
+    </div>
+  </div>
+
+  <!-- Manager Submit Expense -->
+  <div class="sec-title">3. 经理提交费用 Manager Submit Expense</div>
+  <div class="card mgr-accent">
+    <h3>＋ 两种提交方式 Two Types of Submission</h3>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:12px">点击底部 ＋ Add 进入提交页面。<br><em>Tap "＋ Add" in bottom navigation.</em></p>
+
+    <div class="sgrid2" style="margin-bottom:14px">
+      <div style="background:#d1fae5;border:1.5px solid #6ee7b7;border-radius:12px;padding:12px">
+        <div style="font-size:22px;margin-bottom:6px">👤</div>
+        <div style="font-size:12px;font-weight:800;color:#065f46">Employee Paid</div>
+        <div style="font-size:10px;color:#065f46;margin-top:3px">员工垫付，需要报销<br>Auto-Approved after submit</div>
+      </div>
+      <div style="background:#f3f4f6;border:1.5px solid #e5e7eb;border-radius:12px;padding:12px">
+        <div style="font-size:22px;margin-bottom:6px">🏢</div>
+        <div style="font-size:12px;font-weight:800;color:#374151">Company Paid</div>
+        <div style="font-size:10px;color:#6b7280;margin-top:3px">公司直接付款，只记录<br>Marked as Company-Paid</div>
+      </div>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>选择支付类型 Choose payment type</strong>
+          <p>👤 员工垫付（需报销）或 🏢 公司付款（只记录）<br><em>Employee paid (needs reimbursement) or Company paid (record only)</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>（可选）AI 扫描单据 (Optional) Scan receipt with AI</strong>
+          <p>点击 "📷 Scan Receipt with AI" 自动填写金额和描述。<br><em>Tap to auto-fill amount and description.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>填写员工、类别、单位、描述、金额、日期</strong>
+          <p>Employee paid 需要选择员工姓名。<br><em>For Employee paid, select the employee name.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>点击提交 Tap Submit</strong>
+          <p>Employee paid → 自动标记为 Auto-Approved<br>Company paid → 直接标记为 Company-Paid</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pay Out -->
+  <div class="sec-title">4. 付款给员工 Pay Out to Employees</div>
+  <div class="card mgr-accent">
+    <h3>💳 付款流程 Payout Process</h3>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:12px">只有状态为 <span class="m-badge appr" style="font-size:10px">Approved</span> 或 <span class="m-badge auto" style="font-size:10px">Auto-Approved</span> 的申请才会出现在付款页面。<br><em>Only Approved / Auto-Approved claims appear here.</em></p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>点击底部 💳 Pay 进入付款页面</strong>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>勾选要付款的申请 Check the claims to pay</strong>
+          <p>可按员工折叠/展开，查看每位员工的银行账号。<br><em>Expand each employee to see their bank account details.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>做银行转账 Make bank transfer</strong>
+          <p>根据显示的账号和金额进行转账。<br><em>Transfer the shown amount to the displayed bank account.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>上传转账凭证 Upload transfer slip</strong>
+          <p>拍下银行转账截图上传到系统。<br><em>Take a screenshot of the transfer and upload it.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <strong>点击 "Mark as Claimed" 确认付款</strong>
+          <p>申请状态变为 <span class="m-badge claimed" style="font-size:10px">Claimed</span>，员工可在详情页查看转账凭证。<br><em>Status changes to Claimed. Employee can view slip in claim detail.</em></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="mockup" style="margin-top:14px">
+      <div class="mockup-title">付款页面 adminPay</div>
+      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="width:18px;height:18px;background:#1d4ed8;border-radius:4px;display:flex;align-items:center;justify-content:center"><span style="font-size:9px;color:#fff">✓</span></div>
+          <div style="width:28px;height:28px;background:#dbeafe;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#1d4ed8">AR</div>
+          <div style="flex:1"><div style="font-size:12px;font-weight:700">Ahmad Razif</div><div style="font-size:10px;color:#9ca3af">Maybank · 1234 5678 9012</div></div>
+          <div style="font-size:12px;font-weight:700">RM 233.90</div>
+        </div>
+        <div style="background:#f0fdf4;border-radius:7px;padding:8px;font-size:10px;color:#065f46;margin-bottom:6px">
+          <div style="font-weight:700;margin-bottom:4px">Bank Transfer Details</div>
+          <div>Bank: <b>Maybank</b></div>
+          <div>Account: <b>1234 5678 9012</b></div>
+          <div>Name: <b>Ahmad Razif bin Abdullah</b></div>
+        </div>
+        <div style="background:#d1fae5;border-radius:7px;padding:7px;display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#065f46">
+          <span>Transfer amount</span><span>RM 233.90</span>
+        </div>
+      </div>
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin-bottom:8px">
+        <div style="font-size:11px;font-weight:700;margin-bottom:6px">Upload bank transfer slip</div>
+        <div class="m-zone" style="padding:12px"><div class="icon" style="font-size:20px">📷</div><small>Tap to upload slip</small></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:8px">
+        <span style="color:#6b7280">Total payout</span><span style="font-weight:700">RM 233.90</span>
+      </div>
+      <div class="m-btn" style="background:#f59e0b;color:#fff;width:100%;text-align:center;border-radius:8px">Mark as Claimed</div>
+    </div>
+
+    <div class="tip red">
+      <span class="tip-icon">❗</span>
+      <div class="tip-body"><strong>银行信息不完整？Missing bank info?</strong> 需要先到 👥 Staff 页面为员工添加银行信息，否则无法完成付款。<br><em>Must add bank info in Staff page first, otherwise payout is blocked.</em></div>
+    </div>
+  </div>
+
+  <!-- Staff / Bank Info -->
+  <div class="sec-title">5. 员工银行信息 Staff Bank Info</div>
+  <div class="card mgr-accent">
+    <h3>👥 管理员工银行账号 Manage Employee Bank Accounts</h3>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:12px">点击底部 👥 Staff 进入。付款前必须先填入每位员工的银行信息。<br><em>Tap "👥 Staff" in bottom navigation. Required before processing payouts.</em></p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>点击员工名字 Tap employee name</strong>
+          <p>列表显示哪些员工缺少银行信息（红色 ❌）。<br><em>Red ❌ means bank info is missing.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>填入银行名称、账号、全名</strong>
+          <p>全名必须与银行记录一致。<br><em>Full name must match bank records exactly.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>点击 "Save Bank Info" 保存</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<hr class="divider">
+
+<!-- ═══════════════════════════════════════════
+     ADMIN
+════════════════════════════════════════════ -->
+<section id="admin">
+  <div class="role-banner adm">
+    <div class="role-icon">🛡️</div>
+    <div>
+      <h2>管理员操作指南 Admin Guide</h2>
+      <p>拥有经理所有权限 + 用户管理 / All manager permissions + user management</p>
+    </div>
+  </div>
+
+  <div class="tip blue" style="margin-bottom:16px">
+    <span class="tip-icon">ℹ️</span>
+    <div class="tip-body"><strong>Admin = Manager 的所有功能 + 用户管理</strong><br>以上所有经理操作，Admin 均可执行。本章节只列额外的用户管理功能。<br><em>Admin has all manager features plus user account management described below.</em></div>
+  </div>
+
+  <!-- Manage Users -->
+  <div class="sec-title purple">1. 管理用户账号 Manage User Accounts</div>
+  <div class="card adm-accent">
+    <h3>👥 进入用户管理 Access User Management</h3>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:12px">在仪表板 ⊞ Dash 页面，点击 "Manage Users" 蓝色卡片。<br><em>On the dashboard, tap the blue "Manage Users" card.</em></p>
+
+    <div class="mockup" style="max-width:320px">
+      <div class="mockup-title">用户列表 adminUsers</div>
+      <div class="m-info blue" style="margin-bottom:8px">5 users · Only admin can manage</div>
+      <div class="m-row" style="gap:10px">
+        <div style="width:30px;height:30px;background:#dbeafe;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#1d4ed8;flex-shrink:0">AR</div>
+        <div style="flex:1"><div style="font-size:12px;font-weight:700">Ahmad Razif</div><div style="font-size:10px;color:#6b7280">@ahmad · Employee</div></div>
+        <span style="font-size:11px;color:#1d4ed8;text-decoration:underline;cursor:pointer">Edit</span>
+      </div>
+      <div class="m-row" style="gap:10px">
+        <div style="width:30px;height:30px;background:#ede9fe;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#7c3aed;flex-shrink:0">JP</div>
+        <div style="flex:1"><div style="font-size:12px;font-weight:700">Jack Pang</div><div style="font-size:10px;color:#6b7280">@jackpang · Admin</div></div>
+        <span style="font-size:10px;color:#9ca3af">You</span>
+      </div>
+      <div style="margin-top:10px;border:1.5px dashed #93c5fd;border-radius:8px;padding:8px;text-align:center;font-size:12px;font-weight:700;color:#1d4ed8">＋ Add New User</div>
+    </div>
+  </div>
+
+  <div class="card adm-accent">
+    <h3>➕ 新增用户 Add New User</h3>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num purple">1</div>
+        <div class="step-body">
+          <strong>点击 "＋ Add New User" Tap Add New User</strong>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num purple">2</div>
+        <div class="step-body">
+          <strong>填写用户名、全名、角色、密码</strong>
+          <p>用户名自动加上 @homestay.app 后缀。密码最少 6 个字符。<br><em>Username gets @homestay.app suffix. Password minimum 6 characters.</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num purple">3</div>
+        <div class="step-body">
+          <strong>选择角色 Choose role</strong>
+          <p>Employee（员工）或 Manager（经理）<br><em>Employee or Manager</em></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num purple">4</div>
+        <div class="step-body">
+          <strong>点击 "Create Account" 创建</strong>
+          <p>账号立即生效，用户可以用新密码登录。<br><em>Account is active immediately.</em></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="mockup" style="max-width:300px;margin-top:12px">
+      <div class="mockup-title">新增用户 userForm</div>
+      <div class="m-info blue" style="margin-bottom:8px">Creating new user account</div>
+      <div style="background:#f3f4f6;border-radius:7px;padding:8px;margin-bottom:6px;font-size:11px;color:#9ca3af">Username (e.g. ahmad)</div>
+      <div style="background:#f3f4f6;border-radius:7px;padding:8px;margin-bottom:6px;font-size:11px;color:#9ca3af">Full name</div>
+      <div style="background:#f3f4f6;border-radius:7px;padding:8px;margin-bottom:6px;font-size:11px;color:#9ca3af">Role: Employee ▼</div>
+      <div style="background:#f3f4f6;border-radius:7px;padding:8px;margin-bottom:10px;font-size:11px;color:#9ca3af">Password (min. 6 chars)</div>
+      <div class="m-btn primary" style="width:100%;text-align:center;border-radius:8px">Create Account</div>
+    </div>
+  </div>
+
+  <div class="card adm-accent">
+    <h3>✏️ 编辑用户 Edit User &nbsp;|&nbsp; 🚫 停用账号 Deactivate Account</h3>
+    <table class="status-table" style="margin-top:8px">
+      <tr><th>操作 Action</th><th>说明 Description</th></tr>
+      <tr><td><strong>Edit</strong></td><td>修改全名、角色、密码（留空则不改密码）<br><em>Change name, role, or password (leave blank to keep current)</em></td></tr>
+      <tr><td><strong>Deactivate</strong></td><td>禁止该用户登录，但保留历史数据<br><em>Blocks login but keeps all historical data</em></td></tr>
+      <tr><td><strong>Reactivate</strong></td><td>重新启用已停用的账号<br><em>Re-enables a deactivated account</em></td></tr>
+    </table>
+    <div class="tip red" style="margin-top:10px">
+      <span class="tip-icon">🔒</span>
+      <div class="tip-body"><strong>无法删除 Admin 账号 Cannot delete admin accounts</strong><br>系统保护管理员账号，防止意外锁定系统。<br><em>Admin accounts are protected to prevent accidental system lockout.</em></div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ═══════════════════════════════════════════
+     STATUS REFERENCE
+════════════════════════════════════════════ -->
+<section id="statuses">
+  <div class="role-banner" style="background:#f3f4f6;border:1.5px solid #e5e7eb">
+    <div class="role-icon">📊</div>
+    <div>
+      <h2 style="color:#374151">申请状态说明 Claim Status Guide</h2>
+      <p style="color:#6b7280">所有状态的含义 / What each status means</p>
+    </div>
+  </div>
+
+  <!-- Status flow -->
+  <div class="card">
+    <h3>🔄 申请流程图 Claim Workflow</h3>
+    <div class="flow" style="margin:14px 0">
+      <div class="flow-box" style="background:#f3f4f6;color:#6b7280">Draft<br><span style="font-size:9px">草稿</span></div>
+      <span class="flow-arr">→</span>
+      <div class="flow-box" style="background:#dbeafe;color:#1d4ed8">Submitted<br><span style="font-size:9px">已提交</span></div>
+      <span class="flow-arr">→</span>
+      <div class="flow-box" style="background:#d1fae5;color:#065f46">Approved<br><span style="font-size:9px">已批准</span></div>
+      <span class="flow-arr">→</span>
+      <div class="flow-box" style="background:#fef3c7;color:#92400e">Claimed<br><span style="font-size:9px">已付款</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+      <div class="flow-box" style="background:#dbeafe;color:#1d4ed8">Submitted</div>
+      <span class="flow-arr">→</span>
+      <div class="flow-box" style="background:#fee2e2;color:#991b1b">Rejected<br><span style="font-size:9px">已拒绝</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap">
+      <div style="font-size:11px;color:#6b7280">经理提交 Manager submits →</div>
+      <div class="flow-box" style="background:#d1fae5;color:#065f46">Auto-Approved</div>
+      <span class="flow-arr">→</span>
+      <div class="flow-box" style="background:#fef3c7;color:#92400e">Claimed</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap">
+      <div style="font-size:11px;color:#6b7280">公司付款 Company pays →</div>
+      <div class="flow-box" style="background:#f3f4f6;color:#374151">Company-Paid</div>
+    </div>
+  </div>
+
+  <table class="status-table" style="margin-top:12px">
+    <tr>
+      <th>状态 Status</th>
+      <th>说明 Meaning</th>
+      <th>下一步 Next Step</th>
+    </tr>
+    <tr>
+      <td><span class="m-badge draft">Draft</span></td>
+      <td>已保存草稿，未提交<br><em>Saved but not submitted</em></td>
+      <td>员工可继续编辑或提交<br><em>Employee can edit or submit</em></td>
+    </tr>
+    <tr>
+      <td><span class="m-badge sub">Submitted</span></td>
+      <td>已提交，等待经理审批<br><em>Submitted, awaiting manager review</em></td>
+      <td>经理审批<br><em>Manager to Approve or Reject</em></td>
+    </tr>
+    <tr>
+      <td><span class="m-badge appr">Approved</span></td>
+      <td>经理已批准，等待付款<br><em>Approved by manager, awaiting payout</em></td>
+      <td>经理付款<br><em>Manager processes payout</em></td>
+    </tr>
+    <tr>
+      <td><span class="m-badge rej">Rejected</span></td>
+      <td>申请被拒绝<br><em>Claim was rejected</em></td>
+      <td>查看拒绝原因<br><em>See rejection reason in claim detail</em></td>
+    </tr>
+    <tr>
+      <td><span class="m-badge claimed">Claimed</span></td>
+      <td>已付款给员工<br><em>Payment transferred to employee</em></td>
+      <td>可在详情页查看转账凭证<br><em>View bank slip in claim detail</em></td>
+    </tr>
+    <tr>
+      <td><span class="m-badge auto">Auto-Approved</span></td>
+      <td>经理直接提交，自动批准<br><em>Submitted by manager, auto-approved</em></td>
+      <td>等待付款（与Approved相同）<br><em>Same as Approved — awaiting payout</em></td>
+    </tr>
+    <tr>
+      <td><span class="m-badge cpaid">Company-Paid</span></td>
+      <td>公司直接付款，只作记录<br><em>Paid directly by company, record only</em></td>
+      <td>无需报销<br><em>No reimbursement needed</em></td>
+    </tr>
+  </table>
+
+  <!-- FAQ -->
+  <div class="sec-title" style="margin-top:28px">常见问题 FAQ</div>
+  <div class="card">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:#111">Q: AI 无法识别我的单据怎么办？<br><em>AI can't read my receipt?</em></div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px">A: 点击 "↻ Re-scan" 重新上传更清晰的照片，或点击 "fill in manually" 手动填写。<br><em>Tap "↻ Re-scan" to upload a clearer photo, or fill in manually.</em></div>
+      </div>
+      <div style="border-top:1px solid #f3f4f6;padding-top:14px">
+        <div style="font-size:13px;font-weight:700;color:#111">Q: 我的申请已 Submitted，还能修改吗？<br><em>Can I edit a Submitted claim?</em></div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px">A: 可以，在详情页点击 "Edit →"，重新修改后会自动重新提交。<br><em>Yes, tap "Edit →" in claim detail. It will re-submit after saving.</em></div>
+      </div>
+      <div style="border-top:1px solid #f3f4f6;padding-top:14px">
+        <div style="font-size:13px;font-weight:700;color:#111">Q: 申请被拒绝后怎么办？<br><em>My claim was rejected. What now?</em></div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px">A: 查看拒绝原因，联系经理解决，或重新提交新申请。<br><em>Read the rejection reason and contact your manager, or submit a new claim.</em></div>
+      </div>
+      <div style="border-top:1px solid #f3f4f6;padding-top:14px">
+        <div style="font-size:13px;font-weight:700;color:#111">Q: 经理看不到 "Manage Users" 按钮？<br><em>Manager can't see "Manage Users"?</em></div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px">A: "Manage Users" 只有 Admin 角色才能看到。Manager 无法管理用户账号。<br><em>"Manage Users" is only visible to Admin role accounts.</em></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div><!-- end .page -->
+
+<footer>
+  <div>🏠 Homestay Expense System — User Manual v2026.03</div>
+  <div style="margin-top:4px">For support, contact your system administrator.</div>
+</footer>
+
+</body>
+</html>
