@@ -65,44 +65,65 @@ serve(async (req: Request) => {
       );
     }
 
-    const { fileUrl, mimeType } = await req.json();
-    if (!fileUrl) {
+    const { fileUrl, mimeType, base64Data: clientBase64 } = await req.json();
+    if (!fileUrl && !clientBase64) {
       return new Response(
-        JSON.stringify({ error: "fileUrl is required" }),
+        JSON.stringify({ error: "fileUrl or base64Data is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const detectedMime: string =
-      mimeType ||
-      (fileUrl.match(/\.(jpg|jpeg)$/i) ? "image/jpeg"
-        : fileUrl.match(/\.png$/i) ? "image/png"
-        : fileUrl.match(/\.gif$/i) ? "image/gif"
-        : fileUrl.match(/\.webp$/i) ? "image/webp"
-        : "image/jpeg");
+    let base64Data: string;
+    let detectedMime: string = mimeType || "image/jpeg";
 
-    // Download image and base64 encode for reliable delivery
-    const fileResponse = await fetch(fileUrl);
-    if (!fileResponse.ok) {
-      return new Response(
-        JSON.stringify({ error: "Failed to download image from storage" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (clientBase64) {
+      // Client sent base64 directly — extract raw base64 from data URL if needed
+      if (clientBase64.startsWith("data:")) {
+        const parts = clientBase64.split(",");
+        base64Data = parts[1] || "";
+        const mimeMatch = parts[0].match(/data:([^;]+)/);
+        if (mimeMatch && !mimeType) detectedMime = mimeMatch[1];
+      } else {
+        base64Data = clientBase64;
+      }
+      // Size check (~base64 is ~4/3 of original)
+      if (base64Data.length > 7 * 1024 * 1024) {
+        return new Response(
+          JSON.stringify({ error: "Image too large. Please use a photo under 5MB." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    } else {
+      // Legacy: download from fileUrl
+      detectedMime = mimeType ||
+        (fileUrl.match(/\.(jpg|jpeg)$/i) ? "image/jpeg"
+          : fileUrl.match(/\.png$/i) ? "image/png"
+          : fileUrl.match(/\.gif$/i) ? "image/gif"
+          : fileUrl.match(/\.webp$/i) ? "image/webp"
+          : "image/jpeg");
+
+      const fileResponse = await fetch(fileUrl);
+      if (!fileResponse.ok) {
+        return new Response(
+          JSON.stringify({ error: "Failed to download image from storage" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const fileBuffer = await fileResponse.arrayBuffer();
+      if (fileBuffer.byteLength > 5 * 1024 * 1024) {
+        return new Response(
+          JSON.stringify({ error: "Image too large. Please use a photo under 5MB." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const bytes = new Uint8Array(fileBuffer);
+      let binary = "";
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+      base64Data = btoa(binary);
     }
-    const fileBuffer = await fileResponse.arrayBuffer();
-    if (fileBuffer.byteLength > 5 * 1024 * 1024) {
-      return new Response(
-        JSON.stringify({ error: "Image too large. Please use a photo under 5MB." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    const bytes = new Uint8Array(fileBuffer);
-    let binary = "";
-    const chunkSize = 8192;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-    }
-    const base64Data = btoa(binary);
 
     const categoryList = JSON.stringify(CATEGORIES);
     const prompt = `You are an expert receipt/invoice analyzer. Your PRIMARY FOCUS is to extract **every line item**, **each item's amount**, the **total amount**, and the **date** from this receipt or invoice.
@@ -136,6 +157,12 @@ EXAMPLES of what NOT to do:
 - Water bill shows "Usage: 15 m3" and "Amount: RM 8.50" → price = 8.50 (NOT 15)
 - Electric bill shows "234 kWh" and "RM 98.40" → price = 98.40 (NOT 234)
 
+REFERENCE NUMBER EXTRACTION:
+- Look for invoice number, bill number, reference number, account number, receipt number on the document
+- Return in the "reference_number" field
+- If multiple reference numbers exist, return the most prominent one (invoice/bill number preferred)
+- If no reference number is found, return empty string
+
 Return this exact JSON structure:
 {
   "items": [
@@ -145,6 +172,7 @@ Return this exact JSON structure:
   "total": 45.80,
   "date": "YYYY-MM-DD",
   "summary": "brief 1-line summary of what this receipt is for",
+  "reference_number": "invoice or bill number if found",
   "is_receipt": true
 }
 is_receipt: set to false ONLY if you are confident this image is NOT a receipt or invoice (e.g. selfie, nature photo, ID card, blank document, screenshot with no transaction data). Default to true for any document showing payment, purchase, billing, or utility information.`;
@@ -250,6 +278,7 @@ is_receipt: set to false ONLY if you are confident this image is NOT a receipt o
       total: Number(parsed.total) || 0,
       date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.date) ? parsed.date : "",
       summary: String(parsed.summary || "Receipt"),
+      reference_number: String(parsed.reference_number || ""),
       is_receipt: parsed.is_receipt !== false,
     };
 

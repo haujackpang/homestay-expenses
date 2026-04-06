@@ -185,7 +185,7 @@ async function loadClaims(){
   var q=sb.from('claims').select('*').order('created_at',{ascending:false});
   var{data,error}=await q;
   if(error){console.error('loadClaims:',error);return;}
-  claims=data.map(function(r){return{id:r.claim_id,uid:r.id,emp:r.emp||'',unit:r.unit||'',category:r.category||'',desc:r.description,amount:parseFloat(r.amount),date:r.date,status:r.status,rejectReason:r.reject_reason||'',slipRef:r.slip_ref||'',payType:r.pay_type,submittedBy:r.submitted_by};});
+  claims=data.map(function(r){return{id:r.claim_id,uid:r.id,emp:r.emp||'',unit:r.unit||'',category:r.category||'',desc:r.description,amount:parseFloat(r.amount),date:r.date,expMonth:r.expense_month||r.date.slice(0,7),status:r.status,rejectReason:r.reject_reason||'',slipRef:r.slip_ref||'',payType:r.pay_type,submittedBy:r.submitted_by};});
 }
 async function loadBankInfo(){
   var{data,error}=await sb.from('bank_info').select('*');
@@ -197,7 +197,7 @@ async function loadBankInfo(){
     var inactiveNames={};var adminNames={};
     if(profs)profs.forEach(function(p){if(p.active===false)inactiveNames[p.full_name]=true;if(p.role==='admin')adminNames[p.full_name]=true;});
     ACTIVE_EMPS=EMPS.filter(function(e){return!inactiveNames[e]&&!adminNames[e];});
-  if(mgrFormEmp===''&&ACTIVE_EMPS.length)mgrFormEmp=ACTIVE_EMPS[0];
+  if(mgrFormEmp===''&&ACTIVE_EMPS.length)mgrFormEmp=myName();
 }
 async function loadUnits(){
   var{data,error}=await sb.from('units').select('*').order('name');
@@ -235,7 +235,7 @@ async function getNextClaimId(prefix){
 }
 
 async function dbInsertClaim(c){
-  var{error}=await sb.from('claims').insert({claim_id:c.id,emp:c.emp,unit:c.unit,category:c.category,description:c.desc,amount:c.amount,date:c.date,status:c.status,reject_reason:c.rejectReason,slip_ref:c.slipRef,pay_type:c.payType,submitted_by:c.submittedBy,created_by:currentUser.id});
+  var{error}=await sb.from('claims').insert({claim_id:c.id,emp:c.emp,unit:c.unit,category:c.category,description:c.desc,amount:c.amount,date:c.date,expense_month:c.expMonth||c.date.slice(0,7),status:c.status,reject_reason:c.rejectReason,slip_ref:c.slipRef,pay_type:c.payType,submitted_by:c.submittedBy,created_by:currentUser.id});
   if(error)console.error('dbInsertClaim:',error);
   return !error;
 }
@@ -249,6 +249,7 @@ async function dbUpdateClaim(claimId,fields){
   if(fields.unit!==undefined)upd.unit=fields.unit;
   if(fields.rejectReason!==undefined)upd.reject_reason=fields.rejectReason;
   if(fields.slipRef!==undefined)upd.slip_ref=fields.slipRef;
+  if(fields.expMonth!==undefined)upd.expense_month=fields.expMonth;
   var{error}=await sb.from('claims').update(upd).eq('claim_id',claimId);
   if(error)console.error('dbUpdateClaim:',error);
   return !error;
@@ -422,11 +423,17 @@ function sbadge(s){
   return '<span class="badge '+(m[s]||'b-draft')+'"><span class="bd"></span>'+s+'</span>';
 }
 function ccCard(c,fn){
+  var emTag=c.expMonth&&c.expMonth!==c.date.slice(0,7)?'<span style="font-size:9px;background:#dbeafe;color:#1d4ed8;border-radius:99px;padding:1px 5px;border:1px solid #93c5fd">'+c.expMonth+'</span>':'';
   var byTag=c.submittedBy==='manager'?'<span style="font-size:9px;color:#6b7280;background:#f3f4f6;border-radius:99px;padding:1px 4px;border:1px solid #e5e7eb;margin-left:3px">mgr</span>':'';
   var unitTag=c.unit?'<span style="font-size:9px;background:#f3f4f6;color:#6b7280;border-radius:99px;padding:1px 5px;border:1px solid #e5e7eb">'+c.unit+'</span>':'';
-  return '<div class="cc" onclick="'+fn+'"><div style="flex:1;min-width:0"><div class="cc-id">'+c.id+'</div><div class="cc-desc">'+c.desc+'</div><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px">'+(c.category?'<span style="font-size:10px;color:#6b7280">'+c.category+'</span>':'<span style="font-size:10px;color:#9ca3af;font-style:italic">No category</span>')+(R==='admin'&&c.emp?'<span style="font-size:10px;color:#9ca3af">· '+c.emp.split(' ')[0]+'</span>'+byTag:'')+unitTag+'</div></div><div class="cc-r"><div class="cc-amt">RM '+c.amount.toFixed(2)+'</div>'+sbadge(dstat(c.status))+'</div></div>';
+  return '<div class="cc" onclick="'+fn+'"><div style="flex:1;min-width:0"><div class="cc-id">'+c.id+'</div><div class="cc-desc">'+c.desc+'</div><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px">'+(c.category?'<span style="font-size:10px;color:#6b7280">'+c.category+'</span>':'<span style="font-size:10px;color:#9ca3af;font-style:italic">No category</span>')+(R==='admin'&&c.emp?'<span style="font-size:10px;color:#9ca3af">· '+c.emp.split(' ')[0]+'</span>'+byTag:'')+unitTag+emTag+'</div></div><div class="cc-r"><div class="cc-amt">RM '+c.amount.toFixed(2)+'</div>'+sbadge(dstat(c.status))+'</div></div>';
 }
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
+function expMonthSelect(selVal){
+  var now=new Date();var opts=[];
+  for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();opts.push('<option value="'+v+'"'+(selVal===v?' selected':'')+'>'+lbl+'</option>');}
+  return'<div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="f-expmonth">'+opts.join('')+'</select></div>';
+}
 function ss(s,p){PS=p||S;S=s;pendingFiles=[];pendingFileNames=[];if(s!=='newClaim'){aiResult=null;aiError='';aiAnalyzing=false;newClaimStep='upload';}render();}
 function goBack(){ss(PS||(R==='admin'?'adminDash':'empHome'));}
 
@@ -464,7 +471,7 @@ async function uploadAllFiles(claimId){
   for(var i=0;i<pendingFiles.length;i++){
     var f=pendingFiles[i];
     var ext=f.name.split('.').pop().toLowerCase();
-    var path='receipts/'+claimId+'/receipt_'+Date.now()+'_'+i+'.'+ext;
+    var path='receipts/'+claimId+'/'+claimId+'_'+(i+1)+'.'+ext;
     var res=await sb.storage.from('receipts').upload(path,f,{upsert:true});
     if(res.error){console.error('Upload error:',res.error);toast('Upload failed: '+f.name);continue;}
     var{data:urlData}=sb.storage.from('receipts').getPublicUrl(path);
@@ -570,28 +577,25 @@ async function startAIAnalysis(){
   try{
     var f=pendingFiles[0];
     var ext=f.name.split('.').pop().toLowerCase();
-    var tmpId='TMP-'+Date.now();
-    var path='receipts/'+tmpId+'/receipt_'+Date.now()+'_0.'+ext;
-    var res=await sb.storage.from('receipts').upload(path,f,{upsert:true});
-    if(res.error){throw new Error('Upload failed: '+res.error.message);}
-    var{data:urlData}=sb.storage.from('receipts').getPublicUrl(path);
-    var fileUrl=urlData.publicUrl;
     var mimeMap={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',pdf:'application/pdf'};
     var mimeType=mimeMap[ext]||'image/jpeg';
+    // Convert file to base64 and send directly to AI (no TMP upload)
+    var reader=new FileReader();
+    var base64=await new Promise(function(resolve,reject){reader.onload=function(){resolve(reader.result);};reader.onerror=reject;reader.readAsDataURL(f);});
     var{data:sessData}=await sb.auth.getSession();
-    var authToken=sessData?.session?.access_token||SUPABASE_KEY;
+    var authToken=sessData?.session?.access_token||'';
+    if(!authToken){var{data:refData}=await sb.auth.refreshSession();authToken=refData?.session?.access_token||'';}
+    if(!authToken)authToken=SUPABASE_KEY;
     var resp=await fetch(SUPABASE_URL+'/functions/v1/analyze-receipt',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
-      body:JSON.stringify({fileUrl:fileUrl,mimeType:mimeType})
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken,'apikey':SUPABASE_KEY},
+      body:JSON.stringify({base64Data:base64,mimeType:mimeType})
     });
     if(!resp.ok){
       var errBody=await resp.json().catch(function(){return{error:'Analysis failed'};});
       throw new Error(errBody.error||'Analysis failed (HTTP '+resp.status+')');
     }
     aiResult=await resp.json();
-    aiResult._fileUrl=fileUrl;
-    aiResult._filePath=path;
     newClaimStep='review';
   }catch(e){
     console.error('AI analysis error:',e);
@@ -616,23 +620,27 @@ function generateDescription(ai){
   var cat=ai.category||'';
   var summary=(ai.summary||'').toLowerCase();
   var items=ai.items||[];
+  var refNo=ai.reference_number||'';
   var allText=(summary+' '+items.map(function(i){return i.name;}).join(' ')).toLowerCase();
-  if(allText.match(/electric|tnb|tenaga|elektrik|kwh/)) return 'Electricity Bill';
-  if(allText.match(/water bill|syabas|air bersih|pba|water supply|indah water/)||cat==='Utilities'&&allText.match(/water/)) return 'Water Bill';
-  if(allText.match(/internet|broadband|fibre|fiber|unifi|streamyx|tm one|maxis|celcom|digi fiber/)) return 'Internet Bill';
-  if(allText.match(/\bgas\b|petgas|gas supply|gas bill/)) return 'Gas Bill';
-  if(allText.match(/petrol|fuel|diesel|petronas|shell|caltex|ron\s*9|ron\s*95|ron\s*97|bph/)) return 'Fuel Purchase';
-  if(cat==='Laundry'||allText.match(/laundry|dobi|launder/)) return 'Laundry';
-  if(cat==='Housekeeping & Cleaning'||allText.match(/housekeep|cleaning service|cuci rumah/)) return 'Housekeeping & Cleaning';
-  if(cat==='Daily Products'||allText.match(/daily product|toiletries|toiletry|sabun|shampoo|tissue/)) return 'Daily Products Purchase';
-  if(cat==='Hospitality Items'||allText.match(/hospitality|amenity|amenities|towel|pillow|bedsheet/)) return 'Hospitality Items';
-  if(cat==='Maintenance & Repair'||allText.match(/repair|maintenance|servis|fix|plumb/)) return 'Maintenance & Repair';
-  if(cat==='Electrical & Unit Setup'||allText.match(/electrical setup|unit setup|aircond install|wiring/)) return 'Electrical & Unit Setup';
-  if(cat==='Office Expenses'||allText.match(/office|stationery|printing|photocopy/)) return 'Office Expenses';
-  if(cat==='Employee Welfare'||allText.match(/welfare|medical|meal allowance/)) return 'Employee Welfare';
-  if(cat==='Outsource Cleaning Staff'||allText.match(/outsource|cleaning staff|contractor/)) return 'Outsource Cleaning Staff';
-  if(cat==='Unit Renovation'||allText.match(/renovation|renovate|paint|tile/)) return 'Unit Renovation';
-  return ai.summary||'Receipt';
+  var desc='';
+  if(allText.match(/electric|tnb|tenaga|elektrik|kwh/)) desc='Electricity Bill';
+  else if(allText.match(/water bill|syabas|air bersih|pba|water supply|indah water/)||cat==='Utilities'&&allText.match(/water/)) desc='Water Bill';
+  else if(allText.match(/internet|broadband|fibre|fiber|unifi|streamyx|tm one|maxis|celcom|digi fiber/)) desc='Internet Bill';
+  else if(allText.match(/\bgas\b|petgas|gas supply|gas bill/)) desc='Gas Bill';
+  else if(allText.match(/petrol|fuel|diesel|petronas|shell|caltex|ron\s*9|ron\s*95|ron\s*97|bph/)) desc='Fuel Purchase';
+  else if(cat==='Laundry'||allText.match(/laundry|dobi|launder/)) desc='Laundry';
+  else if(cat==='Housekeeping & Cleaning'||allText.match(/housekeep|cleaning service|cuci rumah/)) desc='Housekeeping & Cleaning';
+  else if(cat==='Daily Products'||allText.match(/daily product|toiletries|toiletry|sabun|shampoo|tissue/)) desc='Daily Products Purchase';
+  else if(cat==='Hospitality Items'||allText.match(/hospitality|amenity|amenities|towel|pillow|bedsheet/)) desc='Hospitality Items';
+  else if(cat==='Maintenance & Repair'||allText.match(/repair|maintenance|servis|fix|plumb/)) desc='Maintenance & Repair';
+  else if(cat==='Electrical & Unit Setup'||allText.match(/electrical setup|unit setup|aircond install|wiring/)) desc='Electrical & Unit Setup';
+  else if(cat==='Office Expenses'||allText.match(/office|stationery|printing|photocopy/)) desc='Office Expenses';
+  else if(cat==='Employee Welfare'||allText.match(/welfare|medical|meal allowance/)) desc='Employee Welfare';
+  else if(cat==='Outsource Cleaning Staff'||allText.match(/outsource|cleaning staff|contractor/)) desc='Outsource Cleaning Staff';
+  else if(cat==='Unit Renovation'||allText.match(/renovation|renovate|paint|tile/)) desc='Unit Renovation';
+  else desc=ai.summary||'Receipt';
+  if(refNo) desc=desc+' - '+refNo;
+  return desc;
 }
 function formatAiDescription(ai){
   return generateDescription(ai);
@@ -651,16 +659,19 @@ window.restartAIScan=restartAIScan;
 function filterClaims(list,st,mo,yr,em){
   return list.filter(function(c){
     if(st&&st!=='All'){var cs=R!=='admin'?dstat(c.status):c.status;if(cs!==st)return false;}
-    if(mo&&mo!=='All'&&c.date.slice(5,7)!==mo)return false;
-    if(yr&&yr!=='All'&&c.date.slice(0,4)!==yr)return false;
+    var em_=c.expMonth||c.date.slice(0,7);
+    if(mo&&mo!=='All'&&em_.slice(5,7)!==mo)return false;
+    if(yr&&yr!=='All'&&em_.slice(0,4)!==yr)return false;
     if(em&&em!=='All'&&c.emp!==em)return false;
     return true;
   });
 }
 
 // ===== ASYNC ACTIONS =====
-async function approveClaim(id,cat,unit){
-  await dbUpdateClaim(id,{status:'Approved',category:cat||undefined,unit:unit||undefined,rejectReason:''});
+async function approveClaim(id,cat,unit,expMonth){
+  var upd={status:'Approved',category:cat||undefined,unit:unit||undefined,rejectReason:''};
+  if(expMonth)upd.expMonth=expMonth;
+  await dbUpdateClaim(id,upd);
   await loadClaims();toast('Claim approved');ss('adminList','adminDash');
 }
 async function rejectClaim(id,reason){
@@ -729,25 +740,27 @@ async function saveBankInfo(){
   await loadBankInfo();toast('Bank info saved for '+editingBankEmp);editingBankEmp=null;ss('adminEmployees','adminDash');
 }
 async function saveEmpEdit(){
-  var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date');
+  var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date'),emv=document.getElementById('f-expmonth');
   if(!desc||!amt||!dt||!desc.value||!amt.value||!dt.value){toast('Please fill all required fields');return;}
   var upd={desc:desc.value,amount:parseFloat(amt.value),date:dt.value};
+  if(emv)upd.expMonth=emv.value;
   if(pendingFiles.length){var urls=await uploadAllFiles(editingId);if(urls){var c=claims.filter(function(x){return x.id===editingId;})[0];upd.slipRef=c&&c.slipRef?(c.slipRef+','+urls):urls;}}
   await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim updated');editingId=null;ss('claimDetail',PS);
 }
 async function submitEmpEdit(){
-  var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date');
+  var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date'),emv=document.getElementById('f-expmonth');
   if(!desc||!amt||!dt||!desc.value||!amt.value||!dt.value){toast('Please fill all required fields');return;}
   var upd={desc:desc.value,amount:parseFloat(amt.value),date:dt.value,status:'Submitted'};
+  if(emv)upd.expMonth=emv.value;
   if(pendingFiles.length){var urls=await uploadAllFiles(editingId);if(urls){var c=claims.filter(function(x){return x.id===editingId;})[0];upd.slipRef=c&&c.slipRef?(c.slipRef+','+urls):urls;}}
   await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim re-submitted');editingId=null;ss('empList','empHome');
 }
 async function saveMgrEdit(){
-  var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),amt=document.getElementById('rv-amt'),desc=document.getElementById('rv-desc'),dt=document.getElementById('rv-date');
+  var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),amt=document.getElementById('rv-amt'),desc=document.getElementById('rv-desc'),dt=document.getElementById('rv-date'),emv=document.getElementById('rv-expmonth');
   var upd={};
-  if(cat&&cat.value)upd.category=cat.value;if(unit&&unit.value)upd.unit=unit.value;if(amt&&amt.value)upd.amount=parseFloat(amt.value);if(desc&&desc.value)upd.desc=desc.value;if(dt&&dt.value)upd.date=dt.value;
+  if(cat&&cat.value)upd.category=cat.value;if(unit&&unit.value)upd.unit=unit.value;if(amt&&amt.value)upd.amount=parseFloat(amt.value);if(desc&&desc.value)upd.desc=desc.value;if(dt&&dt.value)upd.date=dt.value;if(emv&&emv.value)upd.expMonth=emv.value;
   await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim updated');editingId=null;ss('adminList','adminDash');
 }
@@ -756,14 +769,17 @@ async function submitNewClaim(asDraft){
   if(!desc||!amt||!dt)return;
   var dv=desc.value,av=parseFloat(amt.value),dtv=dt.value,cv=cat?cat.value:'';
   if(!asDraft&&(!dv||!av||!dtv)){toast('Please fill all required fields');return;}
+  // Duplicate check: same employee, same amount, same month, not rejected/draft
+  if(!asDraft&&av&&dtv){
+    var dupMonth=dtv.slice(0,7);
+    var dups=claims.filter(function(c){return c.emp===myName()&&c.amount===av&&c.date.slice(0,7)===dupMonth&&c.status!=='Rejected'&&c.status!=='Draft';});
+    if(dups.length>0){if(!confirm('Warning: You already have a similar claim (RM '+av.toFixed(2)+') in '+dupMonth+'. Submit anyway?'))return;}
+  }
   var cid=await getNextClaimId('HE');
-  var nc={id:cid,emp:myName(),unit:'',category:cv,desc:dv||'(untitled)',amount:av||0,date:dtv||new Date().toISOString().slice(0,10),status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'};
-  // If AI already uploaded the file, use that URL; otherwise upload pending files
-  if(aiResult&&aiResult._fileUrl){
-    nc.slipRef=aiResult._fileUrl;
-    // Also upload any additional files user added
-    if(pendingFiles.length){var urls=await uploadAllFiles(cid);if(urls)nc.slipRef=nc.slipRef+','+urls;}
-  } else if(pendingFiles.length){var urls=await uploadAllFiles(cid);if(urls)nc.slipRef=urls;}
+  var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:(dtv||new Date().toISOString().slice(0,10)).slice(0,7);
+  var nc={id:cid,emp:myName(),unit:'',category:cv,desc:dv||'(untitled)',amount:av||0,date:dtv||new Date().toISOString().slice(0,10),expMonth:expM,status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'};
+  // Upload pending files with claim ID naming
+  if(pendingFiles.length){var urls=await uploadAllFiles(cid);if(urls)nc.slipRef=urls;}
   await dbInsertClaim(nc);
   await loadClaims();toast(asDraft?'Draft saved':'Claim '+cid+' submitted!');
   aiResult=null;aiError='';newClaimStep='upload';
@@ -775,12 +791,20 @@ async function submitMgrClaim(){
   var dv=desc.value,av=parseFloat(amt.value),dtv=dt.value,cv=cat?cat.value:'Other',uv=unit?unit.value:'';
   if(!dv||!av||!dtv){toast('Please fill all required fields');return;}
   var isCompany=mgrFormPayType==='company';
+  // Duplicate check: same employee, same amount, same month, not rejected/draft
+  if(av&&dtv){
+    var dupEmp=isCompany?'':mgrFormEmp;
+    var dupMonth=dtv.slice(0,7);
+    var dups=claims.filter(function(c){return c.emp===dupEmp&&c.amount===av&&c.date.slice(0,7)===dupMonth&&c.status!=='Rejected'&&c.status!=='Draft';});
+    if(dups.length>0){if(!confirm('Warning: A similar claim (RM '+av.toFixed(2)+') already exists for '+(dupEmp||'company')+' in '+dupMonth+'. Submit anyway?'))return;}
+  }
   var cid=await getNextClaimId(isCompany?'CO':'MGR');
-  var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,category:cv,desc:dv,amount:av,date:dtv,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager'};
+  var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:dtv.slice(0,7);
+  var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,category:cv,desc:dv,amount:av,date:dtv,expMonth:expM,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager'};
   if(pendingFiles.length){var urls=await uploadAllFiles(cid);if(urls)nc.slipRef=urls;}
   await dbInsertClaim(nc);
   await loadClaims();toast(isCompany?'Recorded as Company-Paid':'Auto-approved for '+mgrFormEmp);
-  mgrFormPayType='employee';mgrFormEmp=EMPS.length?EMPS[0]:'';ss('adminDash');
+  mgrFormPayType='employee';mgrFormEmp=myName();ss('adminDash');
 }
 
 // ===== RENDER =====
@@ -820,7 +844,7 @@ function render(){
     function edm(v){empDashMonth=v;render();}function edy(v){empDashYear=v;render();}
     window.edm=edm;window.edy=edy;
     var my=claims.filter(function(c){return c.emp===myName()&&c.payType==='employee';});
-    var fm=my.filter(function(c){var mo=empDashMonth==='All'||c.date.slice(5,7)===empDashMonth;var yr=empDashYear==='All'||c.date.slice(0,4)===empDashYear;return mo&&yr;});
+    var fm=my.filter(function(c){var em_=c.expMonth||c.date.slice(0,7);var mo=empDashMonth==='All'||em_.slice(5,7)===empDashMonth;var yr=empDashYear==='All'||em_.slice(0,4)===empDashYear;return mo&&yr;});
     var total=fm.filter(function(c){return dstat(c.status)!=='Draft';}).reduce(function(s,c){return s+c.amount;},0);
     var sc={Submitted:0,Approved:0,Rejected:0,Draft:0,Claimed:0};
     fm.forEach(function(c){var ds=dstat(c.status);if(sc[ds]!==undefined)sc[ds]++;});
@@ -848,7 +872,7 @@ function render(){
     var byMgr=c.submittedBy==='manager'?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Submitted by manager</span> on your behalf.</div></div>':'';
     var rejBox=c.status==='Rejected'&&c.rejectReason?'<div class="rbox"><div style="font-size:10px;font-weight:600;color:#991b1b">Rejection reason</div><div style="font-size:12px;color:#991b1b;margin-top:1px">'+c.rejectReason+'</div></div>':'';
     var claimedBox=c.status==='Claimed'?(function(){var sr=c.slipRef||'';var urls=sr.split(',').filter(function(u){return u.trim()&&u.startsWith('http');});if(!urls.length)return'<div class="slip-box"><span>💳</span><span style="font-size:12px;color:#92400e;font-weight:600;margin-left:4px">Payment processed</span></div>';return'<div style="margin:4px 0"><div style="font-size:11px;font-weight:600;color:#92400e;margin-bottom:4px">💳 Bank transfer slip(s)</div>'+urls.map(function(u,i){return'<a href="'+u.trim()+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:3px;background:#fef3c7;border:1px dashed #f59e0b;border-radius:10px;text-decoration:none"><span style="font-size:14px">📄</span><span style="font-size:11px;color:#92400e;font-weight:600;flex:1">Slip '+(i+1)+'</span><span style="font-size:10px;color:#6b7280">View →</span></a>';}).join('')+'</div>';}()):'';
-    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(dstat(c.status))+'</div><div class="dgrid">'+['Category','Amount','Date','Unit','Status'].map(function(l,i){var v=[c.category||'—','RM '+c.amount.toFixed(2),c.date,c.unit||'—',dstat(c.status)];return'<div class="di"><div class="dil">'+l+'</div><div class="div_">'+v[i]+'</div></div>';}).join('')+'</div>'+rejBox+claimedBox+(!c.category?'<div class="info-box" style="background:#fef3c7;margin-top:6px"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Category pending</span> — manager will assign on review.</div></div>':'')+'</div>'+viewReceiptBox(c.slipRef)+deleteBtn+'</div>';
+    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(dstat(c.status))+'</div><div class="dgrid">'+['Category','Amount','Date','Expense Month','Unit','Status'].map(function(l,i){var v=[c.category||'—','RM '+c.amount.toFixed(2),c.date,c.expMonth||c.date.slice(0,7),c.unit||'—',dstat(c.status)];return'<div class="di"><div class="dil">'+l+'</div><div class="div_">'+v[i]+'</div></div>';}).join('')+'</div>'+rejBox+claimedBox+(!c.category?'<div class="info-box" style="background:#fef3c7;margin-top:6px"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Category pending</span> — manager will assign on review.</div></div>':'')+'</div>'+viewReceiptBox(c.slipRef)+deleteBtn+'</div>';
   }
   else if(S==='empEdit'){
     var c=claims.filter(function(x){return x.id===editingId;})[0];if(!c){ss('empList');return;}
@@ -870,10 +894,10 @@ function render(){
       var ai=aiResult||{};
       var descVal=formatAiDescription(ai);
       var notReceiptWarn=ai.is_receipt===false?'<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:#92400e">⚠️ May not be a receipt</div><div style="font-size:11px;color:#92400e;margin-top:3px">AI could not confirm this is a valid receipt or invoice. Please verify the details or re-scan with the correct file.</div><button class="pbtn btn-o" style="margin-top:8px;width:100%" onclick="restartAIScan()">↻ Re-scan different file</button></div>':'';
-      ms.innerHTML='<div class="scr">'+notReceiptWarn+'<div class="ai-result-card"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="font-size:14px">🤖</span><span style="font-size:12px;font-weight:600;color:#065f46">AI Analysis Complete</span><span class="ai-tag">Auto-filled</span></div>'+aiItemsHtml(ai.items)+'<div style="display:flex;justify-content:space-between;padding:6px;margin-top:4px;background:#d1fae5;border-radius:8px"><span style="font-size:12px;font-weight:600;color:#065f46">Total</span><span style="font-size:13px;font-weight:700;color:#065f46">RM '+(ai.total||0).toFixed(2)+'</span></div></div><div class="fg"><label class="fl">Category (AI suggested)</label><select class="fi" id="f-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Description *</label><textarea class="fi" id="f-desc" rows="4" style="resize:vertical;font-size:12px;line-height:1.4">'+descVal+'</textarea></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" value="'+(ai.total||'')+'"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+(ai.date||today)+'"/></div></div><div id="rbox">'+receiptBox(ai._fileUrl||'')+'</div><div class="arow"><button class="pbtn btn-o" onclick="restartAIScan()">↻ Re-scan</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div><button class="pbtn btn-o" style="margin-top:4px" onclick="submitNewClaim(true)">Save as Draft</button></div>';
+      ms.innerHTML='<div class="scr">'+notReceiptWarn+'<div class="ai-result-card"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="font-size:14px">🤖</span><span style="font-size:12px;font-weight:600;color:#065f46">AI Analysis Complete</span><span class="ai-tag">Auto-filled</span></div>'+aiItemsHtml(ai.items)+'<div style="display:flex;justify-content:space-between;padding:6px;margin-top:4px;background:#d1fae5;border-radius:8px"><span style="font-size:12px;font-weight:600;color:#065f46">Total</span><span style="font-size:13px;font-weight:700;color:#065f46">RM '+(ai.total||0).toFixed(2)+'</span></div></div><div class="fg"><label class="fl">Description *</label><textarea class="fi" id="f-desc" rows="4" style="resize:vertical;font-size:12px;line-height:1.4">'+descVal+'</textarea></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" value="'+(ai.total||'')+'"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+(ai.date||today)+'"/></div></div><div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="restartAIScan()">↻ Re-scan</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div><button class="pbtn btn-o" style="margin-top:4px" onclick="submitNewClaim(true)">Save as Draft</button></div>';
     } else {
       // Manual entry fallback
-      ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Manual entry</span> — fill in details below.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. TNB Bill March"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div><div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="submitNewClaim(true)">Save Draft</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div><div class="ai-manual-link" onclick="restartAIScan()">← Back to receipt upload</div></div>';
+      ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Manual entry</span> — fill in details below.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. Electricity Bill - INV12345"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div><div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="submitNewClaim(true)">Save Draft</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div><div class="ai-manual-link" onclick="restartAIScan()">← Back to receipt upload</div></div>';
     }
   }
   else if(S==='adminDash'){
@@ -881,7 +905,7 @@ function render(){
     var months=['All'].concat(Object.keys(MONTHS));var years=['All'].concat(YEARS);var unitOpts=['All Units'].concat(UNITS);
     function dm(v){dashFltMonth=v;render();}function dy(v){dashFltYear=v;render();}function du(v){dashFltUnit=v;render();}
     window.dm=dm;window.dy=dy;window.du=du;
-    var base=claims.filter(function(c){var mo=dashFltMonth==='All'||c.date.slice(5,7)===dashFltMonth;var yr=dashFltYear==='All'||c.date.slice(0,4)===dashFltYear;var ut=dashFltUnit==='All Units'||dashFltUnit==='All'||c.unit===dashFltUnit;return mo&&yr&&ut;});
+    var base=claims.filter(function(c){var em_=c.expMonth||c.date.slice(0,7);var mo=dashFltMonth==='All'||em_.slice(5,7)===dashFltMonth;var yr=dashFltYear==='All'||em_.slice(0,4)===dashFltYear;var ut=dashFltUnit==='All Units'||dashFltUnit==='All'||c.unit===dashFltUnit;return mo&&yr&&ut;});
     var apprTotal=base.filter(function(c){return['Approved','Claimed','Auto-Approved'].indexOf(c.status)>=0;}).reduce(function(s,c){return s+c.amount;},0);
     var coTotal=base.filter(function(c){return c.status==='Company-Paid';}).reduce(function(s,c){return s+c.amount;},0);
     var pending=base.filter(function(c){return c.status==='Submitted';}).length;
@@ -911,11 +935,11 @@ function render(){
     var catOpts=CATS.map(function(cat){return'<option value="'+cat+'"'+(c.category===cat?' selected':'')+'>'+cat+'</option>';}).join('');
     var unitOpts=UNITS.map(function(u){return'<option value="'+u+'"'+(c.unit===u?' selected':'')+'>'+u+'</option>';}).join('');
     var editBar=locked?'<div class="lock-bar"><span>🔒</span><span style="font-size:11px;color:#6b7280;margin-left:4px">Paid out — cannot modify.</span></div>':canMgrEd?'<div class="edit-bar"><span style="font-size:11px;color:#92400e">This claim can be modified</span><span class="edit-link" onclick="ss(\'mgrEdit\',\'adminReview\')">Edit →</span></div>':'';
-    var actionArea=isPending?'<div class="fg"><label class="fl">Assign category *</label><select class="fi" id="rv-cat"><option value="">— Select —</option>'+catOpts+'</select></div><div class="fg"><label class="fl">Assign unit *</label><select class="fi" id="rv-unit"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Rejection reason (if rejecting)</label><input class="fi" id="rv-reason" placeholder="Leave blank if approving"/></div><div class="arow"><button class="pbtn btn-d" onclick="doReject()">✕  Reject</button><button class="pbtn btn-s" onclick="doApprove()">✓  Approve</button></div>':isCompanyPaid?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid</span> — no reimbursement needed.</div></div>':'<div style="background:#f9fafb;border-radius:8px;padding:10px;text-align:center;font-size:12px;color:#6b7280">Status: '+c.status+'</div>';
+    var actionArea=isPending?(function(){var now=new Date();var mopts='';for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var sv=c.expMonth||c.date.slice(0,7);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();mopts+='<option value="'+v+'"'+(sv===v?' selected':'')+'>'+lbl+'</option>';}return'<div class="fg"><label class="fl">Assign category *</label><select class="fi" id="rv-cat"><option value="">— Select —</option>'+catOpts+'</select></div><div class="fg"><label class="fl">Assign unit *</label><select class="fi" id="rv-unit"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="rv-expmonth">'+mopts+'</select></div><div class="fg"><label class="fl">Rejection reason (if rejecting)</label><input class="fi" id="rv-reason" placeholder="Leave blank if approving"/></div><div class="arow"><button class="pbtn btn-d" onclick="doReject()">✕  Reject</button><button class="pbtn btn-s" onclick="doApprove()">✓  Approve</button></div>';}()):isCompanyPaid?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid</span> — no reimbursement needed.</div></div>':'<div style="background:#f9fafb;border-radius:8px;padding:10px;text-align:center;font-size:12px;color:#6b7280">Status: '+c.status+'</div>';
     var byMgr=c.submittedBy==='manager'?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Submitted by manager</span>'+(c.emp?' for '+c.emp:'')+'</div></div>':'';
     var rejBox=c.status==='Rejected'&&c.rejectReason?'<div class="rbox"><div style="font-size:10px;font-weight:600;color:#991b1b">Rejection reason</div><div style="font-size:12px;color:#991b1b;margin-top:1px">'+c.rejectReason+'</div></div>':'';
     var claimedBox=c.status==='Claimed'?(function(){var sr=c.slipRef||'';var urls=sr.split(',').filter(function(u){return u.trim()&&u.startsWith('http');});if(!urls.length)return'<div class="slip-box"><span>💳</span><span style="font-size:12px;color:#92400e;font-weight:600;margin-left:4px">Paid</span></div>';return'<div style="margin:4px 0"><div style="font-size:11px;font-weight:600;color:#92400e;margin-bottom:4px">💳 Bank transfer slip(s)</div>'+urls.map(function(u,i){return'<a href="'+u.trim()+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:3px;background:#fef3c7;border:1px dashed #f59e0b;border-radius:10px;text-decoration:none"><span style="font-size:14px">📄</span><span style="font-size:11px;color:#92400e;font-weight:600;flex:1">Slip '+(i+1)+'</span><span style="font-size:10px;color:#6b7280">View →</span></a>';}).join('')+'</div>';}()):'';
-    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(c.status)+'</div><div class="dgrid">'+(c.emp?'<div class="di"><div class="dil">Employee</div><div class="div_">'+c.emp+'</div></div>':'')+'<div class="di"><div class="dil">Amount</div><div class="div_">RM '+c.amount.toFixed(2)+'</div></div><div class="di"><div class="dil">Date</div><div class="div_">'+c.date+'</div></div><div class="di"><div class="dil">Category</div><div class="div_">'+(c.category||'—')+'</div></div><div class="di"><div class="dil">Unit</div><div class="div_">'+(c.unit||'—')+'</div></div><div class="di"><div class="dil">Payment</div><div class="div_">'+(c.payType==='company'?'Company':'Employee')+'</div></div></div>'+rejBox+claimedBox+'</div>'+viewReceiptBox(c.slipRef)+actionArea+'</div>';
+    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(c.status)+'</div><div class="dgrid">'+(c.emp?'<div class="di"><div class="dil">Employee</div><div class="div_">'+c.emp+'</div></div>':'')+'<div class="di"><div class="dil">Amount</div><div class="div_">RM '+c.amount.toFixed(2)+'</div></div><div class="di"><div class="dil">Date</div><div class="div_">'+c.date+'</div></div><div class="di"><div class="dil">Expense Month</div><div class="div_">'+(c.expMonth||c.date.slice(0,7))+'</div></div><div class="di"><div class="dil">Category</div><div class="div_">'+(c.category||'—')+'</div></div><div class="di"><div class="dil">Unit</div><div class="div_">'+(c.unit||'—')+'</div></div><div class="di"><div class="dil">Payment</div><div class="div_">'+(c.payType==='company'?'Company':'Employee')+'</div></div></div>'+rejBox+claimedBox+'</div>'+viewReceiptBox(c.slipRef)+actionArea+'</div>';
   }
   else if(S==='mgrEdit'){
     var c=SEL;tbt_el.textContent='Edit Decision';bb_el.style.display='block';adminNav('list');
@@ -923,7 +947,8 @@ function render(){
     var catOpts=CATS.map(function(cat){return'<option value="'+cat+'"'+(c.category===cat?' selected':'')+'>'+cat+'</option>';}).join('');
     var unitOpts=UNITS.map(function(u){return'<option value="'+u+'"'+(c.unit===u?' selected':'')+'>'+u+'</option>';}).join('');
     var isAppr=c.status==='Approved'||c.status==='Auto-Approved';
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Modifying '+c.id+'</span> — currently '+c.status+'. Not yet paid out.</div></div><div class="fg"><label class="fl">Description</label><input class="fi" id="rv-desc" value="'+c.desc+'"/></div><div class="fg"><label class="fl">Category</label><select class="fi" id="rv-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location</label><select class="fi" id="rv-unit">'+unitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM)</label><input class="fi" id="rv-amt" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date</label><input class="fi" id="rv-date" type="date" value="'+c.date+'"/></div></div>'+(isAppr?'<div class="arow"><button class="pbtn btn-d" onclick="mgrChangeToReject()">Change to Reject</button><button class="pbtn btn-s" onclick="saveMgrEdit()">Save Changes</button></div>':'<div class="arow"><button class="pbtn btn-s" onclick="mgrChangeToApprove()">Change to Approve</button><button class="pbtn btn-o" onclick="saveMgrEdit()">Save Changes</button></div>')+'</div>';
+    var mgrExpMonthOpts=(function(){var now=new Date();var opts=[];for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var sv=c.expMonth||c.date.slice(0,7);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();opts.push('<option value="'+v+'"'+(sv===v?' selected':'')+'>'+lbl+'</option>');}return opts.join('');})();
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Modifying '+c.id+'</span> — currently '+c.status+'. Not yet paid out.</div></div><div class="fg"><label class="fl">Description</label><input class="fi" id="rv-desc" value="'+c.desc+'"/></div><div class="fg"><label class="fl">Category</label><select class="fi" id="rv-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location</label><select class="fi" id="rv-unit">'+unitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM)</label><input class="fi" id="rv-amt" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date</label><input class="fi" id="rv-date" type="date" value="'+c.date+'"/></div></div><div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="rv-expmonth">'+mgrExpMonthOpts+'</select></div>'+(isAppr?'<div class="arow"><button class="pbtn btn-d" onclick="mgrChangeToReject()">Change to Reject</button><button class="pbtn btn-s" onclick="saveMgrEdit()">Save Changes</button></div>':'<div class="arow"><button class="pbtn btn-s" onclick="mgrChangeToApprove()">Change to Approve</button><button class="pbtn btn-o" onclick="saveMgrEdit()">Save Changes</button></div>')+'</div>';
   }
   else if(S==='adminEmployees'){
     tbt_el.textContent='Staff & Bank Info';bb_el.style.display='block';adminNav('emps');
@@ -1006,7 +1031,7 @@ function render(){
     var today=new Date().toISOString().slice(0,10);
     var scanBtn='<div style="background:#eff6ff;border:1px dashed #93c5fd;border-radius:10px;padding:9px 12px;display:flex;align-items:center;gap:8px;cursor:pointer" onclick="mgrScanReceipt()"><span style="font-size:16px">📷</span><div style="flex:1"><div style="font-size:12px;font-weight:600;color:#1d4ed8">Scan Receipt with AI</div><div style="font-size:10px;color:#6b7280">Auto-fill description, amount & date</div></div><span style="font-size:11px;color:#1d4ed8">→</span></div>';
     var mgrAiLoading=aiAnalyzing?'<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#eff6ff;border-radius:10px;border:1px solid #93c5fd"><div class="ai-spinner" style="width:18px;height:18px;border-width:2px"></div><span style="font-size:12px;color:#1d4ed8">Analyzing receipt...</span></div>':'';
-    ms.innerHTML='<div class="scr"><div style="display:flex;flex-direction:column;gap:7px"><div class="ptype-card'+(isCompany?'':' on')+'" onclick="togglePayType(\'employee\')"><div style="font-size:20px">👤</div><div><div class="ptype-title">Employee paid</div><div class="ptype-desc">Needs reimbursement — auto-approved</div></div></div><div class="ptype-card'+(isCompany?' on':'')+'" onclick="togglePayType(\'company\')"><div style="font-size:20px">🏢</div><div><div class="ptype-title">Company paid</div><div class="ptype-desc">No reimbursement — tracking only</div></div></div></div>'+(aiAnalyzing?mgrAiLoading:scanBtn)+(isCompany?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid:</span> No employee assigned.</div></div>':'<div class="fg"><label class="fl">Submit for employee *</label><select class="fi" id="f-emp" onchange="mgrFormEmp=this.value">'+empOpts+'</select></div>')+'<div class="fg"><label class="fl">Category *</label><select class="fi" id="f-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location *</label><select class="fi" id="f-unit"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. TNB Bill March"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div>'+'<div id="rbox">'+receiptBox('')+'</div><button class="pbtn '+(isCompany?'btn-s':'btn-p')+'" onclick="submitMgrClaim()">'+(isCompany?'Record as Company-Paid':'Submit (Auto-Approved)')+'</button></div>';
+    ms.innerHTML='<div class="scr"><div style="display:flex;flex-direction:column;gap:7px"><div class="ptype-card'+(isCompany?'':' on')+'" onclick="togglePayType(\'employee\')"><div style="font-size:20px">👤</div><div><div class="ptype-title">Employee paid</div><div class="ptype-desc">Needs reimbursement — auto-approved</div></div></div><div class="ptype-card'+(isCompany?' on':'')+'" onclick="togglePayType(\'company\')"><div style="font-size:20px">🏢</div><div><div class="ptype-title">Company paid</div><div class="ptype-desc">No reimbursement — tracking only</div></div></div></div>'+(aiAnalyzing?mgrAiLoading:scanBtn)+(isCompany?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid:</span> No employee assigned.</div></div>':'<div class="fg"><label class="fl">Submit for employee *</label><select class="fi" id="f-emp" onchange="mgrFormEmp=this.value">'+empOpts+'</select></div>')+'<div class="fg"><label class="fl">Category *</label><select class="fi" id="f-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location *</label><select class="fi" id="f-unit"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. Electricity Bill - INV12345"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div>'+expMonthSelect(today.slice(0,7))+'<div id="rbox">'+receiptBox('')+'</div><button class="pbtn '+(isCompany?'btn-s':'btn-p')+'" onclick="submitMgrClaim()">'+(isCompany?'Record as Company-Paid':'Submit (Auto-Approved)')+'</button></div>';
   }
   else if(S==='errorLogs'){
     tbt_el.textContent='Error Logs';bb_el.style.display='block';adminNav('logs');
@@ -1058,10 +1083,10 @@ window.updateUserAccount=updateUserAccount;
 window.deleteUserAccount=deleteUserAccount;window.reactivateUser=reactivateUser;
 window.editUser=function(uid){editingUser=allUsers.filter(function(u){return u.id===uid;})[0];userFormError='';ss('userForm','adminUsers');};
 window.doApprove=async function(){
-  var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit');
+  var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),emv=document.getElementById('rv-expmonth');
   if(!cat||!cat.value){toast('Please assign a category');return;}
   if(!unit||!unit.value){toast('Please assign a unit');return;}
-  await approveClaim(SEL.id,cat.value,unit.value);
+  await approveClaim(SEL.id,cat.value,unit.value,emv?emv.value:'');
 };
 window.doReject=async function(){var r=document.getElementById('rv-reason');await rejectClaim(SEL.id,r?r.value:'No reason given');};
 window.saveMgrEdit=saveMgrEdit;window.saveEmpEdit=saveEmpEdit;window.submitEmpEdit=submitEmpEdit;
@@ -1102,17 +1127,16 @@ window.mgrScanReceipt=function(){
     aiAnalyzing=true;render();
     try{
       var ext=f.name.split('.').pop().toLowerCase();
-      var tmpId='TMP-'+Date.now();
-      var path='receipts/'+tmpId+'/receipt_'+Date.now()+'_0.'+ext;
-      var res=await sb.storage.from('receipts').upload(path,f,{upsert:true});
-      if(res.error)throw new Error('Upload failed');
-      var{data:urlData}=sb.storage.from('receipts').getPublicUrl(path);
       var mimeMap={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',pdf:'application/pdf'};
+      var reader2=new FileReader();
+      var base64_2=await new Promise(function(resolve,reject){reader2.onload=function(){resolve(reader2.result);};reader2.onerror=reject;reader2.readAsDataURL(f);});
       var{data:sessData2}=await sb.auth.getSession();
-      var authToken2=sessData2?.session?.access_token||SUPABASE_KEY;
+      var authToken2=sessData2?.session?.access_token||'';
+      if(!authToken2){var{data:refData2}=await sb.auth.refreshSession();authToken2=refData2?.session?.access_token||'';}
+      if(!authToken2)authToken2=SUPABASE_KEY;
       var resp=await fetch(SUPABASE_URL+'/functions/v1/analyze-receipt',{
-        method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken2},
-        body:JSON.stringify({fileUrl:urlData.publicUrl,mimeType:mimeMap[ext]||'image/jpeg'})
+        method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken2,'apikey':SUPABASE_KEY},
+        body:JSON.stringify({base64Data:base64_2,mimeType:mimeMap[ext]||'image/jpeg'})
       });
       if(!resp.ok){
         var errBody=await resp.json().catch(function(){return{error:'HTTP '+resp.status};});
