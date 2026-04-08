@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -6,6 +6,7 @@
 <title>Home Expense System</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
 body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;}
@@ -177,8 +178,8 @@ async function loadErrorLogs(){
 var MONTHS={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
 var YEARS=['2025','2026','2027'];
 var UNITS=['KT11','150A','14A','LC03','IR B1506','IR B1631','IR B1913B','IR A2109','CL B0207','BR B2305','AR C3706','AR D1503','SH P0403','AC 1025','ACc 1027','34F','MP Office'];
-var CATS=['Water Bill','Electricity Bill','Internet Bill','Maintenance & Repair','Housekeeping & Cleaning','Laundry','Daily Products','Hospitality Items','Electrical & Unit Setup','Office Expenses','Employee Welfare','Outsource Cleaning Staff','Unit Renovation','Other'];
-var CAT_COLORS={'Water Bill':'#185FA5','Electricity Bill':'#0E6E9E','Internet Bill':'#2D5FA5','Maintenance & Repair':'#854F0B','Housekeeping & Cleaning':'#3B6D11','Laundry':'#534AB7','Daily Products':'#0F6E56','Hospitality Items':'#993556','Electrical & Unit Setup':'#993C1D','Office Expenses':'#5F5E5A','Employee Welfare':'#185FA5','Outsource Cleaning Staff':'#854F0B','Unit Renovation':'#A32D2D','Other':'#888780'};
+var CATS=['Water Bill','Electricity Bill','Internet Bill','Rental','Maintenance & Repair','Housekeeping & Cleaning','Laundry','Daily Products','Hospitality Items','Electrical & Unit Setup','Office Expenses','Employee Welfare','Outsource Cleaning Staff','Unit Renovation','Other'];
+var CAT_COLORS={'Water Bill':'#185FA5','Electricity Bill':'#0E6E9E','Internet Bill':'#2D5FA5','Rental':'#7C3AED','Maintenance & Repair':'#854F0B','Housekeeping & Cleaning':'#3B6D11','Laundry':'#534AB7','Daily Products':'#0F6E56','Hospitality Items':'#993556','Electrical & Unit Setup':'#993C1D','Office Expenses':'#5F5E5A','Employee Welfare':'#185FA5','Outsource Cleaning Staff':'#854F0B','Unit Renovation':'#A32D2D','Other':'#888780'};
 
 // ===== SUPABASE DATA FUNCTIONS =====
 async function loadClaims(){
@@ -466,13 +467,81 @@ function removePendingFile(idx){
   if(rbox)rbox.innerHTML=receiptBox('');
 }
 window.removePendingFile=removePendingFile;
-async function uploadAllFiles(claimId){
+function getCategoryPrefix(cat){
+  if(cat==='Water Bill')return '[WB]';
+  if(cat==='Electricity Bill')return '[EB]';
+  if(cat==='Internet Bill')return '[INT]';
+  if(cat==='Rental')return '[Rental]';
+  if(cat==='Maintenance & Repair')return '[Maintenance]';
+  return '[INV]';
+}
+function fmtMonthYear(dateStr){
+  var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var d=new Date(dateStr||new Date());
+  return months[d.getMonth()]+String(d.getFullYear()).slice(2);
+}
+function buildAttachName(cat,unit,desc,date,aiItems){
+  var prefix=getCategoryPrefix(cat);
+  var my=fmtMonthYear(date);
+  var safe=function(s){return(s||'').replace(/[^a-zA-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim();};
+  if(prefix!=='[INV]'){
+    var parts=[prefix];
+    if(unit)parts.push(unit);
+    parts.push(my);
+    return parts.join(' ');
+  }else{
+    var summary='';
+    if(aiItems&&aiItems.length){
+      summary=aiItems.slice(0,3).map(function(it){return it.qty+'x'+it.name;}).join(' ');
+      if(summary.length>36)summary=summary.slice(0,36).trim();
+    }else{
+      summary=safe(desc).slice(0,30).trim();
+    }
+    return prefix+' '+summary+' '+my;
+  }
+}
+async function imageToPdf(file){
+  var jsPDFLib=window.jspdf&&window.jspdf.jsPDF?window.jspdf.jsPDF:null;
+  if(!jsPDFLib){console.warn('jsPDF not loaded, uploading original');return file;}
+  return new Promise(function(resolve){
+    var url=URL.createObjectURL(file);
+    var img=new Image();
+    img.onload=function(){
+      var w=img.naturalWidth,h=img.naturalHeight;
+      var canvas=document.createElement('canvas');
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0);
+      URL.revokeObjectURL(url);
+      var orient=w>h?'l':'p';
+      var wPt=w*0.75,hPt=h*0.75;
+      var doc=new jsPDFLib({orientation:orient,unit:'pt',format:[wPt,hPt]});
+      var dataUrl=canvas.toDataURL('image/jpeg',0.90);
+      doc.addImage(dataUrl,'JPEG',0,0,wPt,hPt);
+      resolve(new File([doc.output('blob')],file.name.replace(/\.(jpe?g|png|gif|webp|heic|bmp)$/i,'.pdf'),{type:'application/pdf'}));
+    };
+    img.onerror=function(){URL.revokeObjectURL(url);resolve(file);};
+    img.src=url;
+  });
+}
+async function uploadAllFiles(claimId,opts){
   if(!pendingFiles.length)return '';
   var urls=[];
+  var cat=(opts&&opts.category)||'';
+  var unit=(opts&&opts.unit)||'';
+  var desc=(opts&&opts.desc)||'';
+  var date=(opts&&opts.date)||new Date().toISOString().slice(0,10);
+  var aiItems=(opts&&opts.aiItems)||null;
   for(var i=0;i<pendingFiles.length;i++){
     var f=pendingFiles[i];
     var ext=f.name.split('.').pop().toLowerCase();
-    var path='receipts/'+claimId+'/'+claimId+'_'+(i+1)+'.'+ext;
+    var imgExts=['jpg','jpeg','png','gif','webp','heic','bmp'];
+    if(imgExts.indexOf(ext)>=0){
+      try{f=await imageToPdf(f);ext='pdf';}catch(e){console.warn('imageToPdf failed',e);}
+    }
+    var baseName=buildAttachName(cat,unit,desc,date,aiItems);
+    var safeBase=baseName.replace(/[^a-zA-Z0-9\[\] ]/g,'_').replace(/\s+/g,'_');
+    var filename=safeBase+'_'+(i+1)+'.'+ext;
+    var path='receipts/'+claimId+'/'+filename;
     var res=await sb.storage.from('receipts').upload(path,f,{upsert:true});
     if(res.error){console.error('Upload error:',res.error);toast('Upload failed: '+f.name);continue;}
     var{data:urlData}=sb.storage.from('receipts').getPublicUrl(path);
@@ -746,7 +815,7 @@ async function saveEmpEdit(){
   if(!desc||!amt||!dt||!desc.value||!amt.value||!dt.value){toast('Please fill all required fields');return;}
   var upd={desc:desc.value,amount:parseFloat(amt.value),date:dt.value};
   if(emv)upd.expMonth=emv.value;
-  if(pendingFiles.length){var urls=await uploadAllFiles(editingId);if(urls){var c=claims.filter(function(x){return x.id===editingId;})[0];upd.slipRef=c&&c.slipRef?(c.slipRef+','+urls):urls;}}
+  if(pendingFiles.length){var ec=claims.filter(function(x){return x.id===editingId;})[0];var urls=await uploadAllFiles(editingId,{category:ec?ec.category:'',unit:ec?ec.unit:'',desc:desc.value,date:dt.value});if(urls){upd.slipRef=ec&&ec.slipRef?(ec.slipRef+','+urls):urls;}}
   await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim updated');editingId=null;ss('claimDetail',PS);
 }
@@ -755,7 +824,7 @@ async function submitEmpEdit(){
   if(!desc||!amt||!dt||!desc.value||!amt.value||!dt.value){toast('Please fill all required fields');return;}
   var upd={desc:desc.value,amount:parseFloat(amt.value),date:dt.value,status:'Submitted'};
   if(emv)upd.expMonth=emv.value;
-  if(pendingFiles.length){var urls=await uploadAllFiles(editingId);if(urls){var c=claims.filter(function(x){return x.id===editingId;})[0];upd.slipRef=c&&c.slipRef?(c.slipRef+','+urls):urls;}}
+  if(pendingFiles.length){var ec=claims.filter(function(x){return x.id===editingId;})[0];var urls=await uploadAllFiles(editingId,{category:ec?ec.category:'',unit:ec?ec.unit:'',desc:desc.value,date:dt.value});if(urls){upd.slipRef=ec&&ec.slipRef?(ec.slipRef+','+urls):urls;}}
   await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim re-submitted');editingId=null;ss('empList','empHome');
 }
@@ -793,7 +862,7 @@ async function submitNewClaim(asDraft){
   var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:(dtv||new Date().toISOString().slice(0,10)).slice(0,7);
   var nc={id:cid,emp:myName(),unit:'',category:cv,desc:dv||'(untitled)',amount:av||0,date:dtv||new Date().toISOString().slice(0,10),expMonth:expM,status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'};
   // Upload pending files with claim ID naming
-  if(pendingFiles.length){var urls=await uploadAllFiles(cid);if(urls)nc.slipRef=urls;}
+  if(pendingFiles.length){var urls=await uploadAllFiles(cid,{category:cv,unit:'',desc:dv||'',date:dtv||new Date().toISOString().slice(0,10),aiItems:aiResult?aiResult.items:null});if(urls)nc.slipRef=urls;}
   await dbInsertClaim(nc);
   await loadClaims();toast(asDraft?'Draft saved':'Claim '+cid+' submitted!');
   aiResult=null;aiError='';newClaimStep='upload';
@@ -817,7 +886,7 @@ async function submitMgrClaim(){
   var cid=await getNextClaimId(isCompany?'CO':'MGR');
   var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:dtv.slice(0,7);
   var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,category:cv,desc:dv,amount:av,date:dtv,expMonth:expM,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager',chargedTo:charged.value};
-  if(pendingFiles.length){var urls=await uploadAllFiles(cid);if(urls)nc.slipRef=urls;}
+  if(pendingFiles.length){var urls=await uploadAllFiles(cid,{category:cv,unit:uv,desc:dv,date:dtv});if(urls)nc.slipRef=urls;}
   await dbInsertClaim(nc);
   await loadClaims();toast(isCompany?'Recorded as Company-Paid':'Auto-approved for '+mgrFormEmp);
   mgrFormPayType='employee';mgrFormEmp=myName();ss('adminDash');
@@ -911,10 +980,10 @@ function render(){
       var ai=aiResult||{};
       var descVal=formatAiDescription(ai);
       var notReceiptWarn=ai.is_receipt===false?'<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:#92400e">⚠️ May not be a receipt</div><div style="font-size:11px;color:#92400e;margin-top:3px">AI could not confirm this is a valid receipt or invoice. Please verify the details or re-scan with the correct file.</div><button class="pbtn btn-o" style="margin-top:8px;width:100%" onclick="restartAIScan()">↻ Re-scan different file</button></div>':'';
-      ms.innerHTML='<div class="scr">'+notReceiptWarn+'<div class="ai-result-card"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="font-size:14px">🤖</span><span style="font-size:12px;font-weight:600;color:#065f46">AI Analysis Complete</span><span class="ai-tag">Auto-filled</span></div>'+aiItemsHtml(ai.items)+'<div style="display:flex;justify-content:space-between;padding:6px;margin-top:4px;background:#d1fae5;border-radius:8px"><span style="font-size:12px;font-weight:600;color:#065f46">Total</span><span style="font-size:13px;font-weight:700;color:#065f46">RM '+(ai.total||0).toFixed(2)+'</span></div></div><div class="fg"><label class="fl">Description *</label><textarea class="fi" id="f-desc" rows="4" style="resize:vertical;font-size:12px;line-height:1.4">'+descVal+'</textarea></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" value="'+(ai.total||'')+'"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+(ai.date||today)+'"/></div></div>'+expMonthSelect(lastMonth)+'<div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="restartAIScan()">↻ Re-scan</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div><button class="pbtn btn-o" style="margin-top:4px" onclick="submitNewClaim(true)">Save as Draft</button></div>';
+      ms.innerHTML='<div class="scr">'+notReceiptWarn+'<div class="ai-result-card"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="font-size:14px">🤖</span><span style="font-size:12px;font-weight:600;color:#065f46">AI Analysis Complete</span><span class="ai-tag">Auto-filled</span></div>'+aiItemsHtml(ai.items)+'<div style="display:flex;justify-content:space-between;padding:6px;margin-top:4px;background:#d1fae5;border-radius:8px"><span style="font-size:12px;font-weight:600;color:#065f46">Total</span><span style="font-size:13px;font-weight:700;color:#065f46">RM '+(ai.total||0).toFixed(2)+'</span></div></div><div class="fg"><label class="fl">Description *</label><textarea class="fi" id="f-desc" rows="4" style="resize:vertical;font-size:12px;line-height:1.4">'+descVal+'</textarea></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" value="'+(ai.total||'')+'"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+(ai.date||today)+'"/></div></div>'+'<div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="restartAIScan()">↻ Re-scan</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div><button class="pbtn btn-o" style="margin-top:4px" onclick="submitNewClaim(true)">Save as Draft</button></div>';
     } else {
       // Manual entry fallback
-      ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Manual entry</span> — fill in details below.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. Electricity Bill - INV12345"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div>'+expMonthSelect(lastMonth)+'<div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="submitNewClaim(true)">Save Draft</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div><div class="ai-manual-link" onclick="restartAIScan()">← Back to receipt upload</div></div>';
+      ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Manual entry</span> — fill in details below.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. Electricity Bill - INV12345"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div><div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="submitNewClaim(true)">Save Draft</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div><div class="ai-manual-link" onclick="restartAIScan()">← Back to receipt upload</div></div>';
     }
   }
   else if(S==='adminDash'){
