@@ -160,6 +160,9 @@ var errorLogs=[],errorLogLoading=false;
 var unitTypes=[],unitConfig=[];
 var rptUnit='',rptMonth='',rptYear='';
 var editingUnitType=null,editingUnitCfg=null,utFormError='',ucFormError='';
+var syncLogs=[],syncLoading=false,syncRunning=false;
+var unitMappings=[],editingMapping=null,umFormError='';
+var reservations=[];
 
 // ===== FRONTEND ERROR LOGGER =====
 async function logFrontendError(level,source,message,details){
@@ -221,13 +224,29 @@ async function dbUpdateUnit(id,fields){
   if(error)console.error('dbUpdateUnit:',error);
   return !error;
 }
-async function loadAll(){await loadClaims();await loadBankInfo();await loadUnits();await loadUnitTypes();await loadUnitConfig();}
+async function loadAll(){await loadClaims();await loadBankInfo();await loadUnits();await loadUnitTypes();await loadUnitConfig();await loadUnitMappings();await loadReservations();}
 async function loadUnitTypes(){var{data}=await sb.from('unit_types').select('*').order('name');if(data)unitTypes=data;}
 async function loadUnitConfig(){var{data}=await sb.from('unit_config').select('*').order('unit_name');if(data)unitConfig=data;}
 async function dbInsertUnitType(name,cf,lf){var{error}=await sb.from('unit_types').insert({name:name.trim(),cleaning_fee:cf,laundry_fee:lf});return !error;}
 async function dbUpdateUnitType(id,name,cf,lf){var{error}=await sb.from('unit_types').update({name:name.trim(),cleaning_fee:cf,laundry_fee:lf}).eq('id',id);return !error;}
 async function dbDeleteUnitType(id){var{error}=await sb.from('unit_types').delete().eq('id',id);return !error;}
 async function dbUpsertUnitConfig(unitName,unitType,ownerName,svcPct){var{error}=await sb.from('unit_config').upsert({unit_name:unitName,unit_type:unitType||null,owner_name:ownerName,service_fee_pct:svcPct},{onConflict:'unit_name'});return !error;}
+async function loadSyncLogs(){var{data}=await sb.from('sync_logs').select('*').order('started_at',{ascending:false}).limit(20);if(data)syncLogs=data;}
+async function loadUnitMappings(){var{data}=await sb.from('unit_mapping').select('*').order('raw_name');if(data)unitMappings=data;}
+async function loadReservations(){var{data}=await sb.from('reservations').select('*').order('start_date',{ascending:false});if(data)reservations=data;}
+async function dbInsertMapping(raw,mapped){var{error}=await sb.from('unit_mapping').insert({raw_name:raw.trim(),mapped_unit:mapped});return !error;}
+async function dbUpdateMapping(id,raw,mapped){var{error}=await sb.from('unit_mapping').update({raw_name:raw.trim(),mapped_unit:mapped}).eq('id',id);return !error;}
+async function dbDeleteMapping(id){var{error}=await sb.from('unit_mapping').delete().eq('id',id);return !error;}
+async function triggerSync(){
+  syncRunning=true;render();
+  try{
+    var r=await fetch(SUPABASE_URL+'/functions/v1/sync-reservations',{method:'POST',headers:{'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json'},body:JSON.stringify({type:'manual'})});
+    var d=await r.json();
+    if(d.ok){toast('Sync done: '+d.upserted+' records');}else{toast('Sync error: '+(d.error||'unknown'));}
+  }catch(e){toast('Sync failed: '+e.message);}
+  syncRunning=false;
+  await loadSyncLogs();await loadReservations();render();
+}
 
 async function getNextClaimId(prefix){
   var now=new Date();var yr=now.getFullYear();
@@ -943,6 +962,16 @@ async function exportReportPDF(){
     drawSection('SHARED EXPENSES (Both)',shared,[6,95,70]);
     drawSection('OWNER EXPENSES',ownerCl,[29,78,216]);
     // Operator expenses excluded from PDF
+    // Booking summary
+    var pdfRes=reservations.filter(function(r){if(!r.start_date||!r.unit_name)return false;if(r.booking_type===6)return false;if(r.booking_status&&r.booking_status.indexOf('Cancel')>=0)return false;return r.unit_name===rptUnit&&r.start_date.slice(0,7)===ym;});
+    var bkCount=pdfRes.length;
+    var bkRev=pdfRes.reduce(function(s,r){return s+parseFloat(r.rental||0)+parseFloat(r.extra_guest||0);},0);
+    if(bkCount>0){
+      doc.setFontSize(11);doc.setFont(undefined,'bold');doc.setTextColor(146,64,14);
+      doc.text('BOOKINGS',x,y);y+=5;
+      doc.setFontSize(9);doc.setFont(undefined,'normal');doc.setTextColor(60,60,60);
+      doc.text('Reservations: '+bkCount,x+4,y);var revStr='RM '+bkRev.toFixed(2);doc.text('Revenue: '+revStr,x+80,y);y+=8;
+    }
     doc.setDrawColor(0);doc.setLineWidth(0.6);doc.line(x,y,x+pw,y);y+=6;
     doc.setFontSize(12);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
     var grand=shared.reduce(function(s,c){return s+c.amount;},0)+ownerCl.reduce(function(s,c){return s+c.amount;},0);
@@ -1219,7 +1248,7 @@ function render(){
     var rUnitOpts=UNITS.map(function(u){return'<option value="'+u+'"'+(rptUnit===u?' selected':'')+'>'+u+'</option>';}).join('');
     var rMonthOpts=Object.entries(MONTHS).map(function(e){return'<option value="'+e[0]+'"'+(rptMonth===e[0]?' selected':'')+'>'+e[1]+'</option>';}).join('');
     var rYearOpts=YEARS.map(function(y){return'<option value="'+y+'"'+(rptYear===y?' selected':'')+'>'+y+'</option>';}).join('');
-    ms.innerHTML='<div class="scr"><div style="font-size:15px;font-weight:700;color:#111;margin-bottom:2px">Generate Report</div><div style="font-size:11px;color:#6b7280;margin-bottom:12px">Select unit and period</div><div class="fg"><label class="fl">Unit *</label><select class="fi" id="rpt-unit" onchange="rptUnit=this.value"><option value="">— Select unit —</option>'+rUnitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Month</label><select class="fi" id="rpt-month" onchange="rptMonth=this.value">'+rMonthOpts+'</select></div><div class="fg"><label class="fl">Year</label><select class="fi" id="rpt-year" onchange="rptYear=this.value">'+rYearOpts+'</select></div></div><button class="pbtn btn-p" onclick="openReportView()">📊 View Report</button><div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:14px"><div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">Settings</div><div style="display:flex;flex-direction:column;gap:6px"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitConfigList\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Unit Configuration</div><div style="font-size:10px;color:#6b7280">Owner name, unit type, service fee</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'cleaningFees\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Cleaning Fee Rates</div><div style="font-size:10px;color:#6b7280">Fee per unit type</div></div><span style="font-size:16px;color:#6b7280">›</span></div></div></div></div>';
+    ms.innerHTML='<div class="scr"><div style="font-size:15px;font-weight:700;color:#111;margin-bottom:2px">Generate Report</div><div style="font-size:11px;color:#6b7280;margin-bottom:12px">Select unit and period</div><div class="fg"><label class="fl">Unit *</label><select class="fi" id="rpt-unit" onchange="rptUnit=this.value"><option value="">— Select unit —</option>'+rUnitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Month</label><select class="fi" id="rpt-month" onchange="rptMonth=this.value">'+rMonthOpts+'</select></div><div class="fg"><label class="fl">Year</label><select class="fi" id="rpt-year" onchange="rptYear=this.value">'+rYearOpts+'</select></div></div><button class="pbtn btn-p" onclick="openReportView()">📊 View Report</button><div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:14px"><div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">Settings</div><div style="display:flex;flex-direction:column;gap:6px"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitConfigList\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Unit Configuration</div><div style="font-size:10px;color:#6b7280">Owner name, unit type, service fee</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'cleaningFees\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Cleaning Fee Rates</div><div style="font-size:10px;color:#6b7280">Fee per unit type</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="openSyncScreen()"><div><div style="font-size:12px;font-weight:600;color:#111">Reservation Sync</div><div style="font-size:10px;color:#6b7280">Auto-import booking data</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitMappingList\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Unit Name Mapping</div><div style="font-size:10px;color:#6b7280">Map API names to system units</div></div><span style="font-size:16px;color:#6b7280">›</span></div></div></div></div>';
   }
   else if(S==='reportView'){
     tbt_el.textContent='Expense Report';bb_el.style.display='block';adminNav('report');
@@ -1242,6 +1271,16 @@ function render(){
     var grand=stS+stO+stOp;
     var rhtml='<div class="scr">';
     rhtml+='<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">Owner</span><span style="font-size:12px;font-weight:600">'+ownerLabel+'</span></div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">Unit</span><span style="font-size:12px;font-weight:600">'+rptUnit+'</span></div><div style="display:flex;justify-content:space-between"><span style="font-size:11px;color:#6b7280">Period</span><span style="font-size:12px;font-weight:600">'+monthLabel+'</span></div></div>';
+    // Booking summary from reservations
+    var rptRes=reservations.filter(function(r){if(!r.start_date||!r.unit_name)return false;if(r.booking_type===6)return false;if(r.booking_status&&r.booking_status.indexOf('Cancel')>=0)return false;var resYm=r.start_date.slice(0,7);return r.unit_name===rptUnit&&resYm===ym;});
+    var bookingCount=rptRes.length;
+    var bookingRevenue=rptRes.reduce(function(s,r){return s+parseFloat(r.rental||0)+parseFloat(r.extra_guest||0);},0);
+    var utCfg=unitConfig.filter(function(x){return x.unit_name===rptUnit;})[0]||{};
+    var utType=utCfg.unit_type||'';
+    var utFee=unitTypes.filter(function(t){return t.name===utType;})[0]||{};
+    var cfRate=parseFloat(utFee.cleaning_fee||0),lfRate=parseFloat(utFee.laundry_fee||0);
+    var calcClean=bookingCount*cfRate,calcLaundry=bookingCount*lfRate;
+    rhtml+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">📅 Bookings This Month</div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Reservations</span><span style="font-size:12px;font-weight:600">'+bookingCount+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Revenue (Rental+Extra)</span><span style="font-size:12px;font-weight:600">RM '+bookingRevenue.toFixed(2)+'</span></div>'+(utType?'<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px dashed #fde68a;margin-top:4px"><span style="font-size:11px;color:#6b7280">Est. Cleaning ('+bookingCount+'×RM'+cfRate.toFixed(2)+')</span><span style="font-size:11px;font-weight:600">RM '+calcClean.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Est. Laundry ('+bookingCount+'×RM'+lfRate.toFixed(2)+')</span><span style="font-size:11px;font-weight:600">RM '+calcLaundry.toFixed(2)+'</span></div>':'')+'</div>';
     rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#065f46;background:#d1fae5;padding:6px 10px;border-radius:8px;margin-bottom:6px">Shared Expenses (Both)</div>'+rptRows(sharedCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#065f46;border-top:2px solid #d1fae5;margin-top:4px"><span>Subtotal Shared</span><span>RM '+stS.toFixed(2)+'</span></div></div>';
     rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:6px 10px;border-radius:8px;margin-bottom:6px">Owner Expenses</div>'+rptRows(ownerCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#1d4ed8;border-top:2px solid #dbeafe;margin-top:4px"><span>Subtotal Owner</span><span>RM '+stO.toFixed(2)+'</span></div></div>';
     if(operatorCl.length>0){rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;background:#fef3c7;padding:6px 10px;border-radius:8px;margin-bottom:6px">Operator Expenses <span style="font-size:9px;font-weight:400;opacity:.7">(not in PDF)</span></div>'+rptRows(operatorCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#92400e;border-top:2px solid #fef3c7;margin-top:4px"><span>Subtotal Operator</span><span>RM '+stOp.toFixed(2)+'</span></div></div>';}
@@ -1268,6 +1307,34 @@ function render(){
     var ucfg=editingUnitCfg||{};
     var typeOpts='<option value="">— None —</option>'+unitTypes.map(function(t){return'<option value="'+t.name+'"'+(ucfg.unit_type===t.name?' selected':'')+'>'+t.name+'</option>';}).join('');
     ms.innerHTML='<div class="scr">'+(ucFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px;border-radius:8px;margin-bottom:8px">'+ucFormError+'</div>':'')+'<div class="info-box" style="background:#f3f4f6"><div style="font-size:12px;font-weight:600;color:#374151">Unit: '+(ucfg.unit_name||'')+'</div></div><div class="fg"><label class="fl">Owner Name</label><input class="fi" id="ucf-owner" value="'+(ucfg.owner_name||'')+'" placeholder="e.g. Ahmad"/></div><div class="fg"><label class="fl">Unit Type</label><select class="fi" id="ucf-type">'+typeOpts+'</select></div><div class="fg"><label class="fl">Service Fee %</label><input class="fi" id="ucf-svc" type="number" step="0.01" value="'+(ucfg.service_fee_pct||0)+'"/></div><button class="pbtn btn-s" onclick="saveUnitCfg()">Save Changes</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'unitConfigList\',\'reportHome\')">Cancel</button></div>';
+  }
+  else if(S==='reservationSync'){
+    tbt_el.textContent='Reservation Sync';bb_el.style.display='block';adminNav('report');
+    var lastLog=syncLogs.length?syncLogs[0]:null;
+    var lastTime=lastLog?new Date(lastLog.started_at).toLocaleString('en-MY',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'Never';
+    var lastStatus=lastLog?lastLog.status:'—';
+    var lastCount=lastLog?(lastLog.records_upserted||0):'—';
+    var lastErr=lastLog&&lastLog.error_msg?lastLog.error_msg:'';
+    var statusColor=lastStatus==='success'?'#065f46':lastStatus==='error'?'#991b1b':'#92400e';
+    var statusBg=lastStatus==='success'?'#d1fae5':lastStatus==='error'?'#fee2e2':'#fef3c7';
+    var totalRes=reservations.length;
+    var activeRes=reservations.filter(function(r){return r.booking_status&&r.booking_status.indexOf('Cancel')<0&&r.booking_type!==6;}).length;
+    var logRows=syncLogs.map(function(l){var ts=new Date(l.started_at);var tStr=ts.toLocaleDateString('en-MY',{day:'2-digit',month:'short'})+' '+ts.toLocaleTimeString('en-MY',{hour:'2-digit',minute:'2-digit',hour12:false});var sc=l.status==='success'?'#065f46':l.status==='error'?'#991b1b':'#92400e';return'<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f3f4f6;font-size:11px"><span>'+tStr+'</span><span style="color:'+sc+'">'+l.status+'</span><span>'+l.records_upserted+' rec</span><span style="font-size:10px;color:#6b7280">'+l.sync_type+'</span></div>';}).join('');
+    ms.innerHTML='<div class="scr"><div style="display:flex;gap:6px;margin-bottom:10px"><div style="flex:1;background:#dbeafe;border-radius:8px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#1d4ed8">'+totalRes+'</div><div style="font-size:10px;color:#1d4ed8">Total</div></div><div style="flex:1;background:#d1fae5;border-radius:8px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#065f46">'+activeRes+'</div><div style="font-size:10px;color:#065f46">Active</div></div><div style="flex:1;background:'+statusBg+';border-radius:8px;padding:8px;text-align:center"><div style="font-size:11px;font-weight:600;color:'+statusColor+'">'+lastStatus+'</div><div style="font-size:9px;color:'+statusColor+'">'+lastTime+'</div></div></div>'+(lastErr?'<div style="background:#fee2e2;color:#991b1b;font-size:11px;padding:8px;border-radius:8px;margin-bottom:8px">'+lastErr+'</div>':'')+'<div style="display:flex;gap:6px;margin-bottom:10px"><button class="pbtn btn-p" style="flex:1" onclick="triggerSync()"'+(syncRunning?' disabled':'')+'>'+(syncRunning?'⏳ Syncing...':'🔄 Sync Now')+'</button><button class="pbtn btn-o" style="flex:1" onclick="refreshSyncScreen()">↻ Refresh</button></div><div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px">Recent Sync History</div>'+logRows+'</div>';
+  }
+  else if(S==='unitMappingList'){
+    tbt_el.textContent='Unit Name Mapping';bb_el.style.display='block';adminNav('report');
+    var rawNames={};reservations.forEach(function(r){if(r.unit_raw)rawNames[r.unit_raw]=(rawNames[r.unit_raw]||0)+1;});
+    var mappedSet={};unitMappings.forEach(function(m){mappedSet[m.raw_name]=m.mapped_unit;});
+    var allRaw=Object.keys(rawNames).sort();
+    var mapRows=allRaw.map(function(raw){var mapped=mappedSet[raw]||'';var isMapped=!!mapped;var existing=unitMappings.filter(function(m){return m.raw_name===raw;})[0];return'<div style="background:#fff;border:1px solid '+(isMapped?'#d1fae5':'#fef3c7')+';border-radius:10px;padding:10px 12px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:13px;font-weight:600;color:#111">'+raw+' <span style="font-size:10px;color:#6b7280">('+rawNames[raw]+' bookings)</span></div><div style="font-size:10px;color:'+(isMapped?'#065f46':'#92400e')+'">→ '+(mapped||'⚠ Not mapped')+'</div></div><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editMapping(\''+raw.replace(/'/g,"\\'")+'\')">Edit</span></div></div>';}).join('');
+    var unmappedCount=allRaw.filter(function(r){return!mappedSet[r];}).length;
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:'+(unmappedCount>0?'#fef3c7':'#d1fae5')+'"><div style="font-size:11px;color:'+(unmappedCount>0?'#92400e':'#065f46')+'">'+(unmappedCount>0?'⚠ '+unmappedCount+' unmapped unit name(s)':'✓ All unit names mapped')+'</div></div>'+mapRows+'<button class="pbtn btn-p" style="margin-top:8px" onclick="editingMapping=null;umFormError=\'\';ss(\'unitMappingForm\',\'unitMappingList\')">+ Add Manual Mapping</button></div>';
+  }
+  else if(S==='unitMappingForm'){
+    tbt_el.textContent=editingMapping?'Edit Mapping':'Add Mapping';bb_el.style.display='block';adminNav('report');
+    var umUnitOpts='<option value="">— Select unit —</option>'+UNITS.map(function(u){return'<option value="'+u+'"'+(editingMapping&&editingMapping.mapped_unit===u?' selected':'')+'>'+u+'</option>';}).join('');
+    ms.innerHTML='<div class="scr">'+(umFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px;border-radius:8px;margin-bottom:8px">'+umFormError+'</div>':'')+'<div class="fg"><label class="fl">Raw Name (from API) *</label><input class="fi" id="umf-raw" value="'+(editingMapping?editingMapping.raw_name:'')+'"'+(editingMapping?' readonly style="background:#f3f4f6"':'')+'/></div><div class="fg"><label class="fl">Map to System Unit *</label><select class="fi" id="umf-mapped">'+umUnitOpts+'</select></div><button class="pbtn btn-s" onclick="saveMapping()">Save</button>'+(editingMapping?'<button class="pbtn btn-o" style="margin-top:6px;color:#991b1b" onclick="delMapping(\''+editingMapping.id+'\')">Delete Mapping</button>':'')+'<button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'unitMappingList\',\'reportHome\')">Cancel</button></div>';
   }
 }
 
@@ -1311,6 +1378,29 @@ window.saveUnitCfg=async function(){
   else{ucFormError='Save failed';render();}
 };
 window.exportReportPDF=exportReportPDF;
+window.triggerSync=triggerSync;
+window.openSyncScreen=async function(){await loadSyncLogs();ss('reservationSync','reportHome');};
+window.refreshSyncScreen=async function(){await loadSyncLogs();await loadReservations();render();};
+window.editMapping=function(raw){
+  var existing=unitMappings.filter(function(m){return m.raw_name===raw;})[0];
+  editingMapping=existing||{raw_name:raw,mapped_unit:''};umFormError='';
+  ss('unitMappingForm','unitMappingList');
+};
+window.saveMapping=async function(){
+  var r=document.getElementById('umf-raw'),m=document.getElementById('umf-mapped');
+  if(!r||!r.value.trim()){umFormError='Raw name required';render();return;}
+  if(!m||!m.value){umFormError='Select a mapped unit';render();return;}
+  var isEdit=editingMapping&&editingMapping.id;
+  var ok=isEdit?await dbUpdateMapping(editingMapping.id,r.value,m.value):await dbInsertMapping(r.value,m.value);
+  if(ok){await loadUnitMappings();editingMapping=null;toast(isEdit?'Updated':'Added');ss('unitMappingList','reportHome');}
+  else{umFormError='Save failed. Name may already exist.';render();}
+};
+window.delMapping=async function(id){
+  if(!confirm('Delete this mapping?'))return;
+  var ok=await dbDeleteMapping(id);
+  if(ok){await loadUnitMappings();toast('Deleted');ss('unitMappingList','reportHome');}
+  else{toast('Delete failed');}
+};
 window.goBack=goBack;
 window.doLogout=doLogout;
 window.doLogin=doLogin;
