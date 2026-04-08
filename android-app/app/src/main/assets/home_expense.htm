@@ -157,6 +157,9 @@ var isSystemAdmin=false,allUsers=[],editingUser=null,userFormError='';
 var pendingFiles=[],pendingFileNames=[];
 var aiResult=null,aiAnalyzing=false,aiError='',newClaimStep='upload';
 var errorLogs=[],errorLogLoading=false;
+var unitTypes=[],unitConfig=[];
+var rptUnit='',rptMonth='',rptYear='';
+var editingUnitType=null,editingUnitCfg=null,utFormError='',ucFormError='';
 
 // ===== FRONTEND ERROR LOGGER =====
 async function logFrontendError(level,source,message,details){
@@ -218,7 +221,13 @@ async function dbUpdateUnit(id,fields){
   if(error)console.error('dbUpdateUnit:',error);
   return !error;
 }
-async function loadAll(){await loadClaims();await loadBankInfo();await loadUnits();}
+async function loadAll(){await loadClaims();await loadBankInfo();await loadUnits();await loadUnitTypes();await loadUnitConfig();}
+async function loadUnitTypes(){var{data}=await sb.from('unit_types').select('*').order('name');if(data)unitTypes=data;}
+async function loadUnitConfig(){var{data}=await sb.from('unit_config').select('*').order('unit_name');if(data)unitConfig=data;}
+async function dbInsertUnitType(name,cf,lf){var{error}=await sb.from('unit_types').insert({name:name.trim(),cleaning_fee:cf,laundry_fee:lf});return !error;}
+async function dbUpdateUnitType(id,name,cf,lf){var{error}=await sb.from('unit_types').update({name:name.trim(),cleaning_fee:cf,laundry_fee:lf}).eq('id',id);return !error;}
+async function dbDeleteUnitType(id){var{error}=await sb.from('unit_types').delete().eq('id',id);return !error;}
+async function dbUpsertUnitConfig(unitName,unitType,ownerName,svcPct){var{error}=await sb.from('unit_config').upsert({unit_name:unitName,unit_type:unitType||null,owner_name:ownerName,service_fee_pct:svcPct},{onConflict:'unit_name'});return !error;}
 
 async function getNextClaimId(prefix){
   var now=new Date();var yr=now.getFullYear();
@@ -892,6 +901,60 @@ async function submitMgrClaim(){
   mgrFormPayType='employee';mgrFormEmp=myName();ss('adminDash');
 }
 
+// ===== REPORTING MODULE =====
+async function exportReportPDF(){
+  if(!rptUnit||!rptMonth||!rptYear){toast('Missing unit or period');return;}
+  var jsPDFLib=window.jspdf&&window.jspdf.jsPDF?window.jspdf.jsPDF:null;
+  if(!jsPDFLib){toast('PDF library not loaded');return;}
+  var APPROVED_STATUSES=['Approved','Claimed','Auto-Approved','Company-Paid'];
+  var ym=rptYear+'-'+rptMonth;
+  var rc=claims.filter(function(c){return c.unit===rptUnit&&APPROVED_STATUSES.indexOf(c.status)>=0&&(c.expMonth||c.date.slice(0,7))===ym;});
+  var shared=rc.filter(function(c){return c.chargedTo==='Both';});
+  var ownerCl=rc.filter(function(c){return c.chargedTo==='Owner';});
+  var cfg=unitConfig.filter(function(x){return x.unit_name===rptUnit;})[0]||{};
+  var ownerName=cfg.owner_name||'—';
+  var monthLabel=MONTHS[rptMonth]+' '+rptYear;
+  try{
+    var doc=new jsPDFLib({orientation:'p',unit:'mm',format:'a4'});
+    var x=15,y=18,pw=180,rCol=x+pw;
+    doc.setFontSize(18);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
+    doc.text('Expense Report',x,y);y+=8;
+    doc.setFontSize(10);doc.setFont(undefined,'normal');doc.setTextColor(80,80,80);
+    doc.text('Unit: '+rptUnit,x,y);doc.text('Owner: '+ownerName,x+60,y);doc.text('Period: '+monthLabel,x+120,y);y+=5;
+    doc.setDrawColor(180,180,180);doc.setLineWidth(0.4);doc.line(x,y,x+pw,y);y+=7;
+    function drawSection(title,arr,rgb){
+      if(!arr.length)return;
+      var cats={};arr.forEach(function(c){if(!cats[c.category])cats[c.category]=0;cats[c.category]+=c.amount;});
+      doc.setFontSize(11);doc.setFont(undefined,'bold');doc.setTextColor(rgb[0],rgb[1],rgb[2]);
+      doc.text(title,x,y);y+=6;
+      doc.setFontSize(9);doc.setFont(undefined,'normal');doc.setTextColor(60,60,60);
+      Object.entries(cats).forEach(function(e){
+        doc.text(e[0],x+4,y);
+        var amtStr='RM '+e[1].toFixed(2);
+        doc.text(amtStr,rCol-doc.getTextWidth(amtStr),y);
+        y+=5;
+      });
+      var st=arr.reduce(function(s,c){return s+c.amount;},0);
+      doc.setFont(undefined,'bold');doc.setTextColor(rgb[0],rgb[1],rgb[2]);
+      var stStr='RM '+st.toFixed(2);
+      doc.text('Subtotal',x+4,y);doc.text(stStr,rCol-doc.getTextWidth(stStr),y);
+      y+=8;doc.setTextColor(0,0,0);
+    }
+    drawSection('SHARED EXPENSES (Both)',shared,[6,95,70]);
+    drawSection('OWNER EXPENSES',ownerCl,[29,78,216]);
+    // Operator expenses excluded from PDF
+    doc.setDrawColor(0);doc.setLineWidth(0.6);doc.line(x,y,x+pw,y);y+=6;
+    doc.setFontSize(12);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
+    var grand=shared.reduce(function(s,c){return s+c.amount;},0)+ownerCl.reduce(function(s,c){return s+c.amount;},0);
+    var grandStr='RM '+grand.toFixed(2);
+    doc.text('TOTAL EXPENSES',x,y);doc.text(grandStr,rCol-doc.getTextWidth(grandStr),y);y+=10;
+    doc.setFontSize(8);doc.setFont(undefined,'normal');doc.setTextColor(150,150,150);
+    doc.text('Generated: '+new Date().toLocaleDateString('en-MY')+' · Homestay Expense System',x,y);
+    doc.save('Expense_Report_'+rptUnit.replace(/\s+/g,'_')+'_'+MONTHS[rptMonth]+rptYear+'.pdf');
+    toast('PDF exported');
+  }catch(e){console.error('PDF export error:',e);toast('Failed to export PDF');}
+}
+
 // ===== RENDER =====
 function render(){
   var ms=document.getElementById('ms'),tbt_el=document.getElementById('tbt'),bb_el=document.getElementById('bb'),tbr_el=document.getElementById('tbr'),nav=document.getElementById('nav'),lo=document.getElementById('lob');
@@ -908,7 +971,7 @@ function render(){
     if(isSystemAdmin){
       var its=[['users','👥','Users',"openUsers()"],['logs','🪵','Logs',"openErrorLogs()"]];
     } else {
-      var its=[['dash','⊞','Dash',"ss('adminDash')"],['list','☰','Claims',"ss('adminList','adminDash')"],['pay','💳','Pay',"ss('adminPay','adminDash')"],['emps','👥','Staff',"ss('adminEmployees','adminDash')"],['units','🏘','Units',"ss('adminUnits','adminDash')"],['sub','＋','Submit',"ss('mgrNewClaim','adminDash')"],['logs','🪵','Logs',"openErrorLogs()"]];
+      var its=[['dash','⊞','Dash',"ss('adminDash')"],['list','☰','Claims',"ss('adminList','adminDash')"],['pay','💳','Pay',"ss('adminPay','adminDash')"],['emps','👥','Staff',"ss('adminEmployees','adminDash')"],['units','🏘','Units',"ss('adminUnits','adminDash')"],['sub','＋','Submit',"ss('mgrNewClaim','adminDash')"],['report','📊','Report',"ss('reportHome','adminDash')"],['logs','🪵','Logs',"openErrorLogs()"]];
     }
     nav.innerHTML=its.map(function(x){return'<div class="ni'+(a===x[0]?' on':'')+'" onclick="'+x[3]+'"><span class="ni-ic">'+x[1]+'</span>'+x[2]+'</div>';}).join('');
     lo.style.display='block';
@@ -1148,6 +1211,64 @@ function render(){
     var warnCount=errorLogs.filter(function(l){return l.level==='warn'&&!l.resolved;}).length;
     ms.innerHTML='<div class="scr"><div style="display:flex;gap:6px;margin-bottom:8px"><div style="flex:1;background:#fee2e2;border-radius:8px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#991b1b">'+errCount+'</div><div style="font-size:10px;color:#991b1b">Errors</div></div><div style="flex:1;background:#fef3c7;border-radius:8px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#92400e">'+warnCount+'</div><div style="font-size:10px;color:#92400e">Warnings</div></div><div style="flex:1;background:#d1fae5;border-radius:8px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#065f46">'+errorLogs.length+'</div><div style="font-size:10px;color:#065f46">Total</div></div></div><div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-o" style="flex:1;font-size:11px;padding:6px" onclick="loadErrorLogs()">↻ Refresh</button><button class="pbtn btn-o" style="flex:1;font-size:11px;padding:6px;color:#991b1b" onclick="clearResolvedLogs()">Clear Resolved</button></div>'+logCards+'</div>';
   }
+  else if(S==='reportHome'){
+    tbt_el.textContent='Reporting';bb_el.style.display='block';adminNav('report');
+    var today2=new Date();
+    if(!rptYear){rptYear=today2.getFullYear().toString();}
+    if(!rptMonth){rptMonth=(today2.getMonth()<9?'0':'')+(today2.getMonth()+1);}
+    var rUnitOpts=UNITS.map(function(u){return'<option value="'+u+'"'+(rptUnit===u?' selected':'')+'>'+u+'</option>';}).join('');
+    var rMonthOpts=Object.entries(MONTHS).map(function(e){return'<option value="'+e[0]+'"'+(rptMonth===e[0]?' selected':'')+'>'+e[1]+'</option>';}).join('');
+    var rYearOpts=YEARS.map(function(y){return'<option value="'+y+'"'+(rptYear===y?' selected':'')+'>'+y+'</option>';}).join('');
+    ms.innerHTML='<div class="scr"><div style="font-size:15px;font-weight:700;color:#111;margin-bottom:2px">Generate Report</div><div style="font-size:11px;color:#6b7280;margin-bottom:12px">Select unit and period</div><div class="fg"><label class="fl">Unit *</label><select class="fi" id="rpt-unit" onchange="rptUnit=this.value"><option value="">— Select unit —</option>'+rUnitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Month</label><select class="fi" id="rpt-month" onchange="rptMonth=this.value">'+rMonthOpts+'</select></div><div class="fg"><label class="fl">Year</label><select class="fi" id="rpt-year" onchange="rptYear=this.value">'+rYearOpts+'</select></div></div><button class="pbtn btn-p" onclick="openReportView()">📊 View Report</button><div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:14px"><div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">Settings</div><div style="display:flex;flex-direction:column;gap:6px"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitConfigList\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Unit Configuration</div><div style="font-size:10px;color:#6b7280">Owner name, unit type, service fee</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'cleaningFees\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Cleaning Fee Rates</div><div style="font-size:10px;color:#6b7280">Fee per unit type</div></div><span style="font-size:16px;color:#6b7280">›</span></div></div></div></div>';
+  }
+  else if(S==='reportView'){
+    tbt_el.textContent='Expense Report';bb_el.style.display='block';adminNav('report');
+    var APPROVED_STATUSES=['Approved','Claimed','Auto-Approved','Company-Paid'];
+    var ym=rptYear+'-'+rptMonth;
+    var rptClaims=claims.filter(function(c){return c.unit===rptUnit&&APPROVED_STATUSES.indexOf(c.status)>=0&&(c.expMonth||c.date.slice(0,7))===ym;});
+    var sharedCl=rptClaims.filter(function(c){return c.chargedTo==='Both';});
+    var ownerCl=rptClaims.filter(function(c){return c.chargedTo==='Owner';});
+    var operatorCl=rptClaims.filter(function(c){return c.chargedTo==='Operator';});
+    var rptCfg=unitConfig.filter(function(x){return x.unit_name===rptUnit;})[0]||{};
+    var ownerLabel=rptCfg.owner_name||'—';
+    var monthLabel=MONTHS[rptMonth]+' '+rptYear;
+    function rptRows(arr){
+      if(!arr.length)return'<div style="font-size:11px;color:#9ca3af;padding:5px 0">No expenses</div>';
+      var cats={};arr.forEach(function(c){if(!cats[c.category])cats[c.category]=0;cats[c.category]+=c.amount;});
+      return Object.entries(cats).map(function(e){var col=CAT_COLORS[e[0]]||'#888';return'<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f3f4f6"><span style="font-size:11px;color:'+col+'">'+e[0]+'</span><span style="font-size:11px;font-weight:600">RM '+e[1].toFixed(2)+'</span></div>';}).join('');
+    }
+    function rptSt(arr){return arr.reduce(function(s,c){return s+c.amount;},0);}
+    var stS=rptSt(sharedCl),stO=rptSt(ownerCl),stOp=rptSt(operatorCl);
+    var grand=stS+stO+stOp;
+    var rhtml='<div class="scr">';
+    rhtml+='<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">Owner</span><span style="font-size:12px;font-weight:600">'+ownerLabel+'</span></div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">Unit</span><span style="font-size:12px;font-weight:600">'+rptUnit+'</span></div><div style="display:flex;justify-content:space-between"><span style="font-size:11px;color:#6b7280">Period</span><span style="font-size:12px;font-weight:600">'+monthLabel+'</span></div></div>';
+    rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#065f46;background:#d1fae5;padding:6px 10px;border-radius:8px;margin-bottom:6px">Shared Expenses (Both)</div>'+rptRows(sharedCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#065f46;border-top:2px solid #d1fae5;margin-top:4px"><span>Subtotal Shared</span><span>RM '+stS.toFixed(2)+'</span></div></div>';
+    rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:6px 10px;border-radius:8px;margin-bottom:6px">Owner Expenses</div>'+rptRows(ownerCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#1d4ed8;border-top:2px solid #dbeafe;margin-top:4px"><span>Subtotal Owner</span><span>RM '+stO.toFixed(2)+'</span></div></div>';
+    if(operatorCl.length>0){rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;background:#fef3c7;padding:6px 10px;border-radius:8px;margin-bottom:6px">Operator Expenses <span style="font-size:9px;font-weight:400;opacity:.7">(not in PDF)</span></div>'+rptRows(operatorCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#92400e;border-top:2px solid #fef3c7;margin-top:4px"><span>Subtotal Operator</span><span>RM '+stOp.toFixed(2)+'</span></div></div>';}
+    rhtml+='<div style="background:#111;border-radius:10px;padding:12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><span style="font-size:13px;font-weight:700;color:#fff">TOTAL EXPENSES</span><span style="font-size:16px;font-weight:800;color:#fff">RM '+grand.toFixed(2)+'</span></div>';
+    rhtml+='<button class="pbtn btn-s" onclick="exportReportPDF()">⬇ Export PDF</button></div>';
+    ms.innerHTML=rhtml;
+  }
+  else if(S==='cleaningFees'){
+    tbt_el.textContent='Cleaning Fee Rates';bb_el.style.display='block';adminNav('report');
+    var cfRows=unitTypes.length===0?'<div style="text-align:center;padding:20px;font-size:12px;color:#6b7280">No unit types defined yet</div>':unitTypes.map(function(t){return'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:13px;font-weight:600;color:#111">'+t.name+'</div><div style="font-size:10px;color:#6b7280">Cleaning: RM '+parseFloat(t.cleaning_fee||0).toFixed(2)+' · Laundry: RM '+parseFloat(t.laundry_fee||0).toFixed(2)+'</div></div><div style="display:flex;gap:10px"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnitType(\''+t.id+'\')">Edit</span><span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="delUnitType(\''+t.id+'\',\''+t.name.replace(/'/g,"\\'")+'\')">Delete</span></div></div></div>';}).join('');
+    ms.innerHTML='<div class="scr">'+cfRows+'<button class="pbtn btn-p" style="margin-top:8px" onclick="editingUnitType=null;utFormError=\'\';ss(\'cleaningFeeForm\',\'cleaningFees\')">+ Add Unit Type</button></div>';
+  }
+  else if(S==='cleaningFeeForm'){
+    tbt_el.textContent=editingUnitType?'Edit Unit Type':'Add Unit Type';bb_el.style.display='block';adminNav('report');
+    ms.innerHTML='<div class="scr">'+(utFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px;border-radius:8px;margin-bottom:8px">'+utFormError+'</div>':'')+'<div class="fg"><label class="fl">Type Name *</label><input class="fi" id="utf-name" value="'+(editingUnitType?editingUnitType.name:'')+'" placeholder="e.g. Studio, Suite"/></div><div class="tcol"><div class="fg"><label class="fl">Cleaning Fee (RM)</label><input class="fi" id="utf-cf" type="number" step="0.01" value="'+(editingUnitType?parseFloat(editingUnitType.cleaning_fee||0).toFixed(2):'0')+'"/></div><div class="fg"><label class="fl">Laundry Fee (RM)</label><input class="fi" id="utf-lf" type="number" step="0.01" value="'+(editingUnitType?parseFloat(editingUnitType.laundry_fee||0).toFixed(2):'0')+'"/></div></div><button class="pbtn btn-s" onclick="saveUnitType()">'+(editingUnitType?'Save Changes':'Add Unit Type')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'cleaningFees\',\'reportHome\')">Cancel</button></div>';
+  }
+  else if(S==='unitConfigList'){
+    tbt_el.textContent='Unit Configuration';bb_el.style.display='block';adminNav('report');
+    var ucRows=UNITS.map(function(u){var cfg2=unitConfig.filter(function(x){return x.unit_name===u;})[0]||{};return'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:13px;font-weight:600;color:#111">'+u+'</div><div style="font-size:10px;color:#6b7280">'+(cfg2.owner_name||'No owner')+' · '+(cfg2.unit_type||'No type')+' · '+(cfg2.service_fee_pct||0)+'%</div></div><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnitCfg(\''+u+'\')">Edit</span></div>';}).join('');
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">Assign owner, type and service fee % for each unit</div></div>'+ucRows+'</div>';
+  }
+  else if(S==='unitConfigForm'){
+    tbt_el.textContent='Edit Unit Config';bb_el.style.display='block';adminNav('report');
+    var ucfg=editingUnitCfg||{};
+    var typeOpts='<option value="">— None —</option>'+unitTypes.map(function(t){return'<option value="'+t.name+'"'+(ucfg.unit_type===t.name?' selected':'')+'>'+t.name+'</option>';}).join('');
+    ms.innerHTML='<div class="scr">'+(ucFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px;border-radius:8px;margin-bottom:8px">'+ucFormError+'</div>':'')+'<div class="info-box" style="background:#f3f4f6"><div style="font-size:12px;font-weight:600;color:#374151">Unit: '+(ucfg.unit_name||'')+'</div></div><div class="fg"><label class="fl">Owner Name</label><input class="fi" id="ucf-owner" value="'+(ucfg.owner_name||'')+'" placeholder="e.g. Ahmad"/></div><div class="fg"><label class="fl">Unit Type</label><select class="fi" id="ucf-type">'+typeOpts+'</select></div><div class="fg"><label class="fl">Service Fee %</label><input class="fi" id="ucf-svc" type="number" step="0.01" value="'+(ucfg.service_fee_pct||0)+'"/></div><button class="pbtn btn-s" onclick="saveUnitCfg()">Save Changes</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'unitConfigList\',\'reportHome\')">Cancel</button></div>';
+  }
 }
 
 // ===== GLOBAL HANDLERS =====
@@ -1161,6 +1282,35 @@ window.deleteEmpClaim=async function(id){
   else{toast('Failed to delete claim');}
 };
 window.openBankEdit=function(emp){editingBankEmp=emp;ss('bankEdit','adminEmployees');};
+window.openReportView=function(){
+  var u=document.getElementById('rpt-unit'),m=document.getElementById('rpt-month'),yr=document.getElementById('rpt-year');
+  if(u)rptUnit=u.value;if(m)rptMonth=m.value;if(yr)rptYear=yr.value;
+  if(!rptUnit){toast('Please select a unit');return;}
+  ss('reportView','reportHome');
+};
+window.editUnitType=function(id){editingUnitType=unitTypes.filter(function(t){return t.id===id;})[0]||null;utFormError='';ss('cleaningFeeForm','cleaningFees');};
+window.delUnitType=async function(id,name){
+  if(!confirm('Delete unit type "'+name+'"?'))return;
+  var ok=await dbDeleteUnitType(id);
+  if(ok){await loadUnitTypes();toast('Deleted');render();}else{toast('Failed to delete');}
+};
+window.saveUnitType=async function(){
+  var n=document.getElementById('utf-name'),cf=document.getElementById('utf-cf'),lf=document.getElementById('utf-lf');
+  if(!n||!n.value.trim()){utFormError='Type name is required';render();return;}
+  var isEdit=!!editingUnitType;
+  var ok=isEdit?await dbUpdateUnitType(editingUnitType.id,n.value,parseFloat(cf.value)||0,parseFloat(lf.value)||0):await dbInsertUnitType(n.value,parseFloat(cf.value)||0,parseFloat(lf.value)||0);
+  if(ok){await loadUnitTypes();editingUnitType=null;toast(isEdit?'Updated':'Added');ss('cleaningFees','reportHome');}
+  else{utFormError='Save failed. Name may already exist.';render();}
+};
+window.editUnitCfg=function(unitName){editingUnitCfg=unitConfig.filter(function(x){return x.unit_name===unitName;})[0]||{unit_name:unitName};ucFormError='';ss('unitConfigForm','unitConfigList');};
+window.saveUnitCfg=async function(){
+  var owner=document.getElementById('ucf-owner'),tp=document.getElementById('ucf-type'),svc=document.getElementById('ucf-svc');
+  if(!editingUnitCfg||!editingUnitCfg.unit_name){toast('No unit selected');return;}
+  var ok=await dbUpsertUnitConfig(editingUnitCfg.unit_name,tp?tp.value:'',owner?owner.value.trim():'',parseFloat(svc?svc.value:0)||0);
+  if(ok){await loadUnitConfig();editingUnitCfg=null;toast('Saved');ss('unitConfigList','reportHome');}
+  else{ucFormError='Save failed';render();}
+};
+window.exportReportPDF=exportReportPDF;
 window.goBack=goBack;
 window.doLogout=doLogout;
 window.doLogin=doLogin;
