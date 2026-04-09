@@ -136,7 +136,7 @@ body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;
 <script>
 // ===== SUPABASE CONFIG =====
 var SUPABASE_URL='https://skwogboredsczcyhlqgn.supabase.co';
-var SUPABASE_KEY='sb_publishable_92g8DBB_Zf5cv8fqaFBdEA_1fK6e0VL';
+var SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTM2OTksImV4cCI6MjA4OTgyOTY5OX0.Ph11MbcGO-Xx4a52V7eg8x_sKr4fDnhEgKE1PxJm-h0';
 var SUPABASE_SERVICE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDI1MzY5OSwiZXhwIjoyMDg5ODI5Njk5fQ.VuxUoTz2SRMqRLaYhZtqfrjfNLVyEKMF3v4MU_mfVoY';
 var sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
@@ -184,8 +184,8 @@ async function loadErrorLogs(){
 var MONTHS={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
 var YEARS=['2025','2026','2027'];
 var UNITS=['KT11','150A','14A','LC03','IR B1506','IR B1631','IR B1913B','IR A2109','CL B0207','BR B2305','AR C3706','AR D1503','SH P0403','AC 1025','ACc 1027','34F','MP Office'];
-var CATS=['Water Bill','Electricity Bill','Internet Bill','Rental','Maintenance & Repair','Housekeeping & Cleaning','Laundry','Daily Products','Hospitality Items','Electrical & Unit Setup','Office Expenses','Employee Welfare','Outsource Cleaning Staff','Unit Renovation','Other'];
-var CAT_COLORS={'Water Bill':'#185FA5','Electricity Bill':'#0E6E9E','Internet Bill':'#2D5FA5','Rental':'#7C3AED','Maintenance & Repair':'#854F0B','Housekeeping & Cleaning':'#3B6D11','Laundry':'#534AB7','Daily Products':'#0F6E56','Hospitality Items':'#993556','Electrical & Unit Setup':'#993C1D','Office Expenses':'#5F5E5A','Employee Welfare':'#185FA5','Outsource Cleaning Staff':'#854F0B','Unit Renovation':'#A32D2D','Other':'#888780'};
+var CATS=['Water Bill','Electricity Bill','Internet Bill','Rental','MFSF (Maintenance Fund)','Maintenance & Repair','Housekeeping & Cleaning','Laundry','Daily Products','Hospitality Items','Electrical & Unit Setup','Office Expenses','Employee Welfare','Outsource Cleaning Staff','Unit Renovation','Other'];
+var CAT_COLORS={'Water Bill':'#185FA5','Electricity Bill':'#0E6E9E','Internet Bill':'#2D5FA5','Rental':'#7C3AED','MFSF (Maintenance Fund)':'#A45D2B','Maintenance & Repair':'#854F0B','Housekeeping & Cleaning':'#3B6D11','Laundry':'#534AB7','Daily Products':'#0F6E56','Hospitality Items':'#993556','Electrical & Unit Setup':'#993C1D','Office Expenses':'#5F5E5A','Employee Welfare':'#185FA5','Outsource Cleaning Staff':'#854F0B','Unit Renovation':'#A32D2D','Other':'#888780'};
 
 // ===== SUPABASE DATA FUNCTIONS =====
 async function loadClaims(){
@@ -613,9 +613,42 @@ function viewReceiptBox(existingUrl){
   html+='</div>';
   return html;
 }
+// Manager slip management
+var mgrSlipsToRemove=[];
+function pickMgrSlip(){
+  var inp=document.getElementById('mgr-slip-input');
+  if(!inp){inp=document.createElement('input');inp.type='file';inp.id='mgr-slip-input';inp.accept='image/*,.pdf';inp.style.display='none';inp.setAttribute('multiple','multiple');document.body.appendChild(inp);}
+  inp.value='';
+  inp.onchange=function(){
+    if(!inp.files||!inp.files.length)return;
+    for(var i=0;i<inp.files.length;i++){pendingFiles.push(inp.files[i]);pendingFileNames.push(inp.files[i].name);}
+    render();
+  };
+  inp.click();
+}
+function removeMgrSlip(idx){
+  var c=claims.filter(function(x){return x.id===editingId;})[0];
+  if(!c)return;
+  var urls=(c.slipRef||'').split(',').filter(function(u){return u.trim()&&u.startsWith('http');});
+  if(idx>=0&&idx<urls.length){urls.splice(idx,1);var updated=urls.join(',');mgrSlipsToRemove=[c.slipRef];c.slipRef=updated;render();}
+}
+window.pickMgrSlip=pickMgrSlip;window.removeMgrSlip=removeMgrSlip;
 
 // ===== AI RECEIPT ANALYSIS =====
-async function pdfToImageFile(file){
+// Fixed expenses check function
+function getFixedExpensesStatus(month){
+  var fixedCats=['Water Bill','Electricity Bill','Internet Bill','MFSF (Maintenance Fund)'];
+  var result={month:month,items:[]};
+  ACTIVE_EMPS.forEach(function(emp){
+    var empStatus={};
+    fixedCats.forEach(function(cat){
+      var hasClaim=claims.some(function(c){return c.emp===emp&&c.category===cat&&(c.expMonth||c.date.slice(0,7))===month&&(c.status==='Submitted'||c.status==='Approved'||c.status==='Claimed'||c.status==='Auto-Approved');});
+      empStatus[cat]=hasClaim?'✓':'✗';
+    });
+    result.items.push({emp:emp,status:empStatus});
+  });
+  return result;
+}
   if(typeof pdfjsLib==='undefined'){throw new Error('PDF.js not loaded');}
   pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   var ab=await file.arrayBuffer();
@@ -860,6 +893,7 @@ async function saveMgrEdit(){
   var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),amt=document.getElementById('rv-amt'),desc=document.getElementById('rv-desc'),dt=document.getElementById('rv-date'),emv=document.getElementById('rv-expmonth'),chg=document.getElementById('rv-charged');
   var upd={};
   if(cat&&cat.value)upd.category=cat.value;if(unit&&unit.value)upd.unit=unit.value;if(amt&&amt.value)upd.amount=parseFloat(amt.value);if(desc&&desc.value)upd.desc=desc.value;if(dt&&dt.value)upd.date=dt.value;if(emv&&emv.value)upd.expMonth=emv.value;if(chg&&chg.value)upd.chargedTo=chg.value;
+  if(pendingFiles.length){var c=claims.filter(function(x){return x.id===editingId;})[0];var urls=await uploadAllFiles(editingId,{category:c?c.category:'',unit:c?c.unit:'',desc:desc?desc.value:''});if(urls){upd.slipRef=c&&c.slipRef?(c.slipRef+','+urls):urls;}}
   await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim updated');editingId=null;ss('adminList','adminDash');
 }
@@ -1084,6 +1118,19 @@ function render(){
     function dm(v){dashFltMonth=v;render();}function dy(v){dashFltYear=v;render();}function du(v){dashFltUnit=v;render();}
     window.dm=dm;window.dy=dy;window.du=du;
     var base=claims.filter(function(c){var em_=c.expMonth||c.date.slice(0,7);var mo=dashFltMonth==='All'||em_.slice(5,7)===dashFltMonth;var yr=dashFltYear==='All'||em_.slice(0,4)===dashFltYear;var ut=dashFltUnit==='All Units'||dashFltUnit==='All'||c.unit===dashFltUnit;return mo&&yr&&ut;});
+    // Fixed expenses check
+    var currentMonth=new Date().getFullYear()+'-'+(new Date().getMonth()+1<10?'0':'')+(new Date().getMonth()+1);
+    var fxStatus=getFixedExpensesStatus(currentMonth);
+    var fxHtml='';
+    if(fxStatus.items.length){
+      var fxCats=['Water Bill','Electricity Bill','Internet Bill','MFSF (Maintenance Fund)'];
+      var catCounts={};
+      fxCats.forEach(function(cat){catCounts[cat]={done:0,total:fxStatus.items.length};});
+      fxStatus.items.forEach(function(item){fxCats.forEach(function(cat){if(item.status[cat]==='✓')catCounts[cat].done++;});});
+      fxHtml='<div><div class="sec-hdr" style="background:#eff6ff;border-radius:8px;padding:8px 10px;margin-bottom:6px;border:1px solid #93c5fd"><span class="sec-t">✓ Fixed Expenses – '+currentMonth+'</span></div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;background:#f9fafb;border-radius:12px;padding:10px;border:1px solid #e5e7eb">';
+      fxCats.forEach(function(cat){var cnt=catCounts[cat];var isDone=cnt.done===cnt.total;fxHtml+='<div style=\"text-align:center;padding:10px;background:'+(isDone?'#d1fae5':'#fee2e2')+';border-radius:8px;border:1px solid '+(isDone?'#6ee7b7':'#fca5a5')+'\"><div style=\"font-weight:600;font-size:13px;color:'+(isDone?'#065f46':'#991b1b')+'\">'+cat.replace(' (Maintenance Fund)','')+' '+(isDone?'✓':'✗')+'</div><div style=\"font-size:10px;color:'+(isDone?'#047857':'#dc2626')+';margin-top:2px\">'+cnt.done+'/'+cnt.total+'</div></div>';});
+      fxHtml+='</div></div>';
+    }
     var apprTotal=base.filter(function(c){return['Approved','Claimed','Auto-Approved'].indexOf(c.status)>=0;}).reduce(function(s,c){return s+c.amount;},0);
     var coTotal=base.filter(function(c){return c.status==='Company-Paid';}).reduce(function(s,c){return s+c.amount;},0);
     var pending=base.filter(function(c){return c.status==='Submitted';}).length;
@@ -1094,7 +1141,7 @@ function render(){
     var grandTotal=sorted.reduce(function(s,k){return s+catTotals[k];},0);
     var bars=sorted.map(function(cat){var pct=grandTotal>0?Math.round((catTotals[cat]/grandTotal)*100):0;var col=CAT_COLORS[cat]||'#888780';return'<div class="brow"><div class="blbl"><span>'+cat+'</span><span>RM '+catTotals[cat].toFixed(2)+'</span></div><div class="btrk"><div class="bfil" style="width:'+pct+'%;background:'+col+'"></div></div></div>';}).join('');
     var pendCards=base.filter(function(c){return c.status==='Submitted';}).slice(0,2).map(function(c){var i=claims.indexOf(c);return ccCard(c,'adminView('+i+',\'adminDash\')');}).join('');
-    ms.innerHTML='<div class="scr"><div style="background:#f9fafb;border-radius:12px;padding:9px;border:1px solid #e5e7eb;display:flex;flex-direction:column;gap:5px"><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Month</div><div class="flt-row">'+months.map(function(m){return'<span class="chip'+(dashFltMonth===m?' on':'')+'" onclick="dm(\''+m+'\')">'+(m==='All'?'All':MONTHS[m])+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Year</div><div class="flt-row">'+years.map(function(y){return'<span class="chip'+(dashFltYear===y?' on':'')+'" onclick="dy(\''+y+'\')">'+y+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Unit</div><div class="flt-row">'+unitOpts.map(function(u){return'<span class="chip'+((dashFltUnit===u||(dashFltUnit==='All'&&u==='All Units'))?' on':'')+'" onclick="du(\''+u+'\')">'+u+'</span>';}).join('')+'</div></div></div><div class="sgrid" style="grid-template-columns:1fr 1fr;gap:7px"><div class="hero" style="background:#d1fae5"><div style="font-size:11px;color:#065f46">Reimbursable</div><div style="font-size:20px;font-weight:700;color:#065f46">RM '+apprTotal.toFixed(2)+'</div><div style="font-size:11px;color:#065f46;opacity:.8;margin-top:2px">'+claimedN+' claimed</div></div><div class="hero" style="background:#f9fafb;border:1px solid #e5e7eb"><div style="font-size:11px;color:#6b7280">Company paid</div><div style="font-size:20px;font-weight:700;color:#111">RM '+coTotal.toFixed(2)+'</div><div style="font-size:11px;color:#6b7280;margin-top:2px">No reimbursement</div></div></div><div class="sgrid" style="grid-template-columns:repeat(3,minmax(0,1fr))"><div class="sbox" onclick="ss(\'adminList\',\'adminDash\')"><div class="snum" style="color:#92400e">'+pending+'</div><div class="slbl">Pending</div></div><div class="sbox"><div class="snum" style="color:#065f46">'+base.filter(function(c){return c.status==='Approved';}).length+'</div><div class="slbl">Approved</div></div><div class="sbox"><div class="snum" style="color:#92400e">'+claimedN+'</div><div class="slbl">Claimed</div></div></div>'+(isSystemAdmin?'<div class="sbox" onclick="openUsers()" style="cursor:pointer;background:#dbeafe;border-color:#93c5fd;display:flex;align-items:center;gap:10px;padding:11px 14px"><span style="font-size:18px">👥</span><div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1d4ed8">Manage Users</div><div style="font-size:11px;color:#1d4ed8;opacity:.8">Add, edit or remove user accounts</div></div><span style="font-size:12px;color:#1d4ed8">→</span></div>':'')+(pendCards?'<div><div class="sec-hdr"><span class="sec-t">Pending approval</span><span class="va" onclick="ss(\'adminList\',\'adminDash\')">All →</span></div><div style="margin-top:6px">'+pendCards+'</div></div>':'<div style="text-align:center;padding:8px;font-size:12px;color:#6b7280">No pending claims ✓</div>')+(sorted.length?'<div><div class="sec-t" style="margin-bottom:6px">Spending by category</div><div style="background:#f9fafb;border-radius:12px;padding:10px;border:1px solid #e5e7eb">'+bars+'</div></div>':'')+'</div>';
+    ms.innerHTML='<div class="scr"><div style="background:#f9fafb;border-radius:12px;padding:9px;border:1px solid #e5e7eb;display:flex;flex-direction:column;gap:5px"><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Month</div><div class="flt-row">'+months.map(function(m){return'<span class="chip'+(dashFltMonth===m?' on':'')+'" onclick="dm(\''+m+'\')">'+(m==='All'?'All':MONTHS[m])+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Year</div><div class="flt-row">'+years.map(function(y){return'<span class="chip'+(dashFltYear===y?' on':'')+'" onclick="dy(\''+y+'\')">'+y+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Unit</div><div class="flt-row">'+unitOpts.map(function(u){return'<span class="chip'+((dashFltUnit===u||(dashFltUnit==='All'&&u==='All Units'))?' on':'')+'" onclick="du(\''+u+'\')">'+u+'</span>';}).join('')+'</div></div></div><div class="sgrid" style="grid-template-columns:1fr 1fr;gap:7px"><div class="hero" style="background:#d1fae5"><div style="font-size:11px;color:#065f46">Reimbursable</div><div style="font-size:20px;font-weight:700;color:#065f46">RM '+apprTotal.toFixed(2)+'</div><div style="font-size:11px;color:#065f46;opacity:.8;margin-top:2px">'+claimedN+' claimed</div></div><div class="hero" style="background:#f9fafb;border:1px solid #e5e7eb"><div style="font-size:11px;color:#6b7280">Company paid</div><div style="font-size:20px;font-weight:700;color:#111">RM '+coTotal.toFixed(2)+'</div><div style="font-size:11px;color:#6b7280;margin-top:2px">No reimbursement</div></div></div><div class="sgrid" style="grid-template-columns:repeat(3,minmax(0,1fr))"><div class="sbox" onclick="ss(\'adminList\',\'adminDash\')"><div class="snum" style="color:#92400e">'+pending+'</div><div class="slbl">Pending</div></div><div class="sbox"><div class="snum" style="color:#065f46">'+base.filter(function(c){return c.status==='Approved';}).length+'</div><div class="slbl">Approved</div></div><div class="sbox"><div class="snum" style="color:#92400e">'+claimedN+'</div><div class="slbl">Claimed</div></div></div>'+fxHtml+'<div style="display:flex;gap:8px;margin-bottom:12px">'+(isSystemAdmin?'<div class="sbox" onclick="openUsers()" style="cursor:pointer;background:#dbeafe;border-color:#93c5fd;flex:1;display:flex;align-items:center;gap:10px;padding:11px 14px"><span style="font-size:18px">👥</span><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#1d4ed8">Manage Users</div></div></div>':'')+'</div>'+(pendCards?'<div><div class="sec-hdr"><span class="sec-t">Pending approval</span><span class="va" onclick="ss(\'adminList\',\'adminDash\')">All →</span></div><div style="margin-top:6px">'+pendCards+'</div></div>':'<div style="text-align:center;padding:8px;font-size:12px;color:#6b7280">No pending claims ✓</div>')+(sorted.length?'<div><div class="sec-t" style="margin-bottom:6px">Spending by category</div><div style="background:#f9fafb;border-radius:12px;padding:10px;border:1px solid #e5e7eb">'+bars+'</div></div>':'')+'</div>';
   }
   else if(S==='adminList'){
     tbt_el.textContent='All Claims';bb_el.style.display='block';adminNav('list');
@@ -1124,9 +1171,11 @@ function render(){
     editingId=c.id;
     var catOpts=CATS.map(function(cat){return'<option value="'+cat+'"'+(c.category===cat?' selected':'')+'>'+cat+'</option>';}).join('');
     var unitOpts=UNITS.map(function(u){return'<option value="'+u+'"'+(c.unit===u?' selected':'')+'>'+u+'</option>';}).join('');
+    var isApprOrRej=(c.status==='Approved'||c.status==='Auto-Approved'||c.status==='Rejected');
     var isAppr=c.status==='Approved'||c.status==='Auto-Approved';
     var mgrExpMonthOpts=(function(){var now=new Date();var opts=[];for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var sv=c.expMonth||c.date.slice(0,7);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();opts.push('<option value="'+v+'"'+(sv===v?' selected':'')+'>'+lbl+'</option>');}return opts.join('');})();
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Modifying '+c.id+'</span> — currently '+c.status+'. Not yet paid out.</div></div><div class="fg"><label class="fl">Description</label><input class="fi" id="rv-desc" value="'+c.desc+'"/></div><div class="fg"><label class="fl">Category</label><select class="fi" id="rv-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location</label><select class="fi" id="rv-unit">'+unitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM)</label><input class="fi" id="rv-amt" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date</label><input class="fi" id="rv-date" type="date" value="'+c.date+'"/></div></div><div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="rv-expmonth">'+mgrExpMonthOpts+'</select></div><div class="fg"><label class="fl">Charge to *</label><select class="fi" id="rv-charged"><option value="">— Select —</option><option value="Owner"'+(c.chargedTo==='Owner'?' selected':'')+'>Owner</option><option value="Operator"'+(c.chargedTo==='Operator'?' selected':'')+'>Operator</option><option value="Both"'+(c.chargedTo==='Both'?' selected':'')+'>Both</option></select></div>'+(isAppr?'<div class="arow"><button class="pbtn btn-d" onclick="mgrChangeToReject()">Change to Reject</button><button class="pbtn btn-s" onclick="saveMgrEdit()">Save Changes</button></div>':'<div class="arow"><button class="pbtn btn-s" onclick="mgrChangeToApprove()">Change to Approve</button><button class="pbtn btn-o" onclick="saveMgrEdit()">Save Changes</button></div>')+'</div>';
+    var attachmentUI=isApprOrRej?'<div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:12px">'+managerSlipBox(c.slipRef)+(pendingFileNames.length?'<div style="margin-top:6px;padding:6px 10px;background:#d1fae5;border-radius:8px;font-size:11px;color:#065f46"><span style="font-weight:600">'+pendingFileNames.length+'</span> file(s) selected to upload</div>':'')+'</div>':'';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Modifying '+c.id+'</span> — currently '+c.status+'. Not yet paid out.</div></div><div class="fg"><label class="fl">Description</label><input class="fi" id="rv-desc" value="'+c.desc+'"/></div><div class="fg"><label class="fl">Category</label><select class="fi" id="rv-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location</label><select class="fi" id="rv-unit">'+unitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM)</label><input class="fi" id="rv-amt" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date</label><input class="fi" id="rv-date" type="date" value="'+c.date+'"/></div></div><div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="rv-expmonth">'+mgrExpMonthOpts+'</select></div><div class="fg"><label class="fl">Charge to *</label><select class="fi" id="rv-charged"><option value="">— Select —</option><option value="Owner"'+(c.chargedTo==='Owner'?' selected':'')+'>Owner</option><option value="Operator"'+(c.chargedTo==='Operator'?' selected':'')+'>Operator</option><option value="Both"'+(c.chargedTo==='Both'?' selected':'')+'>Both</option></select></div>'+attachmentUI+'<div class="arow">'+(isAppr?'<button class="pbtn btn-d" onclick="mgrChangeToReject()">Change to Reject</button>':'')+'<button class="pbtn btn-s" onclick="saveMgrEdit()">Save Changes</button></div></div>';
   }
   else if(S==='adminEmployees'){
     tbt_el.textContent='Staff & Bank Info';bb_el.style.display='block';adminNav('emps');
@@ -1514,16 +1563,24 @@ window.clearResolvedLogs=async function(){
 
 // ===== INIT: CHECK SESSION =====
 (async function(){
-  render(); // show auth screen
-  var{data:{session}}=await sb.auth.getSession();
-  if(session&&session.user){
-    await initSession(session.user);
-  }
-  sb.auth.onAuthStateChange(async function(event,session){
-    if(event==='SIGNED_OUT'){
-      currentUser=null;currentProfile=null;R=null;S='auth';claims=[];render();
+  try {
+    console.log('Initializing app...');
+    render(); // show auth screen
+    console.log('Initial render called');
+    var{data:{session}}=await sb.auth.getSession();
+    console.log('Session check:', session ? 'logged in' : 'no session');
+    if(session&&session.user){
+      await initSession(session.user);
     }
-  });
+    sb.auth.onAuthStateChange(async function(event,session){
+      if(event==='SIGNED_OUT'){
+        currentUser=null;currentProfile=null;R=null;S='auth';claims=[];render();
+      }
+    });
+  } catch(e) {
+    console.error('Init error:', e.message, e);
+    document.getElementById('ms').innerHTML = '<div style="padding:20px;color:red"><strong>Error:</strong> ' + e.message + '</div>';
+  }
 })();
 </script>
 </body>
