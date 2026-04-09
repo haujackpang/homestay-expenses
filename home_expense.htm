@@ -649,6 +649,7 @@ function getFixedExpensesStatus(month){
   });
   return result;
 }
+async function pdfToImageFile(file){
   if(typeof pdfjsLib==='undefined'){throw new Error('PDF.js not loaded');}
   pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   var ab=await file.arrayBuffer();
