@@ -1562,26 +1562,43 @@ window.clearResolvedLogs=async function(){
 };
 
 // ===== INIT: CHECK SESSION =====
-(async function(){
-  try {
-    console.log('Initializing app...');
-    render(); // show auth screen
-    console.log('Initial render called');
-    var{data:{session}}=await sb.auth.getSession();
-    console.log('Session check:', session ? 'logged in' : 'no session');
-    if(session&&session.user){
-      await initSession(session.user);
-    }
-    sb.auth.onAuthStateChange(async function(event,session){
-      if(event==='SIGNED_OUT'){
-        currentUser=null;currentProfile=null;R=null;S='auth';claims=[];render();
+function startInit(){
+  (async function(){
+    try {
+      console.log('Initializing app...');
+      console.log('Supabase loaded:', typeof supabase !== 'undefined');
+      console.log('sb client:', typeof sb !== 'undefined');
+      if(!sb || !sb.auth){
+        throw new Error('Supabase client not ready');
       }
-    });
-  } catch(e) {
-    console.error('Init error:', e.message, e);
-    document.getElementById('ms').innerHTML = '<div style="padding:20px;color:red"><strong>Error:</strong> ' + e.message + '</div>';
-  }
-})();
+      render(); // show auth screen
+      console.log('Initial render called');
+      var{data:{session}}=await sb.auth.getSession();
+      console.log('Session check:', session ? 'logged in' : 'no session');
+      if(session&&session.user){
+        await initSession(session.user);
+      }
+      sb.auth.onAuthStateChange(async function(event,session){
+        if(event==='SIGNED_OUT'){
+          currentUser=null;currentProfile=null;R=null;S='auth';claims=[];render();
+        }
+      });
+    } catch(e) {
+      console.error('Init error:', e.message, e);
+      var ms=document.getElementById('ms');
+      if(ms){
+        ms.innerHTML = '<div style="padding:20px;color:red"><strong>Error:</strong> ' + e.message + '</div>';
+      }
+    }
+  })();
+}
+
+// Wait for DOM ready and all scripts to load
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded',startInit);
+}else{
+  startInit();
+}
 </script>
 </body>
 </html>
