@@ -43,6 +43,8 @@ function calcNights(start: string, end: string): number {
   return Math.max(0, Math.round(ms / 86400000));
 }
 
+
+
 // ── Main ──────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
@@ -87,12 +89,14 @@ serve(async (req: Request) => {
     const token = loginData.token;
     if (!token) throw new Error("No token in login response");
 
-    // 3. Load unit_mapping for resolving raw → system unit names
-    const { data: mappings } = await sb.from("unit_mapping").select("*");
-    const unitMap: Record<string, string> = {};
-    if (mappings) {
-      for (const m of mappings) {
-        unitMap[m.raw_name.toLowerCase()] = m.mapped_unit;
+    // 3. Load HP units for matching unit_raw → hp_unit_id
+    const { data: hpUnits } = await sb.from("units").select("hp_unit_id, name").eq("source", "hostplatform");
+    const unitRawToHpId: Record<string, string> = {};
+    if (hpUnits) {
+      for (const u of hpUnits) {
+        if (u.name && u.hp_unit_id) {
+          unitRawToHpId[u.name.toLowerCase()] = u.hp_unit_id;
+        }
       }
     }
 
@@ -140,7 +144,6 @@ serve(async (req: Request) => {
       const rows = Object.values(byCode).map((r) => {
         const code = extractCode(r.code as string);
         const unitRaw = (r.unitName as string) || "";
-        const mapped = unitMap[unitRaw.toLowerCase()] || "";
         const charges = r.charges as Record<string, unknown> | undefined;
         const rental = typeof charges?.rental === "number" ? charges.rental : 0;
         const extraGuest = typeof charges?.extraGuest === "number" ? charges.extraGuest : 0;
@@ -153,7 +156,8 @@ serve(async (req: Request) => {
           platform: (r.platform as string) || "",
           booking_status: (r.bookingStatus as string) || "",
           unit_raw: unitRaw,
-          unit_name: mapped,
+          unit_name: unitRaw,
+          hp_unit_id: unitRawToHpId[unitRaw.toLowerCase()] || null,
           property_name: (r.propertyName as string) || "",
           guest_name: (r.guestName as string) || "",
           contact_number: (r.contactNumber as string) || "",

@@ -150,6 +150,7 @@ var dashFltMonth='All',dashFltYear='All',dashFltUnit='All';
 var checkedClaims={},slipFiles=[],slipFileNames=[];
 var mgrFormEmp='',mgrFormPayType='employee';
 var empExpandMap={},editingBankEmp=null;
+var fxCollapsed=true;
 var claims=[],BANK_INFO={},EMPS=[],ACTIVE_EMPS=[],UNITS_DATA=[];
 var editingUnit=null,unitFormError='';
 var authError='',authLoading=false;
@@ -160,8 +161,7 @@ var errorLogs=[],errorLogLoading=false;
 var unitTypes=[],unitConfig=[];
 var rptUnit='',rptMonth='',rptYear='';
 var editingUnitType=null,editingUnitCfg=null,utFormError='',ucFormError='';
-var syncLogs=[],syncLoading=false,syncRunning=false;
-var unitMappings=[],editingMapping=null,umFormError='';
+var syncLogs=[],syncLoading=false,syncRunning=false,unitSyncing=false;
 var reservations=[];
 
 // ===== FRONTEND ERROR LOGGER =====
@@ -184,15 +184,15 @@ async function loadErrorLogs(){
 var MONTHS={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
 var YEARS=['2025','2026','2027'];
 var UNITS=['KT11','150A','14A','LC03','IR B1506','IR B1631','IR B1913B','IR A2109','CL B0207','BR B2305','AR C3706','AR D1503','SH P0403','AC 1025','ACc 1027','34F','MP Office'];
-var CATS=['Water Bill','Electricity Bill','Internet Bill','Rental','MFSF (Maintenance Fund)','Maintenance & Repair','Housekeeping & Cleaning','Laundry','Daily Products','Hospitality Items','Electrical & Unit Setup','Office Expenses','Employee Welfare','Outsource Cleaning Staff','Unit Renovation','Other'];
-var CAT_COLORS={'Water Bill':'#185FA5','Electricity Bill':'#0E6E9E','Internet Bill':'#2D5FA5','Rental':'#7C3AED','MFSF (Maintenance Fund)':'#A45D2B','Maintenance & Repair':'#854F0B','Housekeeping & Cleaning':'#3B6D11','Laundry':'#534AB7','Daily Products':'#0F6E56','Hospitality Items':'#993556','Electrical & Unit Setup':'#993C1D','Office Expenses':'#5F5E5A','Employee Welfare':'#185FA5','Outsource Cleaning Staff':'#854F0B','Unit Renovation':'#A32D2D','Other':'#888780'};
+var CATS=['Water Bill','Electricity Bill','Internet Bill','Rental','MFSF','Maintenance & Repair','Housekeeping & Cleaning','Laundry','Daily Products','Hospitality Items','Electrical & Unit Setup','Office Expenses','Employee Welfare','Outsource Cleaning Staff','Unit Renovation','Other'];
+var CAT_COLORS={'Water Bill':'#185FA5','Electricity Bill':'#0E6E9E','Internet Bill':'#2D5FA5','Rental':'#7C3AED','MFSF':'#A45D2B','Maintenance & Repair':'#854F0B','Housekeeping & Cleaning':'#3B6D11','Laundry':'#534AB7','Daily Products':'#0F6E56','Hospitality Items':'#993556','Electrical & Unit Setup':'#993C1D','Office Expenses':'#5F5E5A','Employee Welfare':'#185FA5','Outsource Cleaning Staff':'#854F0B','Unit Renovation':'#A32D2D','Other':'#888780'};
 
 // ===== SUPABASE DATA FUNCTIONS =====
 async function loadClaims(){
   var q=sb.from('claims').select('*').order('created_at',{ascending:false});
   var{data,error}=await q;
   if(error){console.error('loadClaims:',error);return;}
-  claims=data.map(function(r){return{id:r.claim_id,uid:r.id,emp:r.emp||'',unit:r.unit||'',category:r.category||'',desc:r.description,amount:parseFloat(r.amount),date:r.date,expMonth:r.expense_month||r.date.slice(0,7),status:r.status,rejectReason:r.reject_reason||'',slipRef:r.slip_ref||'',payType:r.pay_type,submittedBy:r.submitted_by,chargedTo:r.charged_to||''};});
+  claims=data.map(function(r){return{id:r.claim_id,uid:r.id,emp:r.emp||'',unit:r.unit||'',hpUnitId:r.hp_unit_id||null,category:r.category||'',desc:r.description,amount:parseFloat(r.amount),date:r.date,expMonth:r.expense_month||r.date.slice(0,7),status:r.status,rejectReason:r.reject_reason||'',slipRef:r.slip_ref||'',payType:r.pay_type,submittedBy:r.submitted_by,chargedTo:r.charged_to||''};});
 }
 async function loadBankInfo(){
   var{data,error}=await sb.from('bank_info').select('*');
@@ -207,15 +207,17 @@ async function loadBankInfo(){
   if(mgrFormEmp===''&&ACTIVE_EMPS.length)mgrFormEmp=myName();
 }
 async function loadUnits(){
-  var{data,error}=await sb.from('units').select('*').order('name');
+  var{data,error}=await sb.from('units').select('*').order('property_name').order('name');
   if(error){console.error('loadUnits:',error);return;}
   if(data&&data.length){
     UNITS_DATA=data;
-    UNITS=UNITS_DATA.filter(function(u){return u.active!==false;}).map(function(u){return u.name;});
+    UNITS=UNITS_DATA.filter(function(u){return u.active!==false;}).map(function(u){
+      return u.property_short?u.property_short+' '+u.name:u.name;
+    });
   }
 }
-async function dbInsertUnit(name){
-  var{error}=await sb.from('units').insert({name:name.trim()});
+async function dbInsertUnit(name,propertyShort){
+  var{error}=await sb.from('units').insert({name:name.trim(),property_short:propertyShort||'',source:'manual'});
   if(error)console.error('dbInsertUnit:',error);
   return !error;
 }
@@ -224,7 +226,7 @@ async function dbUpdateUnit(id,fields){
   if(error)console.error('dbUpdateUnit:',error);
   return !error;
 }
-async function loadAll(){await loadClaims();await loadBankInfo();await loadUnits();await loadUnitTypes();await loadUnitConfig();await loadUnitMappings();await loadReservations();}
+async function loadAll(){await loadClaims();await loadBankInfo();await loadUnits();await loadUnitTypes();await loadUnitConfig();await loadSyncLogs();await loadReservations();}
 async function loadUnitTypes(){var{data}=await sb.from('unit_types').select('*').order('name');if(data)unitTypes=data;}
 async function loadUnitConfig(){var{data}=await sb.from('unit_config').select('*').order('unit_name');if(data)unitConfig=data;}
 async function dbInsertUnitType(name,cf,lf){var{error}=await sb.from('unit_types').insert({name:name.trim(),cleaning_fee:cf,laundry_fee:lf});return !error;}
@@ -232,11 +234,7 @@ async function dbUpdateUnitType(id,name,cf,lf){var{error}=await sb.from('unit_ty
 async function dbDeleteUnitType(id){var{error}=await sb.from('unit_types').delete().eq('id',id);return !error;}
 async function dbUpsertUnitConfig(unitName,unitType,ownerName,svcPct){var{error}=await sb.from('unit_config').upsert({unit_name:unitName,unit_type:unitType||null,owner_name:ownerName,service_fee_pct:svcPct},{onConflict:'unit_name'});return !error;}
 async function loadSyncLogs(){var{data}=await sb.from('sync_logs').select('*').order('started_at',{ascending:false}).limit(20);if(data)syncLogs=data;}
-async function loadUnitMappings(){var{data}=await sb.from('unit_mapping').select('*').order('raw_name');if(data)unitMappings=data;}
 async function loadReservations(){var{data}=await sb.from('reservations').select('*').order('start_date',{ascending:false});if(data)reservations=data;}
-async function dbInsertMapping(raw,mapped){var{error}=await sb.from('unit_mapping').insert({raw_name:raw.trim(),mapped_unit:mapped});return !error;}
-async function dbUpdateMapping(id,raw,mapped){var{error}=await sb.from('unit_mapping').update({raw_name:raw.trim(),mapped_unit:mapped}).eq('id',id);return !error;}
-async function dbDeleteMapping(id){var{error}=await sb.from('unit_mapping').delete().eq('id',id);return !error;}
 async function triggerSync(){
   syncRunning=true;render();
   try{
@@ -264,7 +262,7 @@ async function getNextClaimId(prefix){
 }
 
 async function dbInsertClaim(c){
-  var{error}=await sb.from('claims').insert({claim_id:c.id,emp:c.emp,unit:c.unit,category:c.category,description:c.desc,amount:c.amount,date:c.date,expense_month:c.expMonth||c.date.slice(0,7),status:c.status,reject_reason:c.rejectReason,slip_ref:c.slipRef,pay_type:c.payType,submitted_by:c.submittedBy,charged_to:c.chargedTo||'',created_by:currentUser.id});
+  var{error}=await sb.from('claims').insert({claim_id:c.id,emp:c.emp,unit:c.unit,hp_unit_id:c.hpUnitId||null,category:c.category,description:c.desc,amount:c.amount,date:c.date,expense_month:c.expMonth||c.date.slice(0,7),status:c.status,reject_reason:c.rejectReason,slip_ref:c.slipRef,pay_type:c.payType,submitted_by:c.submittedBy,charged_to:c.chargedTo||'',created_by:currentUser.id});
   if(error)console.error('dbInsertClaim:',error);
   return !error;
 }
@@ -276,6 +274,7 @@ async function dbUpdateClaim(claimId,fields){
   if(fields.status!==undefined)upd.status=fields.status;
   if(fields.category!==undefined)upd.category=fields.category;
   if(fields.unit!==undefined)upd.unit=fields.unit;
+  if(fields.hpUnitId!==undefined)upd.hp_unit_id=fields.hpUnitId;
   if(fields.rejectReason!==undefined)upd.reject_reason=fields.rejectReason;
   if(fields.slipRef!==undefined)upd.slip_ref=fields.slipRef;
   if(fields.expMonth!==undefined)upd.expense_month=fields.expMonth;
@@ -288,6 +287,11 @@ async function dbDeleteClaim(claimId){
   var{data,error}=await sb.from('claims').delete().eq('claim_id',claimId).select('claim_id');
   if(error){console.error('dbDeleteClaim:',error);return false;}
   return data&&data.length>0;
+}
+// Look up hp_unit_id from UNITS_DATA given a display name (property_short+' '+name or just name)
+function unitHpId(displayName){
+  var u=UNITS_DATA.filter(function(u){var dn=u.property_short?u.property_short+' '+u.name:u.name;return dn===displayName;})[0];
+  return u?u.hp_unit_id:null;
 }
 async function dbUpdateBankInfo(empName,bank,acc,fullName){
   var{error}=await sb.from('bank_info').update({bank:bank,acc:acc,full_name:fullName,updated_at:new Date().toISOString()}).eq('employee_name',empName);
@@ -633,11 +637,26 @@ function removeMgrSlip(idx){
   if(idx>=0&&idx<urls.length){urls.splice(idx,1);var updated=urls.join(',');mgrSlipsToRemove=[c.slipRef];c.slipRef=updated;render();}
 }
 window.pickMgrSlip=pickMgrSlip;window.removeMgrSlip=removeMgrSlip;
+function managerSlipBox(slipRef){
+  var existingUrls=(slipRef||'').split(',').filter(function(u){return u.trim()&&u.startsWith('http');});
+  var html='';
+  if(existingUrls.length){
+    html+='<div style="margin:4px 0;display:flex;flex-direction:column;gap:4px">';
+    existingUrls.forEach(function(u,i){
+      var name=decodeURIComponent(u.split('/').pop());
+      var isImg=/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(name);
+      html+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f0fdf4;border:1px solid #059669;border-radius:10px"><a href="'+u.trim()+'" target="_blank" style="display:flex;align-items:center;gap:6px;flex:1;text-decoration:none;overflow:hidden"><span style="font-size:16px">'+(isImg?'🖼️':'📄')+'</span><span style="font-size:11px;color:#059669;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Attachment '+(i+1)+'</span><span style="font-size:10px;color:#6b7280;margin-left:auto">View →</span></a><span onclick="removeMgrSlip('+i+')" style="font-size:14px;color:#991b1b;cursor:pointer;padding:2px 8px;flex-shrink:0">✕</span></div>';
+    });
+    html+='</div>';
+  }
+  html+='<div class="up-box" onclick="pickMgrSlip()" style="margin-top:4px"><div style="font-size:20px">'+(existingUrls.length?'➕':'📎')+'</div><div style="font-size:12px;color:#6b7280;margin-top:3px">'+(existingUrls.length?'Add more attachments':'Tap to upload attachment')+'</div><div style="font-size:10px;color:#9ca3af">Photos or PDF</div></div>';
+  return html;
+}
 
 // ===== AI RECEIPT ANALYSIS =====
 // Fixed expenses check function
 function getFixedExpensesStatus(month){
-  var fixedCats=['Water Bill','Electricity Bill','Internet Bill','MFSF (Maintenance Fund)'];
+  var fixedCats=['Water Bill','Electricity Bill','Internet Bill','MFSF'];
   var result={month:month,items:[]};
   ACTIVE_EMPS.forEach(function(emp){
     var empStatus={};
@@ -803,7 +822,8 @@ function filterClaims(list,st,mo,yr,em){
 async function approveClaim(id,cat,unit,expMonth,chargedTo){
   var upd={status:'Approved',category:cat||undefined,unit:unit||undefined,rejectReason:''};
   if(expMonth)upd.expMonth=expMonth;
-  if(chargedTo)upd.chargedTo=chargedTo;
+  upd.chargedTo=chargedTo||'';
+  if(unit)upd.hpUnitId=unitHpId(unit);
   await dbUpdateClaim(id,upd);
   await loadClaims();toast('Claim approved');ss('adminList','adminDash');
 }
@@ -893,7 +913,7 @@ async function submitEmpEdit(){
 async function saveMgrEdit(){
   var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),amt=document.getElementById('rv-amt'),desc=document.getElementById('rv-desc'),dt=document.getElementById('rv-date'),emv=document.getElementById('rv-expmonth'),chg=document.getElementById('rv-charged');
   var upd={};
-  if(cat&&cat.value)upd.category=cat.value;if(unit&&unit.value)upd.unit=unit.value;if(amt&&amt.value)upd.amount=parseFloat(amt.value);if(desc&&desc.value)upd.desc=desc.value;if(dt&&dt.value)upd.date=dt.value;if(emv&&emv.value)upd.expMonth=emv.value;if(chg&&chg.value)upd.chargedTo=chg.value;
+  if(cat&&cat.value)upd.category=cat.value;if(unit&&unit.value){upd.unit=unit.value;upd.hpUnitId=unitHpId(unit.value);}if(amt&&amt.value)upd.amount=parseFloat(amt.value);if(desc&&desc.value)upd.desc=desc.value;if(dt&&dt.value)upd.date=dt.value;if(emv&&emv.value)upd.expMonth=emv.value;if(unit&&unit.value==='MP Office')upd.chargedTo='';else if(chg&&chg.value)upd.chargedTo=chg.value;
   if(pendingFiles.length){var c=claims.filter(function(x){return x.id===editingId;})[0];var urls=await uploadAllFiles(editingId,{category:c?c.category:'',unit:c?c.unit:'',desc:desc?desc.value:''});if(urls){upd.slipRef=c&&c.slipRef?(c.slipRef+','+urls):urls;}}
   await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim updated');editingId=null;ss('adminList','adminDash');
@@ -937,7 +957,8 @@ async function submitMgrClaim(){
   var dv=desc.value,av=parseFloat(amt.value),dtv=dt.value,cv=cat?cat.value:'Other',uv=unit?unit.value:'';
   if(!dv||!av||!dtv){toast('Please fill all required fields');return;}
   var charged=document.getElementById('f-charged');
-  if(!charged||!charged.value){toast('Please select who to charge');return;}
+  var isMP=uv==='MP Office';
+  if(!isMP&&(!charged||!charged.value)){toast('Please select who to charge');return;}
   var isCompany=mgrFormPayType==='company';
   // Duplicate check: same employee, same amount, same month, not rejected/draft
   if(av&&dtv){
@@ -948,7 +969,7 @@ async function submitMgrClaim(){
   }
   var cid=await getNextClaimId(isCompany?'CO':'MGR');
   var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:dtv.slice(0,7);
-  var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,category:cv,desc:dv,amount:av,date:dtv,expMonth:expM,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager',chargedTo:charged.value};
+  var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,hpUnitId:unitHpId(uv),category:cv,desc:dv,amount:av,date:dtv,expMonth:expM,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager',chargedTo:isMP?'':charged.value};
   if(pendingFiles.length){var urls=await uploadAllFiles(cid,{category:cv,unit:uv,desc:dv,date:dtv});if(urls)nc.slipRef=urls;}
   await dbInsertClaim(nc);
   await loadClaims();toast(isCompany?'Recorded as Company-Paid':'Auto-approved for '+mgrFormEmp);
@@ -1124,7 +1145,7 @@ function render(){
     var fxStatus=getFixedExpensesStatus(currentMonth);
     var fxHtml='';
     if(fxStatus.items.length){
-      var fxCats=['Water Bill','Electricity Bill','Internet Bill','MFSF (Maintenance Fund)'];
+      var fxCats=['Water Bill','Electricity Bill','Internet Bill','MFSF'];
       var catCounts={};
       fxCats.forEach(function(cat){catCounts[cat]={done:0,total:fxStatus.items.length};});
       fxStatus.items.forEach(function(item){fxCats.forEach(function(cat){if(item.status[cat]==='✓')catCounts[cat].done++;});});
@@ -1161,7 +1182,7 @@ function render(){
     var catOpts=CATS.map(function(cat){return'<option value="'+cat+'"'+(c.category===cat?' selected':'')+'>'+cat+'</option>';}).join('');
     var unitOpts=UNITS.map(function(u){return'<option value="'+u+'"'+(c.unit===u?' selected':'')+'>'+u+'</option>';}).join('');
     var editBar=locked?'<div class="lock-bar"><span>🔒</span><span style="font-size:11px;color:#6b7280;margin-left:4px">Paid out — cannot modify.</span></div>':canMgrEd?'<div class="edit-bar"><span style="font-size:11px;color:#92400e">This claim can be modified</span><span class="edit-link" onclick="ss(\'mgrEdit\',\'adminReview\')">Edit →</span></div>':'';
-    var actionArea=isPending?(function(){var now=new Date();var mopts='';for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var sv=c.expMonth||c.date.slice(0,7);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();mopts+='<option value="'+v+'"'+(sv===v?' selected':'')+'>'+lbl+'</option>';}return'<div class="fg"><label class="fl">Assign category *</label><select class="fi" id="rv-cat"><option value="">— Select —</option>'+catOpts+'</select></div><div class="fg"><label class="fl">Assign unit *</label><select class="fi" id="rv-unit"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="rv-expmonth">'+mopts+'</select></div><div class="fg"><label class="fl">Charge to *</label><select class="fi" id="rv-charged"><option value="">— Select —</option><option value="Owner">Owner</option><option value="Operator">Operator</option><option value="Both">Both</option></select></div><div class="fg"><label class="fl">Rejection reason (if rejecting)</label><input class="fi" id="rv-reason" placeholder="Leave blank if approving"/></div><div class="arow"><button class="pbtn btn-d" onclick="doReject()">✕  Reject</button><button class="pbtn btn-s" onclick="doApprove()">✓  Approve</button></div>';}()):isCompanyPaid?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid</span> — no reimbursement needed.</div></div>':'<div style="background:#f9fafb;border-radius:8px;padding:10px;text-align:center;font-size:12px;color:#6b7280">Status: '+c.status+'</div>';
+    var actionArea=isPending?(function(){var now=new Date();var mopts='';for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var sv=c.expMonth||c.date.slice(0,7);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();mopts+='<option value="'+v+'"'+(sv===v?' selected':'')+'>'+lbl+'</option>';}return'<div class="fg"><label class="fl">Assign category *</label><select class="fi" id="rv-cat"><option value="">— Select —</option>'+catOpts+'</select></div><div class="fg"><label class="fl">Assign unit *</label><select class="fi" id="rv-unit" onchange="toggleChargeTo(this.value,'rv-charge-wrap')"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="rv-expmonth">'+mopts+'</select></div><div id="rv-charge-wrap"><div class="fg"><label class="fl">Charge to *</label><select class="fi" id="rv-charged"><option value="">— Select —</option><option value="Owner">Owner</option><option value="Operator">Operator</option><option value="Both">Both</option></select></div></div><div class="fg"><label class="fl">Rejection reason (if rejecting)</label><input class="fi" id="rv-reason" placeholder="Leave blank if approving"/></div><div class="arow"><button class="pbtn btn-d" onclick="doReject()">✕  Reject</button><button class="pbtn btn-s" onclick="doApprove()">✓  Approve</button></div>';}()):isCompanyPaid?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid</span> — no reimbursement needed.</div></div>':'<div style="background:#f9fafb;border-radius:8px;padding:10px;text-align:center;font-size:12px;color:#6b7280">Status: '+c.status+'</div>';
     var byMgr=c.submittedBy==='manager'?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Submitted by manager</span>'+(c.emp?' for '+c.emp:'')+'</div></div>':'';
     var rejBox=c.status==='Rejected'&&c.rejectReason?'<div class="rbox"><div style="font-size:10px;font-weight:600;color:#991b1b">Rejection reason</div><div style="font-size:12px;color:#991b1b;margin-top:1px">'+c.rejectReason+'</div></div>':'';
     var claimedBox=c.status==='Claimed'?(function(){var sr=c.slipRef||'';var urls=sr.split(',').filter(function(u){return u.trim()&&u.startsWith('http');});if(!urls.length)return'<div class="slip-box"><span>💳</span><span style="font-size:12px;color:#92400e;font-weight:600;margin-left:4px">Paid</span></div>';return'<div style="margin:4px 0"><div style="font-size:11px;font-weight:600;color:#92400e;margin-bottom:4px">💳 Bank transfer slip(s)</div>'+urls.map(function(u,i){return'<a href="'+u.trim()+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:3px;background:#fef3c7;border:1px dashed #f59e0b;border-radius:10px;text-decoration:none"><span style="font-size:14px">📄</span><span style="font-size:11px;color:#92400e;font-weight:600;flex:1">Slip '+(i+1)+'</span><span style="font-size:10px;color:#6b7280">View →</span></a>';}).join('')+'</div>';}()):'';
@@ -1176,7 +1197,8 @@ function render(){
     var isAppr=c.status==='Approved'||c.status==='Auto-Approved';
     var mgrExpMonthOpts=(function(){var now=new Date();var opts=[];for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var sv=c.expMonth||c.date.slice(0,7);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();opts.push('<option value="'+v+'"'+(sv===v?' selected':'')+'>'+lbl+'</option>');}return opts.join('');})();
     var attachmentUI=isApprOrRej?'<div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:12px">'+managerSlipBox(c.slipRef)+(pendingFileNames.length?'<div style="margin-top:6px;padding:6px 10px;background:#d1fae5;border-radius:8px;font-size:11px;color:#065f46"><span style="font-weight:600">'+pendingFileNames.length+'</span> file(s) selected to upload</div>':'')+'</div>':'';
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Modifying '+c.id+'</span> — currently '+c.status+'. Not yet paid out.</div></div><div class="fg"><label class="fl">Description</label><input class="fi" id="rv-desc" value="'+c.desc+'"/></div><div class="fg"><label class="fl">Category</label><select class="fi" id="rv-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location</label><select class="fi" id="rv-unit">'+unitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM)</label><input class="fi" id="rv-amt" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date</label><input class="fi" id="rv-date" type="date" value="'+c.date+'"/></div></div><div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="rv-expmonth">'+mgrExpMonthOpts+'</select></div><div class="fg"><label class="fl">Charge to *</label><select class="fi" id="rv-charged"><option value="">— Select —</option><option value="Owner"'+(c.chargedTo==='Owner'?' selected':'')+'>Owner</option><option value="Operator"'+(c.chargedTo==='Operator'?' selected':'')+'>Operator</option><option value="Both"'+(c.chargedTo==='Both'?' selected':'')+'>Both</option></select></div>'+attachmentUI+'<div class="arow">'+(isAppr?'<button class="pbtn btn-d" onclick="mgrChangeToReject()">Change to Reject</button>':'')+'<button class="pbtn btn-s" onclick="saveMgrEdit()">Save Changes</button></div></div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Modifying '+c.id+'</span> — currently '+c.status+'. Not yet paid out.</div></div><div class="fg"><label class="fl">Description</label><input class="fi" id="rv-desc" value="'+c.desc+'"/></div><div class="fg"><label class="fl">Category</label><select class="fi" id="rv-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location</label><select class="fi" id="rv-unit" onchange="toggleChargeTo(this.value,'rv-charge-wrap')">'+unitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM)</label><input class="fi" id="rv-amt" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date</label><input class="fi" id="rv-date" type="date" value="'+c.date+'"/></div></div><div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="rv-expmonth">'+mgrExpMonthOpts+'</select></div><div id="rv-charge-wrap"><div class="fg"><label class="fl">Charge to *</label><select class="fi" id="rv-charged"><option value="">— Select —</option><option value="Owner"'+(c.chargedTo==='Owner'?' selected':'')+'>Owner</option><option value="Operator"'+(c.chargedTo==='Operator'?' selected':'')+'>Operator</option><option value="Both"'+(c.chargedTo==='Both'?' selected':'')+'>Both</option></select></div></div>'+attachmentUI+'<div class="arow">'+(isAppr?'<button class="pbtn btn-d" onclick="mgrChangeToReject()">Change to Reject</button>':'')+'<button class="pbtn btn-s" onclick="saveMgrEdit()">Save Changes</button></div></div>';
+    setTimeout(function(){var u=document.getElementById('rv-unit');if(u)toggleChargeTo(u.value,'rv-charge-wrap');},0);
   }
   else if(S==='adminEmployees'){
     tbt_el.textContent='Staff & Bank Info';bb_el.style.display='block';adminNav('emps');
@@ -1196,15 +1218,22 @@ function render(){
   else if(S==='adminUnits'){
     tbt_el.textContent='Units';bb_el.style.display='block';adminNav('units');
     var activeCount=UNITS_DATA.filter(function(u){return u.active!==false;}).length;
+    var hpCount=UNITS_DATA.filter(function(u){return u.source==='hostplatform';}).length;
     var rows=UNITS_DATA.length?UNITS_DATA.map(function(u){
       var isActive=u.active!==false;
-      return'<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#111">'+u.name+'</div>'+(isActive?'<div style="font-size:11px;color:#065f46">Active</div>':'<div style="font-size:11px;color:#991b1b">Deactivated</div>')+'</div><div style="display:flex;gap:10px;align-items:center"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnit(\''+u.id+'\')">Edit</span>'+(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',false)">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',true)">Activate</span>')+'</div></div>';
-    }).join(''):'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No units yet — units are loaded from database.</div>';
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+UNITS_DATA.length+' unit(s) total · '+activeCount+' active</span> — deactivated units won\'t appear in dropdowns.</div></div>'+rows+'<button class="pbtn btn-p" onclick="editingUnit=null;unitFormError=\'\';ss(\'unitForm\',\'adminUnits\')">+ Add New Unit</button></div>';
+      var isHP=u.source==='hostplatform';
+      var displayName=u.property_short?u.property_short+' '+u.name:u.name;
+      var sourceBadge=isHP?'<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px;margin-left:5px">HP</span>':'<span style="font-size:10px;background:#f3f4f6;color:#6b7280;padding:1px 5px;border-radius:4px;margin-left:5px">Manual</span>';
+      var subtitle=u.property_name?'<div style="font-size:10px;color:#6b7280">'+u.property_name+(u.property_short?' · Short: '+u.property_short:'')+'</div>':'';
+      var syncedInfo=u.synced_at?'<div style="font-size:10px;color:#9ca3af">Synced: '+new Date(u.synced_at).toLocaleString('en-MY',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})+'</div>':'';
+      return'<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#111">'+displayName+sourceBadge+'</div>'+(isActive?'<div style="font-size:11px;color:#065f46">Active</div>':'<div style="font-size:11px;color:#991b1b">Deactivated</div>')+subtitle+syncedInfo+'</div><div style="display:flex;gap:10px;align-items:center"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnit(\''+u.id+'\')">Edit</span>'+(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',false)">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',true)">Activate</span>')+'</div></div>';
+    }).join(''):'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">Click "Sync from HP" to import units, or add manually.</div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+UNITS_DATA.length+' unit(s) · '+activeCount+' active · '+hpCount+' from HP</span> — deactivated units won\'t appear in dropdowns.</div></div><div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-p" style="flex:1" onclick="triggerUnitSync()"'+(unitSyncing?' disabled':'')+'>'+(unitSyncing?'⏳ Syncing...':'🔄 Sync from HP')+'</button><button class="pbtn btn-o" style="flex:1" onclick="editingUnit=null;unitFormError=\'\';ss(\'unitForm\',\'adminUnits\')">+ Add Manual</button></div>'+rows+'</div>';
   }
   else if(S==='unitForm'){
     tbt_el.textContent=editingUnit?'Edit Unit':'New Unit';bb_el.style.display='block';adminNav('units');
-    ms.innerHTML='<div class="scr">'+(unitFormError?'<div class="info-box" style="background:#fee2e2"><div style="font-size:11px;color:#991b1b">'+unitFormError+'</div></div>':'')+'<div class="fg"><label class="fl">Unit name *</label><input class="fi" id="unit-name" value="'+(editingUnit?editingUnit.name:'')+'" placeholder="e.g. KT11, IR B1506"/></div><button class="pbtn btn-p" onclick="saveUnit()">'+(editingUnit?'Save Changes':'Add Unit')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminUnits\',\'adminDash\')">Cancel</button></div>';
+    var isHP=editingUnit&&editingUnit.source==='hostplatform';
+    ms.innerHTML='<div class="scr">'+(unitFormError?'<div class="info-box" style="background:#fee2e2"><div style="font-size:11px;color:#991b1b">'+unitFormError+'</div></div>':'')+(isHP?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">HP unit — name is synced from HostPlatform. Edit property short code below.</div></div><div class="fg"><label class="fl">Unit name (HP)</label><input class="fi" value="'+editingUnit.name+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">Property</label><input class="fi" value="'+(editingUnit.property_name||'')+'" readonly style="background:#f3f4f6"/></div>':'<div class="fg"><label class="fl">Unit name *</label><input class="fi" id="unit-name" value="'+(editingUnit?editingUnit.name:'')+'" placeholder="e.g. MP Office"/></div>')+'<div class="fg"><label class="fl">Property short code</label><input class="fi" id="unit-short" value="'+(editingUnit?editingUnit.property_short||'':'')+'" placeholder="e.g. AR, IR, AC"/></div><button class="pbtn btn-p" onclick="saveUnit()">'+(editingUnit?'Save Changes':'Add Unit')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminUnits\',\'adminDash\')">Cancel</button></div>';
   }
   else if(S==='adminPay'){
     tbt_el.textContent='Pay Out';bb_el.style.display='block';adminNav('pay');
@@ -1260,7 +1289,7 @@ function render(){
     var _ld=new Date(parseInt(today.slice(0,4)),parseInt(today.slice(5,7))-2,1);var lastMonth=_ld.getFullYear()+'-'+(_ld.getMonth()+1<10?'0':'')+(_ld.getMonth()+1);
     var scanBtn='<div style="background:#eff6ff;border:1px dashed #93c5fd;border-radius:10px;padding:9px 12px;display:flex;align-items:center;gap:8px;cursor:pointer" onclick="mgrScanReceipt()"><span style="font-size:16px">📷</span><div style="flex:1"><div style="font-size:12px;font-weight:600;color:#1d4ed8">Scan Receipt with AI</div><div style="font-size:10px;color:#6b7280">Auto-fill description, amount & date</div></div><span style="font-size:11px;color:#1d4ed8">→</span></div>';
     var mgrAiLoading=aiAnalyzing?'<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#eff6ff;border-radius:10px;border:1px solid #93c5fd"><div class="ai-spinner" style="width:18px;height:18px;border-width:2px"></div><span style="font-size:12px;color:#1d4ed8">Analyzing receipt...</span></div>':'';
-    ms.innerHTML='<div class="scr"><div style="display:flex;flex-direction:column;gap:7px"><div class="ptype-card'+(isCompany?'':' on')+'" onclick="togglePayType(\'employee\')"><div style="font-size:20px">👤</div><div><div class="ptype-title">Employee paid</div><div class="ptype-desc">Needs reimbursement — auto-approved</div></div></div><div class="ptype-card'+(isCompany?' on':'')+'" onclick="togglePayType(\'company\')"><div style="font-size:20px">🏢</div><div><div class="ptype-title">Company paid</div><div class="ptype-desc">No reimbursement — tracking only</div></div></div></div>'+(aiAnalyzing?mgrAiLoading:scanBtn)+(isCompany?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid:</span> No employee assigned.</div></div>':'<div class="fg"><label class="fl">Submit for employee *</label><select class="fi" id="f-emp" onchange="mgrFormEmp=this.value">'+empOpts+'</select></div>')+'<div class="fg"><label class="fl">Category *</label><select class="fi" id="f-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location *</label><select class="fi" id="f-unit"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. Electricity Bill - INV12345"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div>'+expMonthSelect(lastMonth)+'<div class="fg"><label class="fl">Charge to *</label><select class="fi" id="f-charged"><option value="">— Select —</option><option value="Owner">Owner</option><option value="Operator">Operator</option><option value="Both">Both</option></select></div><div id="rbox">'+receiptBox('')+'</div><button class="pbtn '+(isCompany?'btn-s':'btn-p')+'" onclick="submitMgrClaim()">'+(isCompany?'Record as Company-Paid':'Submit (Auto-Approved)')+'</button></div>';
+    ms.innerHTML='<div class="scr"><div style="display:flex;flex-direction:column;gap:7px"><div class="ptype-card'+(isCompany?'':' on')+'" onclick="togglePayType(\'employee\')"><div style="font-size:20px">👤</div><div><div class="ptype-title">Employee paid</div><div class="ptype-desc">Needs reimbursement — auto-approved</div></div></div><div class="ptype-card'+(isCompany?' on':'')+'" onclick="togglePayType(\'company\')"><div style="font-size:20px">🏢</div><div><div class="ptype-title">Company paid</div><div class="ptype-desc">No reimbursement — tracking only</div></div></div></div>'+(aiAnalyzing?mgrAiLoading:scanBtn)+(isCompany?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid:</span> No employee assigned.</div></div>':'<div class="fg"><label class="fl">Submit for employee *</label><select class="fi" id="f-emp" onchange="mgrFormEmp=this.value">'+empOpts+'</select></div>')+'<div class="fg"><label class="fl">Category *</label><select class="fi" id="f-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location *</label><select class="fi" id="f-unit" onchange="toggleChargeTo(this.value,'f-charge-wrap')"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. Electricity Bill - INV12345"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div>'+expMonthSelect(lastMonth)+'<div id="f-charge-wrap"><div class="fg"><label class="fl">Charge to *</label><select class="fi" id="f-charged"><option value="">— Select —</option><option value="Owner">Owner</option><option value="Operator">Operator</option><option value="Both">Both</option></select></div></div><div id="rbox">'+receiptBox('')+'</div><button class="pbtn '+(isCompany?'btn-s':'btn-p')+'" onclick="submitMgrClaim()">'+(isCompany?'Record as Company-Paid':'Submit (Auto-Approved)')+'</button></div>';
   }
   else if(S==='errorLogs'){
     tbt_el.textContent='Error Logs';bb_el.style.display='block';adminNav('logs');
@@ -1298,7 +1327,7 @@ function render(){
     var rUnitOpts=UNITS.map(function(u){return'<option value="'+u+'"'+(rptUnit===u?' selected':'')+'>'+u+'</option>';}).join('');
     var rMonthOpts=Object.entries(MONTHS).map(function(e){return'<option value="'+e[0]+'"'+(rptMonth===e[0]?' selected':'')+'>'+e[1]+'</option>';}).join('');
     var rYearOpts=YEARS.map(function(y){return'<option value="'+y+'"'+(rptYear===y?' selected':'')+'>'+y+'</option>';}).join('');
-    ms.innerHTML='<div class="scr"><div style="font-size:15px;font-weight:700;color:#111;margin-bottom:2px">Generate Report</div><div style="font-size:11px;color:#6b7280;margin-bottom:12px">Select unit and period</div><div class="fg"><label class="fl">Unit *</label><select class="fi" id="rpt-unit" onchange="rptUnit=this.value"><option value="">— Select unit —</option>'+rUnitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Month</label><select class="fi" id="rpt-month" onchange="rptMonth=this.value">'+rMonthOpts+'</select></div><div class="fg"><label class="fl">Year</label><select class="fi" id="rpt-year" onchange="rptYear=this.value">'+rYearOpts+'</select></div></div><button class="pbtn btn-p" onclick="openReportView()">📊 View Report</button><div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:14px"><div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">Settings</div><div style="display:flex;flex-direction:column;gap:6px"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitConfigList\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Unit Configuration</div><div style="font-size:10px;color:#6b7280">Owner name, unit type, service fee</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'cleaningFees\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Cleaning Fee Rates</div><div style="font-size:10px;color:#6b7280">Fee per unit type</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="openSyncScreen()"><div><div style="font-size:12px;font-weight:600;color:#111">Reservation Sync</div><div style="font-size:10px;color:#6b7280">Auto-import booking data</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitMappingList\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Unit Name Mapping</div><div style="font-size:10px;color:#6b7280">Map API names to system units</div></div><span style="font-size:16px;color:#6b7280">›</span></div></div></div></div>';
+    ms.innerHTML='<div class="scr"><div style="font-size:15px;font-weight:700;color:#111;margin-bottom:2px">Generate Report</div><div style="font-size:11px;color:#6b7280;margin-bottom:12px">Select unit and period</div><div class="fg"><label class="fl">Unit *</label><select class="fi" id="rpt-unit" onchange="rptUnit=this.value"><option value="">— Select unit —</option>'+rUnitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Month</label><select class="fi" id="rpt-month" onchange="rptMonth=this.value">'+rMonthOpts+'</select></div><div class="fg"><label class="fl">Year</label><select class="fi" id="rpt-year" onchange="rptYear=this.value">'+rYearOpts+'</select></div></div><button class="pbtn btn-p" onclick="openReportView()">📊 View Report</button><div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:14px"><div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">Settings</div><div style="display:flex;flex-direction:column;gap:6px"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitConfigList\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Unit Configuration</div><div style="font-size:10px;color:#6b7280">Owner name, unit type, service fee</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'cleaningFees\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Cleaning Fee Rates</div><div style="font-size:10px;color:#6b7280">Fee per unit type</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="openSyncScreen()"><div><div style="font-size:12px;font-weight:600;color:#111">Reservation Sync</div><div style="font-size:10px;color:#6b7280">Auto-import booking data</div></div><span style="font-size:16px;color:#6b7280">›</span></div></div></div></div>';
   }
   else if(S==='reportView'){
     tbt_el.textContent='Expense Report';bb_el.style.display='block';adminNav('report');
@@ -1372,20 +1401,6 @@ function render(){
     var logRows=syncLogs.map(function(l){var ts=new Date(l.started_at);var tStr=ts.toLocaleDateString('en-MY',{day:'2-digit',month:'short'})+' '+ts.toLocaleTimeString('en-MY',{hour:'2-digit',minute:'2-digit',hour12:false});var sc=l.status==='success'?'#065f46':l.status==='error'?'#991b1b':'#92400e';return'<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f3f4f6;font-size:11px"><span>'+tStr+'</span><span style="color:'+sc+'">'+l.status+'</span><span>'+l.records_upserted+' rec</span><span style="font-size:10px;color:#6b7280">'+l.sync_type+'</span></div>';}).join('');
     ms.innerHTML='<div class="scr"><div style="display:flex;gap:6px;margin-bottom:10px"><div style="flex:1;background:#dbeafe;border-radius:8px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#1d4ed8">'+totalRes+'</div><div style="font-size:10px;color:#1d4ed8">Total</div></div><div style="flex:1;background:#d1fae5;border-radius:8px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#065f46">'+activeRes+'</div><div style="font-size:10px;color:#065f46">Active</div></div><div style="flex:1;background:'+statusBg+';border-radius:8px;padding:8px;text-align:center"><div style="font-size:11px;font-weight:600;color:'+statusColor+'">'+lastStatus+'</div><div style="font-size:9px;color:'+statusColor+'">'+lastTime+'</div></div></div>'+(lastErr?'<div style="background:#fee2e2;color:#991b1b;font-size:11px;padding:8px;border-radius:8px;margin-bottom:8px">'+lastErr+'</div>':'')+'<div style="display:flex;gap:6px;margin-bottom:10px"><button class="pbtn btn-p" style="flex:1" onclick="triggerSync()"'+(syncRunning?' disabled':'')+'>'+(syncRunning?'⏳ Syncing...':'🔄 Sync Now')+'</button><button class="pbtn btn-o" style="flex:1" onclick="refreshSyncScreen()">↻ Refresh</button></div><div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px">Recent Sync History</div>'+logRows+'</div>';
   }
-  else if(S==='unitMappingList'){
-    tbt_el.textContent='Unit Name Mapping';bb_el.style.display='block';adminNav('report');
-    var rawNames={};reservations.forEach(function(r){if(r.unit_raw)rawNames[r.unit_raw]=(rawNames[r.unit_raw]||0)+1;});
-    var mappedSet={};unitMappings.forEach(function(m){mappedSet[m.raw_name]=m.mapped_unit;});
-    var allRaw=Object.keys(rawNames).sort();
-    var mapRows=allRaw.map(function(raw){var mapped=mappedSet[raw]||'';var isMapped=!!mapped;var existing=unitMappings.filter(function(m){return m.raw_name===raw;})[0];return'<div style="background:#fff;border:1px solid '+(isMapped?'#d1fae5':'#fef3c7')+';border-radius:10px;padding:10px 12px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:13px;font-weight:600;color:#111">'+raw+' <span style="font-size:10px;color:#6b7280">('+rawNames[raw]+' bookings)</span></div><div style="font-size:10px;color:'+(isMapped?'#065f46':'#92400e')+'">→ '+(mapped||'⚠ Not mapped')+'</div></div><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editMapping(\''+raw.replace(/'/g,"\\'")+'\')">Edit</span></div></div>';}).join('');
-    var unmappedCount=allRaw.filter(function(r){return!mappedSet[r];}).length;
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:'+(unmappedCount>0?'#fef3c7':'#d1fae5')+'"><div style="font-size:11px;color:'+(unmappedCount>0?'#92400e':'#065f46')+'">'+(unmappedCount>0?'⚠ '+unmappedCount+' unmapped unit name(s)':'✓ All unit names mapped')+'</div></div>'+mapRows+'<button class="pbtn btn-p" style="margin-top:8px" onclick="editingMapping=null;umFormError=\'\';ss(\'unitMappingForm\',\'unitMappingList\')">+ Add Manual Mapping</button></div>';
-  }
-  else if(S==='unitMappingForm'){
-    tbt_el.textContent=editingMapping?'Edit Mapping':'Add Mapping';bb_el.style.display='block';adminNav('report');
-    var umUnitOpts='<option value="">— Select unit —</option>'+UNITS.map(function(u){return'<option value="'+u+'"'+(editingMapping&&editingMapping.mapped_unit===u?' selected':'')+'>'+u+'</option>';}).join('');
-    ms.innerHTML='<div class="scr">'+(umFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px;border-radius:8px;margin-bottom:8px">'+umFormError+'</div>':'')+'<div class="fg"><label class="fl">Raw Name (from API) *</label><input class="fi" id="umf-raw" value="'+(editingMapping?editingMapping.raw_name:'')+'"'+(editingMapping?' readonly style="background:#f3f4f6"':'')+'/></div><div class="fg"><label class="fl">Map to System Unit *</label><select class="fi" id="umf-mapped">'+umUnitOpts+'</select></div><button class="pbtn btn-s" onclick="saveMapping()">Save</button>'+(editingMapping?'<button class="pbtn btn-o" style="margin-top:6px;color:#991b1b" onclick="delMapping(\''+editingMapping.id+'\')">Delete Mapping</button>':'')+'<button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'unitMappingList\',\'reportHome\')">Cancel</button></div>';
-  }
 }
 
 // ===== GLOBAL HANDLERS =====
@@ -1429,28 +1444,18 @@ window.saveUnitCfg=async function(){
 };
 window.exportReportPDF=exportReportPDF;
 window.triggerSync=triggerSync;
+window.triggerUnitSync=async function(){
+  unitSyncing=true;render();
+  try{
+    var r=await fetch(SUPABASE_URL+'/functions/v1/sync-units',{method:'POST',headers:{'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json'}});
+    var d=await r.json();
+    if(d.ok){await loadUnits();toast('Unit sync done: '+d.synced+' units'+(d.nameChanges?' · '+d.nameChanges+' name change(s)':''));}
+    else{toast('Sync error: '+(d.error||'unknown'));}
+  }catch(e){toast('Sync failed: '+e.message);}
+  unitSyncing=false;render();
+};
 window.openSyncScreen=async function(){await loadSyncLogs();ss('reservationSync','reportHome');};
 window.refreshSyncScreen=async function(){await loadSyncLogs();await loadReservations();render();};
-window.editMapping=function(raw){
-  var existing=unitMappings.filter(function(m){return m.raw_name===raw;})[0];
-  editingMapping=existing||{raw_name:raw,mapped_unit:''};umFormError='';
-  ss('unitMappingForm','unitMappingList');
-};
-window.saveMapping=async function(){
-  var r=document.getElementById('umf-raw'),m=document.getElementById('umf-mapped');
-  if(!r||!r.value.trim()){umFormError='Raw name required';render();return;}
-  if(!m||!m.value){umFormError='Select a mapped unit';render();return;}
-  var isEdit=editingMapping&&editingMapping.id;
-  var ok=isEdit?await dbUpdateMapping(editingMapping.id,r.value,m.value):await dbInsertMapping(r.value,m.value);
-  if(ok){await loadUnitMappings();editingMapping=null;toast(isEdit?'Updated':'Added');ss('unitMappingList','reportHome');}
-  else{umFormError='Save failed. Name may already exist.';render();}
-};
-window.delMapping=async function(id){
-  if(!confirm('Delete this mapping?'))return;
-  var ok=await dbDeleteMapping(id);
-  if(ok){await loadUnitMappings();toast('Deleted');ss('unitMappingList','reportHome');}
-  else{toast('Delete failed');}
-};
 window.goBack=goBack;
 window.doLogout=doLogout;
 window.doLogin=doLogin;
@@ -1463,9 +1468,10 @@ window.doApprove=async function(){
   var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),emv=document.getElementById('rv-expmonth'),chg=document.getElementById('rv-charged');
   if(!cat||!cat.value){toast('Please assign a category');return;}
   if(!unit||!unit.value){toast('Please assign a unit');return;}
-  if(!chg||!chg.value){toast('Please select who to charge');return;}
-  await approveClaim(SEL.id,cat.value,unit.value,emv?emv.value:'',chg.value);
+  if(unit.value!=='MP Office'&&(!chg||!chg.value)){toast('Please select who to charge');return;}
+  await approveClaim(SEL.id,cat.value,unit.value,emv?emv.value:'',unit.value==='MP Office'?'':chg.value);
 };
+window.toggleChargeTo=function(unitVal,wrapId){var wrap=document.getElementById(wrapId);if(wrap)wrap.style.display=unitVal==='MP Office'?'none':'';};
 window.doReject=async function(){var r=document.getElementById('rv-reason');await rejectClaim(SEL.id,r?r.value:'No reason given');};
 window.saveMgrEdit=saveMgrEdit;window.saveEmpEdit=saveEmpEdit;window.submitEmpEdit=submitEmpEdit;
 window.submitNewClaim=submitNewClaim;window.submitMgrClaim=submitMgrClaim;
@@ -1477,17 +1483,26 @@ window.toggleUnitActive=async function(id,active){
   else toast('Failed to update unit');
 };
 window.saveUnit=async function(){
-  var nameEl=document.getElementById('unit-name');
-  if(!nameEl||!nameEl.value.trim()){unitFormError='Unit name is required';render();return;}
-  var name=nameEl.value.trim();
-  if(editingUnit){
-    var ok=await dbUpdateUnit(editingUnit.id,{name:name});
+  var shortEl=document.getElementById('unit-short');
+  var propertyShort=shortEl?shortEl.value.trim():'';
+  if(editingUnit&&editingUnit.source==='hostplatform'){
+    // HP unit — only allow editing property_short
+    var ok=await dbUpdateUnit(editingUnit.id,{property_short:propertyShort});
     if(ok){await loadUnits();toast('Unit updated');editingUnit=null;ss('adminUnits','adminDash');}
-    else{unitFormError='Failed to update. Name may already exist.';render();}
+    else{unitFormError='Failed to update unit';render();}
   }else{
-    var ok=await dbInsertUnit(name);
-    if(ok){await loadUnits();toast('Unit "'+name+'" added');ss('adminUnits','adminDash');}
-    else{unitFormError='Failed to add. Name may already exist.';render();}
+    var nameEl=document.getElementById('unit-name');
+    if(!nameEl||!nameEl.value.trim()){unitFormError='Unit name is required';render();return;}
+    var name=nameEl.value.trim();
+    if(editingUnit){
+      var ok=await dbUpdateUnit(editingUnit.id,{name:name,property_short:propertyShort});
+      if(ok){await loadUnits();toast('Unit updated');editingUnit=null;ss('adminUnits','adminDash');}
+      else{unitFormError='Failed to update. Name may already exist.';render();}
+    }else{
+      var ok=await dbInsertUnit(name,propertyShort);
+      if(ok){await loadUnits();toast('Unit "'+name+'" added');ss('adminUnits','adminDash');}
+      else{unitFormError='Failed to add. Name may already exist.';render();}
+    }
   }
 };
 window.mgrScanReceipt=function(){
@@ -1549,7 +1564,7 @@ window.mgrChangeToReject=async function(){
 window.mgrChangeToApprove=async function(){
   var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),amt=document.getElementById('rv-amt'),chg=document.getElementById('rv-charged');
   var upd={status:'Approved',rejectReason:''};
-  if(cat&&cat.value)upd.category=cat.value;if(unit&&unit.value)upd.unit=unit.value;if(amt&&amt.value)upd.amount=parseFloat(amt.value);if(chg&&chg.value)upd.chargedTo=chg.value;
+  if(cat&&cat.value)upd.category=cat.value;if(unit&&unit.value)upd.unit=unit.value;if(amt&&amt.value)upd.amount=parseFloat(amt.value);if(unit&&unit.value==='MP Office')upd.chargedTo='';else if(chg&&chg.value)upd.chargedTo=chg.value;
   await dbUpdateClaim(SEL.id,upd);
   await loadClaims();toast('Changed to Approved');editingId=null;ss('adminList','adminDash');
 };
