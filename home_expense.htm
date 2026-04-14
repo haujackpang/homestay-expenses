@@ -139,7 +139,8 @@ body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;
 var SUPABASE_URL='__SUPABASE_URL__';
 var SUPABASE_KEY='__SUPABASE_KEY__';
 var SUPABASE_SERVICE_KEY='__SUPABASE_SERVICE_KEY__';
-var sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+var sb;
+try{sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);}catch(e){console.error('Supabase init error:',e.message);}
 
 // ===== STATE =====
 var R=null,S='auth',PS=null,SEL=null,editingId=null,payTab='byEmp';
