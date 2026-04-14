@@ -51,9 +51,12 @@ jobs:
           mkdir -p _site
           cp home_expense.htm _site/index.html
           cp home_expense.htm _site/home_expense.htm
+          # Disable Jekyll
+          touch _site/.nojekyll
           # Copy other static files if needed
           if [ -f user-manual.htm ]; then cp user-manual.htm _site/user-manual.htm; fi
           if [ -f README.md ]; then cp README.md _site/README.md; fi
+          echo "Build output:"
           ls -la _site/
 
       - name: Upload Pages artifact
