@@ -1,0 +1,65 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Replace configuration placeholders
+        run: |
+          # Replace Supabase URL
+          sed -i "s|__SUPABASE_URL__|${{ secrets.SUPABASE_URL }}|g" home_expense.htm
+          # Replace Supabase Key
+          sed -i "s|__SUPABASE_KEY__|${{ secrets.SUPABASE_KEY }}|g" home_expense.htm
+          # Replace Supabase Service Key
+          sed -i "s|__SUPABASE_SERVICE_KEY__|${{ secrets.SUPABASE_SERVICE_KEY }}|g" home_expense.htm
+          
+          # Verify replacements (no __PLACEHOLDER__ should remain)
+          if grep -q '__SUPABASE_' home_expense.htm; then
+            echo "Error: Some placeholders were not replaced!"
+            grep '__SUPABASE_' home_expense.htm | head -5
+            exit 1
+          fi
+          echo "✓ Configuration replaced successfully"
+
+      - name: Prepare build output
+        run: |
+          mkdir -p _site
+          cp home_expense.htm _site/index.html
+          cp home_expense.htm _site/home_expense.htm
+          # Copy other static files if needed
+          if [ -f user-manual.htm ]; then cp user-manual.htm _site/user-manual.htm; fi
+          if [ -f README.md ]; then cp README.md _site/README.md; fi
+          ls -la _site/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: '_site'
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2

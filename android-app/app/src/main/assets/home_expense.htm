@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
 body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;}
@@ -135,9 +136,9 @@ body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;
 
 <script>
 // ===== SUPABASE CONFIG =====
-var SUPABASE_URL='https://skwogboredsczcyhlqgn.supabase.co';
-var SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTM2OTksImV4cCI6MjA4OTgyOTY5OX0.Ph11MbcGO-Xx4a52V7eg8x_sKr4fDnhEgKE1PxJm-h0';
-var SUPABASE_SERVICE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDI1MzY5OSwiZXhwIjoyMDg5ODI5Njk5fQ.VuxUoTz2SRMqRLaYhZtqfrjfNLVyEKMF3v4MU_mfVoY';
+var SUPABASE_URL='__SUPABASE_URL__';
+var SUPABASE_KEY='__SUPABASE_KEY__';
+var SUPABASE_SERVICE_KEY='__SUPABASE_SERVICE_KEY__';
 var sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
 // ===== STATE =====
@@ -532,6 +533,17 @@ function buildAttachName(cat,unit,desc,date,aiItems){
     return prefix+' '+summary+' '+my;
   }
 }
+async function compressImageFile(file){
+  if(typeof ImageCompression==='undefined'){console.warn('browser-image-compression not loaded');return file;}
+  try{
+    var options={maxSizeMB:0.3,maxWidthOrHeight:1280,useWebWorker:true};
+    var compressed=await ImageCompression.compress(file,options);
+    return new File([compressed],file.name,{type:'image/jpeg'});
+  }catch(e){
+    console.warn('Image compression failed',e);
+    return file;
+  }
+}
 async function imageToPdf(file){
   var jsPDFLib=window.jspdf&&window.jspdf.jsPDF?window.jspdf.jsPDF:null;
   if(!jsPDFLib){console.warn('jsPDF not loaded, uploading original');return file;}
@@ -563,17 +575,20 @@ async function uploadAllFiles(claimId,opts){
   var desc=(opts&&opts.desc)||'';
   var date=(opts&&opts.date)||new Date().toISOString().slice(0,10);
   var aiItems=(opts&&opts.aiItems)||null;
+  var userId=currentUser&&currentUser.id?currentUser.id:'unknown';
+  var yearMonth=date.slice(0,7);
   for(var i=0;i<pendingFiles.length;i++){
     var f=pendingFiles[i];
     var ext=f.name.split('.').pop().toLowerCase();
     var imgExts=['jpg','jpeg','png','gif','webp','heic','bmp'];
     if(imgExts.indexOf(ext)>=0){
+      try{f=await compressImageFile(f);ext='jpg';}catch(e){console.warn('Image compression failed',e);}
       try{f=await imageToPdf(f);ext='pdf';}catch(e){console.warn('imageToPdf failed',e);}
     }
     var baseName=buildAttachName(cat,unit,desc,date,aiItems);
     var safeBase=baseName.replace(/[^a-zA-Z0-9\[\] ]/g,'_').replace(/\s+/g,'_');
     var filename=safeBase+'_'+(i+1)+'.'+ext;
-    var path='receipts/'+claimId+'/'+filename;
+    var path='receipts/'+userId+'/'+yearMonth+'/'+filename;
     var res=await sb.storage.from('receipts').upload(path,f,{upsert:true});
     if(res.error){console.error('Upload error:',res.error);toast('Upload failed: '+f.name);continue;}
     var{data:urlData}=sb.storage.from('receipts').getPublicUrl(path);
