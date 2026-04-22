@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -119,6 +119,7 @@ body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;
 .ai-result-card{background:#f0fdf4;border:1px solid #86efac;border-radius:12px;padding:10px;}
 .ai-tag{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 7px;border-radius:99px;background:#dbeafe;color:#1d4ed8;}
 .ai-manual-link{font-size:11px;color:#6b7280;text-decoration:underline;cursor:pointer;text-align:center;display:block;margin-top:6px;}
+.watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:96px;font-weight:700;color:rgba(239,68,68,0.12);pointer-events:none;white-space:nowrap;z-index:2;}
 </style>
 </head>
 <body>
@@ -139,8 +140,14 @@ body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;
 var SUPABASE_URL='__SUPABASE_URL__';
 var SUPABASE_KEY='__SUPABASE_KEY__';
 var SUPABASE_SERVICE_KEY='__SUPABASE_SERVICE_KEY__';
+// 本地开发时的降级配置（占位符未被替换）
+if(SUPABASE_URL==='__SUPABASE_URL__'){
+  SUPABASE_URL='https://afcifzghlkxvnpulahub.supabase.co';
+  SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmY2lmemdobGt4dm5wdWxhaHViIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwOTkxMTEsImV4cCI6MjA5MTY3NTExMX0.wzJOV0C_ibXzN-cf-ZwgLEWWcVzvYAGelW-bNxCmzvY';
+  console.warn('⚠️ Using local Test environment config');
+}
 var sb;
-try{sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);}catch(e){console.error('Supabase init error:',e.message);}
+try{sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);}catch(e){console.error('Supabase init error:',e.message);}'
 
 // ===== STATE =====
 var R=null,S='auth',PS=null,SEL=null,editingId=null,payTab='byEmp';
@@ -164,6 +171,7 @@ var unitTypes=[],unitConfig=[];
 var rptUnit='',rptMonth='',rptYear='';
 var editingUnitType=null,editingUnitCfg=null,utFormError='',ucFormError='';
 var syncLogs=[],syncLoading=false,syncRunning=false,unitSyncing=false;
+var showInactiveUnits=false;
 var reservations=[];
 
 // ===== FRONTEND ERROR LOGGER =====
@@ -316,6 +324,7 @@ async function doLogout(){
   await sb.auth.signOut();
   currentUser=null;currentProfile=null;R=null;S='auth';PS=null;claims=[];BANK_INFO={};EMPS=[];ACTIVE_EMPS=[];UNITS_DATA=[];
   isSystemAdmin=false;allUsers=[];editingUser=null;userFormError='';editingUnit=null;unitFormError='';
+  showInactiveUnits=false;
   render();
 }
 async function initSession(user){
@@ -903,6 +912,7 @@ async function markClaimed(){
   await loadClaims();toast(ids.length+' claim(s) marked as Claimed');ss('adminDash');
 }
 async function saveBankInfo(){
+  if(!isSystemAdmin){toast('Only admin can save bank info');return;}
   var b=document.getElementById('p-bank'),a=document.getElementById('p-acc'),n=document.getElementById('p-name');
   if(!b||!a||!n||!b.value||!a.value||!n.value){toast('Please fill all fields');return;}
   await dbUpdateBankInfo(editingBankEmp,b.value,a.value,n.value);
@@ -1059,6 +1069,20 @@ async function exportReportPDF(){
 // ===== RENDER =====
 function render(){
   var ms=document.getElementById('ms'),tbt_el=document.getElementById('tbt'),bb_el=document.getElementById('bb'),tbr_el=document.getElementById('tbr'),nav=document.getElementById('nav'),lo=document.getElementById('lob');
+  var phoneEl=document.getElementById('app');
+  var host=(location&&location.hostname?location.hostname:'').toLowerCase();
+  var path=(location&&location.pathname?location.pathname:'').toLowerCase();
+  // 改进测试环境检测：支持多种方式识别 Test 环境
+  var isTestEnv=(SUPABASE_URL.indexOf('afcifzghlkxvnpulahub')>=0)||(path.match(/\/homestayerp-test/i)!==null)||(path.match(/test/i)!==null&&host.indexOf('github.io')>=0);
+  var watermarkEl=document.getElementById('watermark-test');
+  if(isTestEnv){
+    if(!watermarkEl){var wm=document.createElement('div');wm.id='watermark-test';wm.className='watermark';wm.textContent='TESTING';phoneEl.appendChild(wm);}
+    // 调试：在控制台输出环境信息
+    console.log('✓ Test environment detected | SUPABASE_URL:',SUPABASE_URL.substring(0,30)+'... | path:',path);
+  } else {
+    if(watermarkEl)watermarkEl.remove();
+    console.log('ℹ Live environment | SUPABASE_URL:',SUPABASE_URL.substring(0,30)+'... | path:',path);
+  }
   bb_el.style.display='none';tbr_el.style.display='none';nav.style.display='none';nav.innerHTML='';lo.style.display='none';
 
   function empNav(a){
@@ -1070,9 +1094,9 @@ function render(){
   function adminNav(a){
     nav.style.display='flex';
     if(isSystemAdmin){
-      var its=[['users','👥','Users',"openUsers()"],['logs','🪵','Logs',"openErrorLogs()"]];
+      var its=[['users','👥','Users',"openUsers()"],['emps','👥','Staff',"ss('adminEmployees','adminDash')"],['units','🏘','Units',"ss('adminUnits','adminDash')"],['logs','🪵','Logs',"openErrorLogs()"]];
     } else {
-      var its=[['dash','⊞','Dash',"ss('adminDash')"],['list','☰','Claims',"ss('adminList','adminDash')"],['pay','💳','Pay',"ss('adminPay','adminDash')"],['emps','👥','Staff',"ss('adminEmployees','adminDash')"],['units','🏘','Units',"ss('adminUnits','adminDash')"],['sub','＋','Submit',"ss('mgrNewClaim','adminDash')"],['report','📊','Report',"ss('reportHome','adminDash')"],['logs','🪵','Logs',"openErrorLogs()"]];
+      var its=[['dash','⊞','Dash',"ss('adminDash')"],['list','☰','Claims',"ss('adminList','adminDash')"],['pay','💳','Pay',"ss('adminPay','adminDash')"],['sub','＋','Submit',"ss('mgrNewClaim','adminDash')"],['report','📊','Report',"ss('reportHome','adminDash')"]];
     }
     nav.innerHTML=its.map(function(x){return'<div class="ni'+(a===x[0]?' on':'')+'" onclick="'+x[3]+'"><span class="ni-ic">'+x[1]+'</span>'+x[2]+'</div>';}).join('');
     lo.style.display='block';
@@ -1217,6 +1241,7 @@ function render(){
     setTimeout(function(){var u=document.getElementById('rv-unit');if(u)toggleChargeTo(u.value,'rv-charge-wrap');},0);
   }
   else if(S==='adminEmployees'){
+    if(!isSystemAdmin){toast('Only admin can access staff settings');ss(R==='admin'?'adminDash':'empHome');return;}
     tbt_el.textContent='Staff & Bank Info';bb_el.style.display='block';adminNav('emps');
     var missingCount=EMPS.filter(function(e){return!hasBankInfo(e);}).length;
     var empCards=EMPS.map(function(emp){
@@ -1226,27 +1251,35 @@ function render(){
     ms.innerHTML='<div class="scr">'+(missingCount?'<div class="info-box" style="background:#fee2e2"><div style="font-size:11px;color:#991b1b"><span style="font-weight:600">'+missingCount+' employee(s) missing bank info</span> — pay out blocked for them.</div></div>':'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">All employees have bank info saved.</span></div></div>')+'<div style="font-size:13px;font-weight:600;color:#111;margin-bottom:4px">Employees</div>'+empCards+'</div>';
   }
   else if(S==='bankEdit'){
+    if(!isSystemAdmin){toast('Only admin can access staff settings');ss(R==='admin'?'adminDash':'empHome');return;}
     var emp=editingBankEmp;if(!emp){ss('adminEmployees');return;}
     var bi=BANK_INFO[emp]||{};var ini=initials(emp);
     tbt_el.textContent='Bank Info';bb_el.style.display='block';adminNav('emps');
     ms.innerHTML='<div class="scr"><div style="display:flex;align-items:center;gap:12px;background:#f9fafb;border-radius:12px;padding:12px;border:1px solid #e5e7eb"><div class="avatar" style="width:44px;height:44px;font-size:16px">'+ini+'</div><div><div style="font-size:15px;font-weight:600;color:#111">'+emp+'</div><div style="font-size:12px;color:#6b7280">Employee</div></div></div><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">This bank info will be shown during pay out for accurate transfer.</div></div><div class="fg"><label class="fl">Bank name *</label><input class="fi" id="p-bank" value="'+(bi.bank||'')+'" placeholder="e.g. Maybank, CIMB, Public Bank"/></div><div class="fg"><label class="fl">Account number *</label><input class="fi" id="p-acc" value="'+(bi.acc||'')+'" placeholder="e.g. 1234 5678 9012"/></div><div class="fg"><label class="fl">Full name (as per bank) *</label><input class="fi" id="p-name" value="'+(bi.fullName||'')+'" placeholder="Full legal name"/></div><button class="pbtn btn-p" onclick="saveBankInfo()">Save Bank Info</button>'+(bi.bank?'<button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminEmployees\',\'adminDash\')">Cancel</button>':'')+'</div>';
   }
   else if(S==='adminUnits'){
+    if(!isSystemAdmin){toast('Only admin can access units');ss(R==='admin'?'adminDash':'empHome');return;}
     tbt_el.textContent='Units';bb_el.style.display='block';adminNav('units');
-    var activeCount=UNITS_DATA.filter(function(u){return u.active!==false;}).length;
+    var activeUnits=UNITS_DATA.filter(function(u){return u.active!==false;});
+    var inactiveUnits=UNITS_DATA.filter(function(u){return u.active===false;});
+    var activeCount=activeUnits.length;
+    var inactiveCount=inactiveUnits.length;
     var hpCount=UNITS_DATA.filter(function(u){return u.source==='hostplatform';}).length;
-    var rows=UNITS_DATA.length?UNITS_DATA.map(function(u){
+    var visibleUnits=showInactiveUnits?activeUnits.concat(inactiveUnits):activeUnits;
+    var rows=visibleUnits.length?visibleUnits.map(function(u){
       var isActive=u.active!==false;
       var isHP=u.source==='hostplatform';
       var displayName=u.property_short?u.property_short+' '+u.name:u.name;
       var sourceBadge=isHP?'<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px;margin-left:5px">HP</span>':'<span style="font-size:10px;background:#f3f4f6;color:#6b7280;padding:1px 5px;border-radius:4px;margin-left:5px">Manual</span>';
-      var subtitle=u.property_name?'<div style="font-size:10px;color:#6b7280">'+u.property_name+(u.property_short?' · Short: '+u.property_short:'')+'</div>':'';
+      var subtitle=u.property_name?'<div style="font-size:10px;color:#6b7280">'+u.property_name+(u.property_short?' - Short: '+u.property_short:'')+'</div>':'';
       var syncedInfo=u.synced_at?'<div style="font-size:10px;color:#9ca3af">Synced: '+new Date(u.synced_at).toLocaleString('en-MY',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})+'</div>':'';
       return'<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#111">'+displayName+sourceBadge+'</div>'+(isActive?'<div style="font-size:11px;color:#065f46">Active</div>':'<div style="font-size:11px;color:#991b1b">Deactivated</div>')+subtitle+syncedInfo+'</div><div style="display:flex;gap:10px;align-items:center"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnit(\''+u.id+'\')">Edit</span>'+(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',false)">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',true)">Activate</span>')+'</div></div>';
-    }).join(''):'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">Click "Sync from HP" to import units, or add manually.</div>';
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+UNITS_DATA.length+' unit(s) · '+activeCount+' active · '+hpCount+' from HP</span> — deactivated units won\'t appear in dropdowns.</div></div><div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-p" style="flex:1" onclick="triggerUnitSync()"'+(unitSyncing?' disabled':'')+'>'+(unitSyncing?'⏳ Syncing...':'🔄 Sync from HP')+'</button><button class="pbtn btn-o" style="flex:1" onclick="editingUnit=null;unitFormError=\'\';ss(\'unitForm\',\'adminUnits\')">+ Add Manual</button></div>'+rows+'</div>';
+    }).join(''):(inactiveCount?'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No active units. Tap "Show Deactivated" to view hidden units.</div>':'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">Click "Sync from HP" to import units, or add manually.</div>');
+    var toggleInactiveBtn=inactiveCount?'<button class="pbtn btn-o" style="width:100%;margin-bottom:8px" onclick="toggleInactiveUnits()">'+(showInactiveUnits?'Hide Deactivated':'Show Deactivated')+' ('+inactiveCount+')</button>':'';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+UNITS_DATA.length+' unit(s) | '+activeCount+' active | '+inactiveCount+' deactivated | '+hpCount+' from HP</span> - manager view defaults to active units only.</div></div><div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-p" style="flex:1" onclick="triggerUnitSync()"'+(unitSyncing?' disabled':'')+'>'+(unitSyncing?'Syncing...':'Sync from HP')+'</button><button class="pbtn btn-o" style="flex:1" onclick="editingUnit=null;unitFormError='\''\'';ss('\''unitForm'\'','\''adminUnits'\'')">+ Add Manual</button></div>'+toggleInactiveBtn+rows+'</div>';
   }
   else if(S==='unitForm'){
+    if(!isSystemAdmin){toast('Only admin can access units');ss(R==='admin'?'adminDash':'empHome');return;}
     tbt_el.textContent=editingUnit?'Edit Unit':'New Unit';bb_el.style.display='block';adminNav('units');
     var isHP=editingUnit&&editingUnit.source==='hostplatform';
     ms.innerHTML='<div class="scr">'+(unitFormError?'<div class="info-box" style="background:#fee2e2"><div style="font-size:11px;color:#991b1b">'+unitFormError+'</div></div>':'')+(isHP?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">HP unit — name is synced from HostPlatform. Edit property short code below.</div></div><div class="fg"><label class="fl">Unit name (HP)</label><input class="fi" value="'+editingUnit.name+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">Property</label><input class="fi" value="'+(editingUnit.property_name||'')+'" readonly style="background:#f3f4f6"/></div>':'<div class="fg"><label class="fl">Unit name *</label><input class="fi" id="unit-name" value="'+(editingUnit?editingUnit.name:'')+'" placeholder="e.g. MP Office"/></div>')+'<div class="fg"><label class="fl">Property short code</label><input class="fi" id="unit-short" value="'+(editingUnit?editingUnit.property_short||'':'')+'" placeholder="e.g. AR, IR, AC"/></div><button class="pbtn btn-p" onclick="saveUnit()">'+(editingUnit?'Save Changes':'Add Unit')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminUnits\',\'adminDash\')">Cancel</button></div>';
@@ -1308,6 +1341,7 @@ function render(){
     ms.innerHTML='<div class="scr"><div style="display:flex;flex-direction:column;gap:7px"><div class="ptype-card'+(isCompany?'':' on')+'" onclick="togglePayType(\'employee\')"><div style="font-size:20px">👤</div><div><div class="ptype-title">Employee paid</div><div class="ptype-desc">Needs reimbursement — auto-approved</div></div></div><div class="ptype-card'+(isCompany?' on':'')+'" onclick="togglePayType(\'company\')"><div style="font-size:20px">🏢</div><div><div class="ptype-title">Company paid</div><div class="ptype-desc">No reimbursement — tracking only</div></div></div></div>'+(aiAnalyzing?mgrAiLoading:scanBtn)+(isCompany?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid:</span> No employee assigned.</div></div>':'<div class="fg"><label class="fl">Submit for employee *</label><select class="fi" id="f-emp" onchange="mgrFormEmp=this.value">'+empOpts+'</select></div>')+'<div class="fg"><label class="fl">Category *</label><select class="fi" id="f-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location *</label><select class="fi" id="f-unit" onchange="toggleChargeTo(this.value,\x27f-charge-wrap\x27)"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. Electricity Bill - INV12345"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div>'+expMonthSelect(lastMonth)+'<div id="f-charge-wrap"><div class="fg"><label class="fl">Charge to *</label><select class="fi" id="f-charged"><option value="">— Select —</option><option value="Owner">Owner</option><option value="Operator">Operator</option><option value="Both">Both</option></select></div></div><div id="rbox">'+receiptBox('')+'</div><button class="pbtn '+(isCompany?'btn-s':'btn-p')+'" onclick="submitMgrClaim()">'+(isCompany?'Record as Company-Paid':'Submit (Auto-Approved)')+'</button></div>';
   }
   else if(S==='errorLogs'){
+    if(!isSystemAdmin){toast('Only admin can access logs');ss(R==='admin'?'adminDash':'empHome');return;}
     tbt_el.textContent='Error Logs';bb_el.style.display='block';adminNav('logs');
     if(errorLogLoading){
       ms.innerHTML='<div class="scr"><div style="text-align:center;padding:40px;font-size:12px;color:#6b7280">Loading logs...</div></div>';
@@ -1461,6 +1495,7 @@ window.saveUnitCfg=async function(){
 window.exportReportPDF=exportReportPDF;
 window.triggerSync=triggerSync;
 window.triggerUnitSync=async function(){
+  if(!isSystemAdmin){toast('Only admin can sync units');return;}
   unitSyncing=true;render();
   try{
     var r=await fetch(SUPABASE_URL+'/functions/v1/sync-units',{method:'POST',headers:{'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json'}});
@@ -1494,11 +1529,13 @@ window.submitNewClaim=submitNewClaim;window.submitMgrClaim=submitMgrClaim;
 window.markClaimed=markClaimed;window.saveBankInfo=saveBankInfo;
 window.editUnit=function(id){editingUnit=UNITS_DATA.filter(function(u){return u.id===id;})[0];unitFormError='';ss('unitForm','adminUnits');};
 window.toggleUnitActive=async function(id,active){
+  if(!isSystemAdmin){toast('Only admin can manage units');return;}
   var ok=await dbUpdateUnit(id,{active:active});
   if(ok){await loadUnits();render();toast(active?'Unit activated':'Unit deactivated');}
   else toast('Failed to update unit');
 };
 window.saveUnit=async function(){
+  if(!isSystemAdmin){toast('Only admin can save units');return;}
   var shortEl=document.getElementById('unit-short');
   var propertyShort=shortEl?shortEl.value.trim():'';
   if(editingUnit&&editingUnit.source==='hostplatform'){
@@ -1584,7 +1621,11 @@ window.mgrChangeToApprove=async function(){
   await dbUpdateClaim(SEL.id,upd);
   await loadClaims();toast('Changed to Approved');editingId=null;ss('adminList','adminDash');
 };
-window.openErrorLogs=function(){loadErrorLogs();ss('errorLogs',R==='admin'?'adminDash':'empHome');};
+window.openErrorLogs=function(){
+  if(!isSystemAdmin){toast('Only admin can access logs');return;}
+  loadErrorLogs();ss('errorLogs','adminDash');
+};
+window.toggleInactiveUnits=function(){showInactiveUnits=!showInactiveUnits;render();};
 window.resolveErrorLog=async function(id){
   try{await sb.from('error_logs').update({resolved:true}).eq('id',id);errorLogs=errorLogs.map(function(l){if(l.id===id)l.resolved=true;return l;});render();}catch(e){toast('Failed to update');}
 };
