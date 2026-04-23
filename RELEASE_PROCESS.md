@@ -9,6 +9,18 @@ This file defines how changes move through test and live environments for this p
 - Test Supabase project: `afcifzghlkxvnpulahub`
 - Live Supabase project: `skwogboredsczcyhlqgn`
 
+## Current Live Setup
+- Live repo `homestayERP-prod` exists under `haujackpang`.
+- GitHub Pages is enabled using workflow deployment.
+- Repo secrets required by `.github/workflows/deploy.yml`:
+  - `SUPABASE_URL`
+  - `SUPABASE_KEY`
+- Live Supabase Edge Functions expected by the app:
+  - `sync-reservations`
+  - `sync-units`
+  - `analyze-receipt`
+  - `process-invoice`
+
 ## Default Rule
 - All changes go to test first unless the user explicitly says otherwise.
 - Never assume a change should go to live just because test is working.
@@ -28,6 +40,7 @@ This file defines how changes move through test and live environments for this p
   - target repo is `homestayERP-prod`
   - target Supabase environment is live
   - required secrets/config are correct for live
+- If the promoted feature depends on Supabase Functions or database schema, deploy the matching functions and run only idempotent live SQL upgrades that are required for the tested code to work.
 
 ## Commit / Push Checklist
 Before every commit or push, confirm:

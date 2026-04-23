@@ -125,3 +125,9 @@ Decision: Browser-triggered manual sync calls should authorize Edge Functions wi
 
 Reason:
 Direct test calls succeed, but a manager browser can send a stale or function-rejected session JWT and receive HTTP 401 before the function runs. The UI still limits sync access by role.
+
+## 2026-04-23: Promote Tested Changes To Live
+Decision: After explicit user approval, create/use `homestayERP-prod`, enable GitHub Pages workflow deployment, push tested `main`, configure prod repo Supabase secrets, deploy live Edge Functions, and apply required idempotent SQL upgrades to live Supabase.
+
+Reason:
+Live must run the same tested frontend, sync endpoints, OCR backend, unit mapping schema, and report-supporting schema as the test environment. A repo-only push is not enough when the feature depends on Supabase Functions and database columns.

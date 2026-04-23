@@ -26,7 +26,9 @@ This system helps a homestay operator record expenses, review claims, reimburse 
 - Monthly expense reporting and PDF export.
 
 ## Current Stage
-Testing environment is active in `homestayERP-test`.
+Testing environment remains the default working target in `homestayERP-test`.
+
+Live environment `homestayERP-prod` was created and promoted on 2026-04-23 after explicit user approval.
 
 Recent completed work:
 - Test Supabase Edge Functions `sync-units` and `sync-reservations` were deployed.
@@ -39,6 +41,10 @@ Recent completed work:
 - OCR/AI invoice extraction now runs through Supabase Edge Functions:
   - `process-invoice` handles auth, duplicate checks, unit matching, expense month, and final description formatting.
   - `analyze-receipt` handles image/PDF-derived image OCR using OpenAI when configured, with fallback support.
+- Live GitHub Pages is configured for Supabase project `skwogboredsczcyhlqgn`.
+- Live sync endpoints were verified after deployment:
+  - Reservations: 4381 fetched, 4378 upserted.
+  - Units: 16 synced.
 
 ## Project Memory Files
 These files are part of the working system and must be kept updated when relevant changes happen:
