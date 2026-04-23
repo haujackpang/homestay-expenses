@@ -179,10 +179,12 @@ async function logFrontendError(level,source,message,details){
     await sb.from('error_logs').insert({level:level,source:source,message:message,details:details||{},user_agent:navigator.userAgent});
   }catch(e){console.error('Failed to log error:',e);}
 }
-async function functionAuthHeaders(){
+async function functionAuthHeaders(forceRefresh){
   var{data:sessData}=await sb.auth.getSession();
   var authToken=sessData&&sessData.session&&sessData.session.access_token?sessData.session.access_token:'';
-  if(!authToken){var{data:refData}=await sb.auth.refreshSession();authToken=refData&&refData.session?refData.session.access_token:'';}
+  var expiresAt=sessData&&sessData.session&&sessData.session.expires_at?sessData.session.expires_at:0;
+  var isExpiring=expiresAt&&expiresAt*1000<Date.now()+60000;
+  if(forceRefresh||!authToken||isExpiring){var{data:refData}=await sb.auth.refreshSession();authToken=refData&&refData.session?refData.session.access_token:authToken;}
   if(!authToken)authToken=SUPABASE_KEY;
   return {'Content-Type':'application/json','Authorization':'Bearer '+authToken,'apikey':SUPABASE_KEY};
 }
@@ -190,6 +192,11 @@ async function callEdgeFunction(name,body){
   var headers=await functionAuthHeaders();
   var r=await fetch(SUPABASE_URL+'/functions/v1/'+name,{method:'POST',headers:headers,body:JSON.stringify(body||{})});
   var d=await r.json().catch(function(){return{error:'Request failed'};});
+  if(r.status===401){
+    headers=await functionAuthHeaders(true);
+    r=await fetch(SUPABASE_URL+'/functions/v1/'+name,{method:'POST',headers:headers,body:JSON.stringify(body||{})});
+    d=await r.json().catch(function(){return{error:'Request failed'};});
+  }
   if(!r.ok||d.ok===false)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));
   return d;
 }
@@ -236,6 +243,22 @@ function internalUnitOptions(selected){
   var sel=selected||'';
   var rows=internalUnitRows();
   var opts=['<option value="">— Select internal unit —</option>'];
+  rows.forEach(function(r){opts.push('<option value="'+r.value+'" data-short="'+r.shortCode+'"'+(sel===r.value?' selected':'')+'>'+r.value+'</option>');});
+  if(sel&&!rows.some(function(r){return r.value===sel;}))opts.push('<option value="'+sel+'" selected>'+sel+' (legacy)</option>');
+  return opts.join('');
+}
+function mappedInternalUnitNames(exceptUnitId){
+  var used={};
+  UNITS_DATA
+    .filter(function(u){return u.source==='hostplatform'&&u.active!==false&&u.id!==exceptUnitId&&u.mapped_unit_name;})
+    .forEach(function(u){used[u.mapped_unit_name]=true;});
+  return used;
+}
+function internalUnitMappingOptions(selected,exceptUnitId){
+  var sel=selected||'';
+  var used=mappedInternalUnitNames(exceptUnitId||'');
+  var rows=internalUnitRows().filter(function(r){return !used[r.value]||r.value===sel;});
+  var opts=['<option value="">-- Unmapped --</option>'];
   rows.forEach(function(r){opts.push('<option value="'+r.value+'" data-short="'+r.shortCode+'"'+(sel===r.value?' selected':'')+'>'+r.value+'</option>');});
   if(sel&&!rows.some(function(r){return r.value===sel;}))opts.push('<option value="'+sel+'" selected>'+sel+' (legacy)</option>');
   return opts.join('');
@@ -288,6 +311,10 @@ async function dbAssignUnitMapping(unitId,mappedUnitName,shortCode){
   var payload={mapped_unit_name:mappedUnitName||'',property_short:(shortCode||'').toUpperCase()};
   var res=await sb.from('units').update(payload).eq('id',unitId).eq('source','hostplatform');
   if(res.error)throw res.error;
+}
+function mappingConflict(unitId,mappedUnitName){
+  if(!mappedUnitName)return null;
+  return UNITS_DATA.filter(function(u){return u.source==='hostplatform'&&u.active!==false&&u.id!==unitId&&u.mapped_unit_name===mappedUnitName;})[0]||null;
 }
 async function logAdminAction(action,details){
   try{
@@ -561,6 +588,8 @@ function ccCard(c,fn){
   return '<div class="cc" onclick="'+fn+'"><div style="flex:1;min-width:0"><div class="cc-id">'+c.id+'</div><div class="cc-desc">'+c.desc+'</div><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px">'+(c.category?'<span style="font-size:10px;color:#6b7280">'+c.category+'</span>':'<span style="font-size:10px;color:#9ca3af;font-style:italic">No category</span>')+(R==='admin'&&c.emp?'<span style="font-size:10px;color:#9ca3af">· '+c.emp.split(' ')[0]+'</span>'+byTag:'')+unitTag+emTag+'</div></div><div class="cc-r"><div class="cc-amt">RM '+c.amount.toFixed(2)+'</div>'+sbadge(dstat(c.status))+'</div></div>';
 }
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
+function esc(v){return String(v===undefined||v===null?'':v).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function fmtDateShort(v){if(!v)return'--';var d=String(v).slice(0,10);return d.length===10?d.slice(8,10)+' '+(MONTHS[d.slice(5,7)]||d.slice(5,7)):esc(v);}
 function expMonthSelect(selVal){
   var now=new Date();var opts=[];
   for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();opts.push('<option value="'+v+'"'+(selVal===v?' selected':'')+'>'+lbl+'</option>');}
@@ -1372,7 +1401,7 @@ function render(){
     var units=hpUnitRows();
     var rows=units.length?units.map(function(u){
       var opts=shortCodeOptions(u.propertyShort);
-      var unitOpts=internalUnitOptions(u.mappedUnitName);
+      var unitOpts=internalUnitMappingOptions(u.mappedUnitName,u.unitId);
       var st=u.active?'<span style="font-size:10px;color:#065f46">Active</span>':'<span style="font-size:10px;color:#991b1b">Inactive</span>';
       return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="min-width:0;flex:1"><div style="font-size:12px;font-weight:600;color:#111">'+u.propertyName+' · '+u.unitName+'</div><div style="font-size:10px;color:#6b7280">Mapped to: '+(u.mappedUnitName||'Unmapped')+'</div></div>'+st+'</div><div class="fg" style="margin-top:8px"><label class="fl">Internal unit</label><select class="fi" id="pm-unit-'+u.domKey+'" onchange="syncMappingShort(\''+u.domKey+'\')">'+unitOpts+'</select></div><div style="display:flex;gap:6px;align-items:center;margin-top:8px"><select class="fi" id="pm-short-'+u.domKey+'" style="flex:1">'+opts+'</select><button class="pbtn btn-s" style="min-width:92px" onclick="savePropertyMapping(\''+String(u.unitId||'').replace(/'/g,"\\'")+'\',\''+u.domKey+'\')">Save</button></div></div>';
     }).join(''):'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No HostPlatform unit found yet. Sync units first.</div>';
@@ -1383,8 +1412,8 @@ function render(){
     tbt_el.textContent=editingUnit?'Edit Unit':'New Unit';bb_el.style.display='block';adminNav('units');
     var isHP=editingUnit&&editingUnit.source==='hostplatform';
     var shortOpts=shortCodeOptions(editingUnit?editingUnit.property_short||'':'');
-    var mappedOpts=isHP?internalUnitOptions(editingUnit.mapped_unit_name||''):'';
-    ms.innerHTML='<div class="scr">'+(unitFormError?'<div class="info-box" style="background:#fee2e2"><div style="font-size:11px;color:#991b1b">'+unitFormError+'</div></div>':'')+(isHP?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">HP unit — map this HostPlatform property + unit to an internal unit.</div></div><div class="fg"><label class="fl">HostPlatform unit</label><input class="fi" value="'+editingUnit.name+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">HostPlatform property</label><input class="fi" value="'+(editingUnit.property_name||'')+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">Internal unit *</label><select class="fi" id="unit-mapped" onchange="syncEditUnitShort()">'+mappedOpts+'</select></div>':'<div class="fg"><label class="fl">Unit name *</label><input class="fi" id="unit-name" value="'+(editingUnit?editingUnit.name:'')+'" placeholder="e.g. MP Office"/></div>')+'<div class="fg"><label class="fl">Property short code</label><select class="fi" id="unit-short">'+shortOpts+'</select></div>'+(isHP?'<div class="ai-manual-link" style="margin-top:2px" onclick="openPropertyMapping()">Manage all unit mappings →</div>':'')+'<button class="pbtn btn-p" onclick="saveUnit()">'+(editingUnit?'Save Changes':'Add Unit')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminUnits\',\'adminDash\')">Cancel</button></div>';
+    var mappedOpts=isHP?internalUnitMappingOptions(editingUnit.mapped_unit_name||'',editingUnit.id):'';
+    ms.innerHTML='<div class="scr">'+(unitFormError?'<div class="info-box" style="background:#fee2e2"><div style="font-size:11px;color:#991b1b">'+unitFormError+'</div></div>':'')+(isHP?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">HP unit — map this HostPlatform property + unit to an internal unit.</div></div><div class="fg"><label class="fl">HostPlatform unit</label><input class="fi" value="'+editingUnit.name+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">HostPlatform property</label><input class="fi" value="'+(editingUnit.property_name||'')+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">Internal unit</label><select class="fi" id="unit-mapped" onchange="syncEditUnitShort()">'+mappedOpts+'</select></div>':'<div class="fg"><label class="fl">Unit name *</label><input class="fi" id="unit-name" value="'+(editingUnit?editingUnit.name:'')+'" placeholder="e.g. MP Office"/></div>')+'<div class="fg"><label class="fl">Property short code</label><select class="fi" id="unit-short">'+shortOpts+'</select></div>'+(isHP?'<div class="ai-manual-link" style="margin-top:2px" onclick="openPropertyMapping()">Manage all unit mappings →</div>':'')+'<button class="pbtn btn-p" onclick="saveUnit()">'+(editingUnit?'Save Changes':'Add Unit')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminUnits\',\'adminDash\')">Cancel</button></div>';
   }
   else if(S==='adminPay'){
     tbt_el.textContent='Pay Out';bb_el.style.display='block';adminNav('pay');
@@ -1522,7 +1551,14 @@ function render(){
     var utCfg=unitConfig.filter(function(x){return x.unit_name===rptUnit;})[0]||{};
     var cfRate=parseFloat(utCfg.cleaning_fee||0),lfRate=parseFloat(utCfg.laundry_fee||0);
     var calcClean=bookingCount*cfRate,calcLaundry=bookingCount*lfRate;
-    rhtml+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">📅 Bookings This Month</div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Reservations</span><span style="font-size:12px;font-weight:600">'+bookingCount+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Revenue (Rental+Extra)</span><span style="font-size:12px;font-weight:600">RM '+bookingRevenue.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px dashed #fde68a;margin-top:4px"><span style="font-size:11px;color:#6b7280">Est. Cleaning ('+bookingCount+'×RM'+cfRate.toFixed(2)+')</span><span style="font-size:11px;font-weight:600">RM '+calcClean.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Est. Laundry ('+bookingCount+'×RM'+lfRate.toFixed(2)+')</span><span style="font-size:11px;font-weight:600">RM '+calcLaundry.toFixed(2)+'</span></div></div>';
+    rptRes.sort(function(a,b){return String(a.start_date||'').localeCompare(String(b.start_date||''));});
+    var resDetailHtml=rptRes.length?rptRes.map(function(r){
+      var rental=parseFloat(r.rental||0),extra=parseFloat(r.extra_guest||0);
+      var total=parseFloat(r.total_charges||0)||rental+extra;
+      var guest=esc(r.guest_name||'Guest');
+      return '<div style="background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 9px;margin-top:6px"><div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:5px"><div style="font-size:11px;font-weight:700;color:#111;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+guest+'</div><div style="font-size:11px;font-weight:700;color:#92400e;white-space:nowrap">RM '+total.toFixed(2)+'</div></div><div style="display:grid;grid-template-columns:1fr 1fr 48px;gap:5px;margin-bottom:5px"><div><div style="font-size:9px;color:#9ca3af">Check in</div><div style="font-size:10px;color:#374151;font-weight:600">'+fmtDateShort(r.start_date)+'</div></div><div><div style="font-size:9px;color:#9ca3af">Check out</div><div style="font-size:10px;color:#374151;font-weight:600">'+fmtDateShort(r.end_date)+'</div></div><div><div style="font-size:9px;color:#9ca3af">Nights</div><div style="font-size:10px;color:#374151;font-weight:600">'+(r.nights||0)+'</div></div></div><div style="display:flex;justify-content:space-between;border-top:1px dashed #fde68a;padding-top:5px"><span style="font-size:10px;color:#6b7280">Rental RM '+rental.toFixed(2)+'</span><span style="font-size:10px;color:#6b7280">Extra guest RM '+extra.toFixed(2)+'</span></div></div>';
+    }).join(''):'<div style="font-size:11px;color:#9ca3af;padding-top:6px">No reservation details for this unit/month</div>';
+    rhtml+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">📅 Bookings This Month</div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Reservations</span><span style="font-size:12px;font-weight:600">'+bookingCount+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Revenue (Rental+Extra)</span><span style="font-size:12px;font-weight:600">RM '+bookingRevenue.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px dashed #fde68a;margin-top:4px"><span style="font-size:11px;color:#6b7280">Est. Cleaning ('+bookingCount+'×RM'+cfRate.toFixed(2)+')</span><span style="font-size:11px;font-weight:600">RM '+calcClean.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Est. Laundry ('+bookingCount+'×RM'+lfRate.toFixed(2)+')</span><span style="font-size:11px;font-weight:600">RM '+calcLaundry.toFixed(2)+'</span></div><div style="font-size:11px;font-weight:700;color:#92400e;border-top:1px dashed #fde68a;margin-top:7px;padding-top:7px">Reservation Details</div>'+resDetailHtml+'</div>';
     rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#065f46;background:#d1fae5;padding:6px 10px;border-radius:8px;margin-bottom:6px">Shared Expenses (Both)</div>'+rptRows(sharedCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#065f46;border-top:2px solid #d1fae5;margin-top:4px"><span>Subtotal Shared</span><span>RM '+stS.toFixed(2)+'</span></div></div>';
     rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:6px 10px;border-radius:8px;margin-bottom:6px">Owner Expenses</div>'+rptRows(ownerCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#1d4ed8;border-top:2px solid #dbeafe;margin-top:4px"><span>Subtotal Owner</span><span>RM '+stO.toFixed(2)+'</span></div></div>';
     if(operatorCl.length>0){rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;background:#fef3c7;padding:6px 10px;border-radius:8px;margin-bottom:6px">Operator Expenses <span style="font-size:9px;font-weight:400;opacity:.7">(not in PDF)</span></div>'+rptRows(operatorCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#92400e;border-top:2px solid #fef3c7;margin-top:4px"><span>Subtotal Operator</span><span>RM '+stOp.toFixed(2)+'</span></div></div>';}
@@ -1678,14 +1714,14 @@ window.syncMappingShort=function(domKey){
   if(!unitSel||!shortSel)return;
   var opt=unitSel.options[unitSel.selectedIndex];
   var code=opt?opt.getAttribute('data-short'):'';
-  if(code)shortSel.value=code;
+  shortSel.value=code||'';
 };
 window.syncEditUnitShort=function(){
   var unitSel=document.getElementById('unit-mapped'),shortSel=document.getElementById('unit-short');
   if(!unitSel||!shortSel)return;
   var opt=unitSel.options[unitSel.selectedIndex];
   var code=opt?opt.getAttribute('data-short'):'';
-  if(code)shortSel.value=code;
+  shortSel.value=code||'';
 };
 window.savePropertyMapping=async function(unitId,domKey){
   if(!isSystemAdmin){toast('Only admin can manage mapping');return;}
@@ -1693,12 +1729,14 @@ window.savePropertyMapping=async function(unitId,domKey){
   var sel=document.getElementById('pm-short-'+domKey);
   var mappedUnit=unitSel&&unitSel.value?unitSel.value:'';
   var code=sel&&sel.value?sel.value.toUpperCase():'';
-  if(!mappedUnit){toast('Please select internal unit');return;}
+  if(!mappedUnit)code='';
+  var conflict=mappingConflict(unitId,mappedUnit);
+  if(conflict){toast(mappedUnit+' is already paired');return;}
   try{
     await dbAssignUnitMapping(unitId,mappedUnit,code);
     await loadUnits();
     await logAdminAction('unit-mapping.saved',{unit_id:unitId,mapped_unit_name:mappedUnit,property_short:code});
-    toast('Mapped to '+mappedUnit);
+    toast(mappedUnit?'Mapped to '+mappedUnit:'Mapping cleared');
     ss('propertyMapping','adminUnits');
   }catch(e){
     toast('Save failed: '+(e.message||'unknown'));
@@ -1719,12 +1757,14 @@ window.saveUnit=async function(){
   if(editingUnit&&editingUnit.source==='hostplatform'){
     var mappedEl=document.getElementById('unit-mapped');
     var mappedUnit=mappedEl&&mappedEl.value?mappedEl.value:'';
-    if(!mappedUnit){unitFormError='Internal unit is required';render();return;}
+    if(!mappedUnit)propertyShort='';
+    var conflict=mappingConflict(editingUnit.id,mappedUnit);
+    if(conflict){unitFormError=mappedUnit+' is already paired to another HP unit';render();return;}
     try{
       await dbAssignUnitMapping(editingUnit.id,mappedUnit,propertyShort);
       await loadUnits();
       await logAdminAction('unit-mapping.saved',{unit_id:editingUnit.id,mapped_unit_name:mappedUnit,property_short:propertyShort});
-      toast('Unit updated');
+      toast(mappedUnit?'Unit updated':'Mapping cleared');
       editingUnit=null;
       ss('adminUnits','adminDash');
     }catch(e){
@@ -1857,4 +1897,5 @@ if(document.readyState==='loading'){
 </script>
 </body>
 </html>
+
 

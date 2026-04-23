@@ -32,6 +32,12 @@
 - Property short code is only a display/report helper, not the full mapping.
 - Manual units are internal units.
 - HostPlatform synced units should be mapped to internal units through Unit Mapping.
+- One internal unit can only be paired to one active HostPlatform property + unit row at a time.
+- Once an internal unit is paired, it must be hidden from other mapping dropdowns until that mapping is cleared.
+
+## Reporting Rules
+- Manager report page should show reservation details for the selected unit/month.
+- Reservation detail fields should include guest name, check-in date, check-out date, nights, rental, extra guest, and total.
 
 ## Unit Configuration Rules
 - Cleaning and laundry rates are unit-level settings.

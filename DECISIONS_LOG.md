@@ -77,3 +77,21 @@ Decision: Utility/internet OCR descriptions must be normalized server-side to `[
 
 Reason:
 AI extraction can vary. The accounting/reporting description must be stable, and utility bills received in the following month normally belong to the previous month unless the invoice explicitly states a different service period.
+
+## 2026-04-23: Reservation Details In Manager Report
+Decision: Add reservation detail cards to the report page for the selected unit/month.
+
+Reason:
+Managers need to verify booking income context directly in the report, not only see booking count and revenue summary.
+
+## 2026-04-23: One Active HP Mapping Per Internal Unit
+Decision: Hide already-paired internal units from other HostPlatform mapping dropdowns and allow unmapping to release them.
+
+Reason:
+Duplicate mappings can cause reservations and expenses to attach to the wrong internal unit. The UI should prevent accidental double pairing.
+
+## 2026-04-23: Refresh Function Token On 401
+Decision: Refresh the Supabase session token before Edge Function calls when it is near expiry, and retry once on HTTP 401.
+
+Reason:
+The test Edge Function works from direct calls, but the browser can keep an expired session token and receive 401 before the function runs.
