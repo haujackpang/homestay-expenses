@@ -16,10 +16,10 @@ Latest testing issues reported by the user:
 - The current OCR implementation uses `gpt-4o-mini` by default when `OPENAI_API_KEY` is available.
 - Test Supabase currently has no `OPENAI_API_KEY` and no `OPENROUTER_API_KEY`, so OCR returns a clear configuration error until a provider key is added.
 - Direct call to test `sync-units` returned HTTP 200 and synced 16 units, so the screenshot 401 is likely caused by stale browser auth token, not missing function deployment.
-- Report PDF cleaning fee uses `(cleaning_fee + laundry_fee) x reservation count`, but only displays Total Cleaning Fee.
+- Report PDF cleaning fee uses `(cleaning_fee + laundry_fee) x reservation count`, displayed as `Cleaning fee` in the shared expenses/expense details area.
 - Homestay profit = sales - sharing expenses charged to Both.
 - Homestay Management Fee = homestay profit x `service_fee_pct` / 100.
-- Owner Expenses = total cleaning fee + expenses charged to Owner, excluding Homestay Management Fee.
+- Owner Expenses = expenses charged to Owner, excluding Cleaning fee and Homestay Management Fee.
 - Owner Profit = homestay profit - Homestay Management Fee - Owner Expenses.
 
 ## Do Not Do

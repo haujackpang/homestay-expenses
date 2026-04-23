@@ -1172,7 +1172,7 @@ async function exportReportPDF(){
     var homestayProfit=bkRev-sharedTotal;
     var managementFee=homestayProfit*profitPct/100;
     var ownerExpenseTotal=ownerCl.reduce(function(s,c){return s+c.amount;},0);
-    var ownerExpensesTotal=cleaningTotal+ownerExpenseTotal;
+    var ownerExpensesTotal=ownerExpenseTotal;
     var ownerProfit=homestayProfit-managementFee-ownerExpensesTotal;
 
     doc.setFontSize(17);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
@@ -1198,9 +1198,6 @@ async function exportReportPDF(){
     });
     row('Sales',money(bkRev),true);y+=2;
 
-    section('Cleaning Fee');
-    row('Total Cleaning Fee',money(cleaningTotal),true);y+=2;
-
     section('Expenses Details');
     var expenseRows=ownerCl.concat(shared).sort(function(a,b){return String(a.category||'').localeCompare(String(b.category||''));});
     var expenseCats={};expenseRows.forEach(function(c){if(!expenseCats[c.category])expenseCats[c.category]=0;expenseCats[c.category]+=c.amount;});
@@ -1213,14 +1210,14 @@ async function exportReportPDF(){
       right(money(e[1]),rCol,y);
       y+=5;
     });
-    row('Sharing Expenses (Both)',money(sharedTotal),true);
-    row('Homestay Profit (Sales - Sharing Expenses)',money(homestayProfit),true);y+=2;
+    row('Sharing Expenses',money(sharedTotal),true);
+    row('Cleaning fee',money(cleaningTotal),true);
+    row('Homestay Profit',money(homestayProfit),true);y+=2;
 
     section('Homestay Management Fee');
     row('Homestay Management Fee',money(managementFee),true);y+=2;
 
     section('Owner Expenses');
-    row('Cleaning Fee',money(cleaningTotal),false);
     var ownerCats={};ownerCl.forEach(function(c){if(!ownerCats[c.category])ownerCats[c.category]=0;ownerCats[c.category]+=c.amount;});
     Object.entries(ownerCats).forEach(function(e){row(e[0],money(e[1]),false);});
     row('Total Owner Expenses',money(ownerExpensesTotal),true);

@@ -107,3 +107,9 @@ Decision: Report owner profit from sales after shared expenses, management fee, 
 
 Reason:
 The business wants reports to emphasize Homestay Management Fee and Owner Profit. Homestay profit is sales minus expenses charged to Both; management fee is calculated from that homestay profit, while owner expenses exclude the management fee.
+
+## 2026-04-23: Cleaning Fee Display In PDF
+Decision: Show PDF `Cleaning fee` in the shared expenses/expense details area and exclude it from Owner Expenses.
+
+Reason:
+The PDF should present Cleaning fee as part of shared operating expenses, while Owner Expenses should only list expenses directly charged to Owner.
