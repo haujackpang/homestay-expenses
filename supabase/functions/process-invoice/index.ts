@@ -22,6 +22,52 @@ function expenseMonth(date: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date.slice(0, 7) : new Date().toISOString().slice(0, 7);
 }
 
+const BILL_PREFIX: Record<string, string> = {
+  "Water Bill": "WB",
+  "Electricity Bill": "EB",
+  "Internet Bill": "INT",
+};
+
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function validMonth(value: unknown) {
+  const text = String(value || "").trim();
+  return /^\d{4}-\d{2}$/.test(text) ? text : "";
+}
+
+function previousMonth(date: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";
+  const d = new Date(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function normalizedExpenseMonth(ai: Record<string, unknown>) {
+  const category = String(ai.category || "");
+  const date = String(ai.date || "");
+  const explicit = validMonth(ai.expense_month) || validMonth(ai.bill_period_month);
+  if (explicit) return explicit;
+  if (BILL_PREFIX[category] && date) return previousMonth(date);
+  return expenseMonth(date);
+}
+
+function monthLabel(month: string) {
+  if (!/^\d{4}-\d{2}$/.test(month)) return "";
+  const idx = Number(month.slice(5, 7)) - 1;
+  if (idx < 0 || idx > 11) return "";
+  return `${MONTH_LABELS[idx]} ${month.slice(2, 4)}`;
+}
+
+function normalizedDescription(ai: Record<string, unknown>, unit: string, month: string) {
+  const category = String(ai.category || "");
+  const prefix = BILL_PREFIX[category];
+  if (!prefix) return String(ai.description || ai.summary || "Receipt");
+  const parts = [`[${prefix}]`];
+  if (unit) parts.push(unit);
+  const label = monthLabel(month);
+  if (label) parts.push(label);
+  return parts.join(" ");
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "POST required" }, 405);
@@ -54,13 +100,19 @@ serve(async (req: Request) => {
         base64Data: body.base64Data,
         fileUrl: body.fileUrl,
         mimeType: body.mimeType,
+        unit: body.unit || "",
       }),
     });
 
     const ai = await analyzeResp.json();
     if (!analyzeResp.ok) return json(ai, analyzeResp.status);
 
-    const month = expenseMonth(ai.date || "");
+    const selectedUnit = String(body.unit || "").trim();
+    const month = normalizedExpenseMonth(ai);
+    const descriptionUnit = selectedUnit || String(ai.unit_hint || "").trim();
+    ai.expense_month = month;
+    ai.description = normalizedDescription(ai, descriptionUnit, month);
+
     const { data: duplicates } = await admin.rpc("find_possible_duplicate_claims", {
       p_invoice_number: ai.invoice_number || ai.reference_number || "",
       p_merchant_name: ai.merchant_name || "",
@@ -71,7 +123,7 @@ serve(async (req: Request) => {
     });
 
     let unitMatch = null;
-    const hint = String(body.unit || ai.unit_hint || "").trim().toLowerCase();
+    const hint = descriptionUnit.toLowerCase();
     if (hint) {
       const { data: units } = await admin
         .from("units")
@@ -89,9 +141,10 @@ serve(async (req: Request) => {
       duplicate_claims: duplicates || [],
       suggested: {
         expense_month: month,
+        description: ai.description,
         unit: unitMatch
           ? `${unitMatch.property_short ? `${unitMatch.property_short} ` : ""}${unitMatch.name}`
-          : "",
+          : descriptionUnit,
         hp_unit_id: unitMatch?.hp_unit_id || null,
         source_type: "ai_scan",
       },

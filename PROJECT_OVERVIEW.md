@@ -36,6 +36,9 @@ Recent completed work:
   - Reservations: 4376 fetched, 4373 upserted.
 - Unit-level cleaning/laundry/profit sharing configuration was added.
 - Property-level mapping is being replaced by HostPlatform property + unit mapping.
+- OCR/AI invoice extraction now runs through Supabase Edge Functions:
+  - `process-invoice` handles auth, duplicate checks, unit matching, expense month, and final description formatting.
+  - `analyze-receipt` handles image/PDF-derived image OCR using OpenAI when configured, with fallback support.
 
 ## Project Memory Files
 These files are part of the working system and must be kept updated when relevant changes happen:

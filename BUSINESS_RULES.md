@@ -49,3 +49,16 @@
 - `sync-reservations` imports HostPlatform reservation records.
 - Sync errors must be actionable. Avoid vague `Failed to fetch` messages when possible.
 - If sync fails with 401 in test, first check deployed GitHub/Supabase key configuration and function JWT/auth behavior.
+
+## OCR / Invoice Input Rules
+- Expense invoice automation must run through Supabase Edge Functions, not directly from the browser to AI providers.
+- `analyze-receipt` extracts OCR/AI fields from the uploaded invoice or receipt.
+- `process-invoice` applies business rules after AI extraction, including duplicate checks, unit matching, expense month, and final description format.
+- OpenAI should be preferred when `OPENAI_API_KEY` is configured. Current selected OpenAI OCR model: `gpt-4o-mini`, because it supports text + image input and is low-cost enough for invoice extraction.
+- If `OPENAI_API_KEY` is missing, the app must return a clear configuration error or use an explicitly configured fallback provider.
+- Fixed utility/internet invoice descriptions must use:
+  - Water Bill: `[WB] UNIT Mon YY`
+  - Electricity Bill: `[EB] UNIT Mon YY`
+  - Internet Bill: `[INT] UNIT Mon YY`
+- For water/electricity/internet bills, if the bill date is in March and no explicit service period is found, the expense/bill period belongs to February. Example: March 2026 bill date -> `Feb 26` in the description and `2026-02` as expense month.
+- Do not let AI usage quantities such as kWh, m3, litres, or meter readings become the claim amount. The amount must be the payable/paid RM value.

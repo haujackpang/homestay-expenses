@@ -65,3 +65,15 @@ Decision: Add a dedicated release-process file and require future updates to mem
 
 Reason:
 Important deployment and environment decisions should not depend on session memory. They must live in the repo so future work stays aligned.
+
+## 2026-04-23: OpenAI OCR Pipeline
+Decision: Keep invoice OCR behind Supabase Edge Functions and prefer OpenAI `gpt-4o-mini` when `OPENAI_API_KEY` is configured.
+
+Reason:
+The browser must not hold AI provider secrets. `gpt-4o-mini` supports image input and structured text output at low cost, which fits invoice/receipt extraction better than a large reasoning model. Business formatting still belongs in `process-invoice` so the final description is consistent.
+
+## 2026-04-23: Fixed Utility Description Format
+Decision: Utility/internet OCR descriptions must be normalized server-side to `[WB] UNIT Mon YY`, `[EB] UNIT Mon YY`, or `[INT] UNIT Mon YY`.
+
+Reason:
+AI extraction can vary. The accounting/reporting description must be stable, and utility bills received in the following month normally belong to the previous month unless the invoice explicitly states a different service period.
