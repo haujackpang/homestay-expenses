@@ -139,7 +139,6 @@ body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;
 // ===== SUPABASE CONFIG =====
 var SUPABASE_URL='__SUPABASE_URL__';
 var SUPABASE_KEY='__SUPABASE_KEY__';
-var SUPABASE_SERVICE_KEY='__SUPABASE_SERVICE_KEY__';
 // 本地开发时的降级配置（占位符未被替换）
 if(SUPABASE_URL==='__SUPABASE_URL__'){
   SUPABASE_URL='https://afcifzghlkxvnpulahub.supabase.co';
@@ -147,7 +146,7 @@ if(SUPABASE_URL==='__SUPABASE_URL__'){
   console.warn('⚠️ Using local Test environment config');
 }
 var sb;
-try{sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);}catch(e){console.error('Supabase init error:',e.message);}'
+try{sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);}catch(e){console.error('Supabase init error:',e.message);}
 
 // ===== STATE =====
 var R=null,S='auth',PS=null,SEL=null,editingId=null,payTab='byEmp';
@@ -180,6 +179,20 @@ async function logFrontendError(level,source,message,details){
     await sb.from('error_logs').insert({level:level,source:source,message:message,details:details||{},user_agent:navigator.userAgent});
   }catch(e){console.error('Failed to log error:',e);}
 }
+async function functionAuthHeaders(){
+  var{data:sessData}=await sb.auth.getSession();
+  var authToken=sessData&&sessData.session&&sessData.session.access_token?sessData.session.access_token:'';
+  if(!authToken){var{data:refData}=await sb.auth.refreshSession();authToken=refData&&refData.session?refData.session.access_token:'';}
+  if(!authToken)authToken=SUPABASE_KEY;
+  return {'Content-Type':'application/json','Authorization':'Bearer '+authToken,'apikey':SUPABASE_KEY};
+}
+async function callEdgeFunction(name,body){
+  var headers=await functionAuthHeaders();
+  var r=await fetch(SUPABASE_URL+'/functions/v1/'+name,{method:'POST',headers:headers,body:JSON.stringify(body||{})});
+  var d=await r.json().catch(function(){return{error:'Request failed'};});
+  if(!r.ok||d.ok===false)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));
+  return d;
+}
 async function loadErrorLogs(){
   errorLogLoading=true;render();
   try{
@@ -202,7 +215,7 @@ async function loadClaims(){
   var q=sb.from('claims').select('*').order('created_at',{ascending:false});
   var{data,error}=await q;
   if(error){console.error('loadClaims:',error);return;}
-  claims=data.map(function(r){return{id:r.claim_id,uid:r.id,emp:r.emp||'',unit:r.unit||'',hpUnitId:r.hp_unit_id||null,category:r.category||'',desc:r.description,amount:parseFloat(r.amount),date:r.date,expMonth:r.expense_month||r.date.slice(0,7),status:r.status,rejectReason:r.reject_reason||'',slipRef:r.slip_ref||'',payType:r.pay_type,submittedBy:r.submitted_by,chargedTo:r.charged_to||''};});
+  claims=data.map(function(r){return{id:r.claim_id,uid:r.id,emp:r.emp||'',unit:r.unit||'',hpUnitId:r.hp_unit_id||null,category:r.category||'',desc:r.description,amount:parseFloat(r.amount),date:r.date,expMonth:r.expense_month||r.date.slice(0,7),status:r.status,rejectReason:r.reject_reason||'',slipRef:r.slip_ref||'',payType:r.pay_type,submittedBy:r.submitted_by,chargedTo:r.charged_to||'',invoiceNumber:r.invoice_number||'',merchantName:r.merchant_name||'',aiRaw:r.ai_raw||{},aiConfidence:parseFloat(r.ai_confidence||0),sourceType:r.source_type||'manual',externalId:r.external_id||'',externalSource:r.external_source||''};});
 }
 async function loadBankInfo(){
   var{data,error}=await sb.from('bank_info').select('*');
@@ -272,7 +285,7 @@ async function getNextClaimId(prefix){
 }
 
 async function dbInsertClaim(c){
-  var{error}=await sb.from('claims').insert({claim_id:c.id,emp:c.emp,unit:c.unit,hp_unit_id:c.hpUnitId||null,category:c.category,description:c.desc,amount:c.amount,date:c.date,expense_month:c.expMonth||c.date.slice(0,7),status:c.status,reject_reason:c.rejectReason,slip_ref:c.slipRef,pay_type:c.payType,submitted_by:c.submittedBy,charged_to:c.chargedTo||'',created_by:currentUser.id});
+  var{error}=await sb.from('claims').insert({claim_id:c.id,emp:c.emp,unit:c.unit,hp_unit_id:c.hpUnitId||null,category:c.category,description:c.desc,amount:c.amount,date:c.date,expense_month:c.expMonth||c.date.slice(0,7),status:c.status,reject_reason:c.rejectReason,slip_ref:c.slipRef,pay_type:c.payType,submitted_by:c.submittedBy,charged_to:c.chargedTo||'',created_by:currentUser.id,invoice_number:c.invoiceNumber||'',merchant_name:c.merchantName||'',ai_raw:c.aiRaw||{},ai_confidence:c.aiConfidence||0,source_type:c.sourceType||'manual',external_id:c.externalId||null,external_source:c.externalSource||null});
   if(error)console.error('dbInsertClaim:',error);
   return !error;
 }
@@ -289,6 +302,11 @@ async function dbUpdateClaim(claimId,fields){
   if(fields.slipRef!==undefined)upd.slip_ref=fields.slipRef;
   if(fields.expMonth!==undefined)upd.expense_month=fields.expMonth;
   if(fields.chargedTo!==undefined)upd.charged_to=fields.chargedTo;
+  if(fields.invoiceNumber!==undefined)upd.invoice_number=fields.invoiceNumber;
+  if(fields.merchantName!==undefined)upd.merchant_name=fields.merchantName;
+  if(fields.aiRaw!==undefined)upd.ai_raw=fields.aiRaw;
+  if(fields.aiConfidence!==undefined)upd.ai_confidence=fields.aiConfidence;
+  if(fields.sourceType!==undefined)upd.source_type=fields.sourceType;
   var{error}=await sb.from('claims').update(upd).eq('claim_id',claimId);
   if(error)console.error('dbUpdateClaim:',error);
   return !error;
@@ -342,8 +360,7 @@ async function initSession(user){
   render();
 }
 
-// ===== USER MANAGEMENT (Admin only, uses Admin API) =====
-var adminHeaders={'apikey':SUPABASE_SERVICE_KEY,'Authorization':'Bearer '+SUPABASE_SERVICE_KEY,'Content-Type':'application/json'};
+// ===== USER MANAGEMENT (Admin only, via Edge Function) =====
 
 async function openUsersScreen(){
   await loadUsers();
@@ -351,38 +368,21 @@ async function openUsersScreen(){
 }
 async function loadUsers(){
   if(!isSystemAdmin)return;
-  var r=await fetch(SUPABASE_URL+'/rest/v1/profiles?select=*&order=created_at',{headers:adminHeaders});
-  if(r.ok){allUsers=await r.json();}
-  else{console.error('loadUsers:',await r.text());}
+  try{
+    var d=await callEdgeFunction('admin-users',{action:'list'});
+    allUsers=d.users||[];
+  }catch(e){console.error('loadUsers:',e);toast('User list failed: '+e.message);}
 }
 async function createUserAccount(){
   var u=document.getElementById('uf-user'),p=document.getElementById('uf-pw'),n=document.getElementById('uf-name'),r=document.getElementById('uf-role');
   if(!u||!p||!n||!r||!u.value.trim()||!p.value||!n.value.trim()){userFormError='Please fill all fields';render();return;}
   if(p.value.length<6){userFormError='Password must be at least 6 characters';render();return;}
   var username=u.value.trim().toLowerCase();
-  var email=username+'@homestay.app';
   var fullName=n.value.trim();
   var role=r.value;
-  // 1. Create auth user via Admin API
-  var r1=await fetch(SUPABASE_URL+'/auth/v1/admin/users',{
-    method:'POST',headers:adminHeaders,
-    body:JSON.stringify({email:email,password:p.value,email_confirm:true,user_metadata:{full_name:fullName}})
-  });
-  var d1=await r1.json();
-  if(!r1.ok||!d1.id){userFormError=d1.msg||d1.message||'Failed to create user';render();return;}
-  // 2. Create profile
-  var r2=await fetch(SUPABASE_URL+'/rest/v1/profiles',{
-    method:'POST',headers:{...adminHeaders,'Prefer':'return=minimal'},
-    body:JSON.stringify({id:d1.id,email:email,full_name:fullName,role:role})
-  });
-  if(!r2.ok){userFormError='User created but profile failed';render();return;}
-  // 3. Create bank_info for employees
-  if(role==='employee'){
-    await fetch(SUPABASE_URL+'/rest/v1/bank_info',{
-      method:'POST',headers:{...adminHeaders,'Prefer':'return=minimal'},
-      body:JSON.stringify({employee_name:fullName})
-    }).catch(function(){});
-  }
+  try{
+    await callEdgeFunction('admin-users',{action:'create',username:username,password:p.value,full_name:fullName,role:role});
+  }catch(e){userFormError=e.message||'Failed to create user';render();return;}
   userFormError='';
   await loadUsers();await loadBankInfo();
   toast('Account created: @'+username);
@@ -396,25 +396,9 @@ async function updateUserAccount(){
   var fullName=n.value.trim();
   var role=r?r.value:editingUser.role;
   var oldName=editingUser.full_name;
-  // 1. Update profile
-  await fetch(SUPABASE_URL+'/rest/v1/profiles?id=eq.'+editingUser.id,{
-    method:'PATCH',headers:{...adminHeaders,'Prefer':'return=minimal'},
-    body:JSON.stringify({full_name:fullName,role:role})
-  });
-  // 2. Update bank_info name if changed
-  if(fullName!==oldName){
-    await fetch(SUPABASE_URL+'/rest/v1/bank_info?employee_name=eq.'+encodeURIComponent(oldName),{
-      method:'PATCH',headers:{...adminHeaders,'Prefer':'return=minimal'},
-      body:JSON.stringify({employee_name:fullName})
-    });
-  }
-  // 3. Update password if provided
-  if(p&&p.value){
-    await fetch(SUPABASE_URL+'/auth/v1/admin/users/'+editingUser.id,{
-      method:'PUT',headers:adminHeaders,
-      body:JSON.stringify({password:p.value})
-    });
-  }
+  try{
+    await callEdgeFunction('admin-users',{action:'update',user_id:editingUser.id,full_name:fullName,old_name:oldName,role:role,password:p&&p.value?p.value:''});
+  }catch(e){userFormError=e.message||'Failed to update user';render();return;}
   userFormError='';editingUser=null;
   await loadUsers();await loadBankInfo();
   toast('Account updated');
@@ -422,22 +406,16 @@ async function updateUserAccount(){
 }
 async function deleteUserAccount(userId,name){
   if(!confirm('Deactivate account: '+name+'?\nUser will not be able to login.')){return;}
-  var r=await fetch(SUPABASE_URL+'/rest/v1/profiles?id=eq.'+userId,{
-    method:'PATCH',headers:{...adminHeaders,'Prefer':'return=minimal'},
-    body:JSON.stringify({active:false})
-  });
-  if(!r.ok){toast('Error: Deactivate failed');return;}
+  try{await callEdgeFunction('admin-users',{action:'set-active',user_id:userId,active:false});}
+  catch(e){toast('Error: '+e.message);return;}
   await loadUsers();
   toast('Account deactivated: '+name);
   render();
 }
 async function reactivateUser(userId,name){
   if(!confirm('Reactivate account: '+name+'?')){return;}
-  var r=await fetch(SUPABASE_URL+'/rest/v1/profiles?id=eq.'+userId,{
-    method:'PATCH',headers:{...adminHeaders,'Prefer':'return=minimal'},
-    body:JSON.stringify({active:true})
-  });
-  if(!r.ok){toast('Error: Reactivate failed');return;}
+  try{await callEdgeFunction('admin-users',{action:'set-active',user_id:userId,active:true});}
+  catch(e){toast('Error: '+e.message);return;}
   await loadUsers();
   toast('Account reactivated: '+name);
   render();
@@ -747,31 +725,25 @@ function pickReceiptForAI(){
 }
 window.pickReceiptForAI=pickReceiptForAI;
 
+async function analyzeInvoiceFile(f,unit){
+  var ext=f.name.split('.').pop().toLowerCase();
+  var mimeMap={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',pdf:'application/pdf'};
+  var mimeType=mimeMap[ext]||'image/jpeg';
+  var reader=new FileReader();
+  var base64=await new Promise(function(resolve,reject){reader.onload=function(){resolve(reader.result);};reader.onerror=reject;reader.readAsDataURL(f);});
+  var result=await callEdgeFunction('process-invoice',{base64Data:base64,mimeType:mimeType,unit:unit||''});
+  var ai=result.ai||result;
+  ai.duplicate_claims=result.duplicate_claims||[];
+  ai.suggested=result.suggested||{};
+  return ai;
+}
+
 async function startAIAnalysis(){
   if(!pendingFiles.length){toast('Please select a file first');return;}
   aiAnalyzing=true;aiError='';aiResult=null;newClaimStep='analyzing';render();
   try{
     var f=pendingFiles[0];
-    var ext=f.name.split('.').pop().toLowerCase();
-    var mimeMap={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',pdf:'application/pdf'};
-    var mimeType=mimeMap[ext]||'image/jpeg';
-    // Convert file to base64 and send directly to AI (no TMP upload)
-    var reader=new FileReader();
-    var base64=await new Promise(function(resolve,reject){reader.onload=function(){resolve(reader.result);};reader.onerror=reject;reader.readAsDataURL(f);});
-    var{data:sessData}=await sb.auth.getSession();
-    var authToken=sessData?.session?.access_token||'';
-    if(!authToken){var{data:refData}=await sb.auth.refreshSession();authToken=refData?.session?.access_token||'';}
-    if(!authToken)authToken=SUPABASE_KEY;
-    var resp=await fetch(SUPABASE_URL+'/functions/v1/analyze-receipt',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken,'apikey':SUPABASE_KEY},
-      body:JSON.stringify({base64Data:base64,mimeType:mimeType})
-    });
-    if(!resp.ok){
-      var errBody=await resp.json().catch(function(){return{error:'Analysis failed'};});
-      throw new Error(errBody.error||'Analysis failed (HTTP '+resp.status+')');
-    }
-    aiResult=await resp.json();
+    aiResult=await analyzeInvoiceFile(f,'');
     newClaimStep='review';
   }catch(e){
     console.error('AI analysis error:',e);
@@ -967,9 +939,12 @@ async function submitNewClaim(asDraft){
       if(refDups.length>0){if(!confirm('⚠️ This receipt (ref: '+rfN+') was already submitted in '+refDups[0].id+'. Submit anyway?'))return;}
     }
   }
+  if(!asDraft&&aiResult&&aiResult.duplicate_claims&&aiResult.duplicate_claims.length){
+    if(!confirm('⚠️ Possible duplicate found: '+aiResult.duplicate_claims[0].claim_id+'. Submit anyway?'))return;
+  }
   var cid=await getNextClaimId('HE');
   var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:(dtv||new Date().toISOString().slice(0,10)).slice(0,7);
-  var nc={id:cid,emp:myName(),unit:'',category:cv,desc:dv||'(untitled)',amount:av||0,date:dtv||new Date().toISOString().slice(0,10),expMonth:expM,status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'};
+  var nc={id:cid,emp:myName(),unit:'',category:cv,desc:dv||'(untitled)',amount:av||0,date:dtv||new Date().toISOString().slice(0,10),expMonth:expM,status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self',invoiceNumber:aiResult?(aiResult.invoice_number||aiResult.reference_number||''):'',merchantName:aiResult?(aiResult.merchant_name||''):'',aiRaw:aiResult||{},aiConfidence:aiResult?(aiResult.confidence||0):0,sourceType:aiResult?'ai_scan':'manual'};
   // Upload pending files with claim ID naming
   if(pendingFiles.length){var urls=await uploadAllFiles(cid,{category:cv,unit:'',desc:dv||'',date:dtv||new Date().toISOString().slice(0,10),aiItems:aiResult?aiResult.items:null});if(urls)nc.slipRef=urls;}
   await dbInsertClaim(nc);
@@ -995,11 +970,11 @@ async function submitMgrClaim(){
   }
   var cid=await getNextClaimId(isCompany?'CO':'MGR');
   var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:dtv.slice(0,7);
-  var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,hpUnitId:unitHpId(uv),category:cv,desc:dv,amount:av,date:dtv,expMonth:expM,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager',chargedTo:isMP?'':charged.value};
+  var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,hpUnitId:unitHpId(uv),category:cv,desc:dv,amount:av,date:dtv,expMonth:expM,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager',chargedTo:isMP?'':charged.value,invoiceNumber:aiResult?(aiResult.invoice_number||aiResult.reference_number||''):'',merchantName:aiResult?(aiResult.merchant_name||''):'',aiRaw:aiResult||{},aiConfidence:aiResult?(aiResult.confidence||0):0,sourceType:aiResult?'ai_scan':'manual'};
   if(pendingFiles.length){var urls=await uploadAllFiles(cid,{category:cv,unit:uv,desc:dv,date:dtv});if(urls)nc.slipRef=urls;}
   await dbInsertClaim(nc);
   await loadClaims();toast(isCompany?'Recorded as Company-Paid':'Auto-approved for '+mgrFormEmp);
-  mgrFormPayType='employee';mgrFormEmp=myName();ss('adminDash');
+  aiResult=null;mgrFormPayType='employee';mgrFormEmp=myName();ss('adminDash');
 }
 
 // ===== REPORTING MODULE =====
@@ -1276,7 +1251,7 @@ function render(){
       return'<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#111">'+displayName+sourceBadge+'</div>'+(isActive?'<div style="font-size:11px;color:#065f46">Active</div>':'<div style="font-size:11px;color:#991b1b">Deactivated</div>')+subtitle+syncedInfo+'</div><div style="display:flex;gap:10px;align-items:center"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnit(\''+u.id+'\')">Edit</span>'+(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',false)">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',true)">Activate</span>')+'</div></div>';
     }).join(''):(inactiveCount?'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No active units. Tap "Show Deactivated" to view hidden units.</div>':'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">Click "Sync from HP" to import units, or add manually.</div>');
     var toggleInactiveBtn=inactiveCount?'<button class="pbtn btn-o" style="width:100%;margin-bottom:8px" onclick="toggleInactiveUnits()">'+(showInactiveUnits?'Hide Deactivated':'Show Deactivated')+' ('+inactiveCount+')</button>':'';
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+UNITS_DATA.length+' unit(s) | '+activeCount+' active | '+inactiveCount+' deactivated | '+hpCount+' from HP</span> - manager view defaults to active units only.</div></div><div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-p" style="flex:1" onclick="triggerUnitSync()"'+(unitSyncing?' disabled':'')+'>'+(unitSyncing?'Syncing...':'Sync from HP')+'</button><button class="pbtn btn-o" style="flex:1" onclick="editingUnit=null;unitFormError='\''\'';ss('\''unitForm'\'','\''adminUnits'\'')">+ Add Manual</button></div>'+toggleInactiveBtn+rows+'</div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+UNITS_DATA.length+' unit(s) | '+activeCount+' active | '+inactiveCount+' deactivated | '+hpCount+' from HP</span> - manager view defaults to active units only.</div></div><div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-p" style="flex:1" onclick="triggerUnitSync()"'+(unitSyncing?' disabled':'')+'>'+(unitSyncing?'Syncing...':'Sync from HP')+'</button><button class="pbtn btn-o" style="flex:1" onclick="openNewUnitForm()">+ Add Manual</button></div>'+toggleInactiveBtn+rows+'</div>';
   }
   else if(S==='unitForm'){
     if(!isSystemAdmin){toast('Only admin can access units');ss(R==='admin'?'adminDash':'empHome');return;}
@@ -1527,6 +1502,7 @@ window.doReject=async function(){var r=document.getElementById('rv-reason');awai
 window.saveMgrEdit=saveMgrEdit;window.saveEmpEdit=saveEmpEdit;window.submitEmpEdit=submitEmpEdit;
 window.submitNewClaim=submitNewClaim;window.submitMgrClaim=submitMgrClaim;
 window.markClaimed=markClaimed;window.saveBankInfo=saveBankInfo;
+window.openNewUnitForm=function(){editingUnit=null;unitFormError='';ss('unitForm','adminUnits');};
 window.editUnit=function(id){editingUnit=UNITS_DATA.filter(function(u){return u.id===id;})[0];unitFormError='';ss('unitForm','adminUnits');};
 window.toggleUnitActive=async function(id,active){
   if(!isSystemAdmin){toast('Only admin can manage units');return;}
@@ -1572,23 +1548,9 @@ window.mgrScanReceipt=function(){
     pendingFiles=[f];pendingFileNames=[f.name];
     aiAnalyzing=true;render();
     try{
-      var ext=f.name.split('.').pop().toLowerCase();
-      var mimeMap={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',pdf:'application/pdf'};
-      var reader2=new FileReader();
-      var base64_2=await new Promise(function(resolve,reject){reader2.onload=function(){resolve(reader2.result);};reader2.onerror=reject;reader2.readAsDataURL(f);});
-      var{data:sessData2}=await sb.auth.getSession();
-      var authToken2=sessData2?.session?.access_token||'';
-      if(!authToken2){var{data:refData2}=await sb.auth.refreshSession();authToken2=refData2?.session?.access_token||'';}
-      if(!authToken2)authToken2=SUPABASE_KEY;
-      var resp=await fetch(SUPABASE_URL+'/functions/v1/analyze-receipt',{
-        method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken2,'apikey':SUPABASE_KEY},
-        body:JSON.stringify({base64Data:base64_2,mimeType:mimeMap[ext]||'image/jpeg'})
-      });
-      if(!resp.ok){
-        var errBody=await resp.json().catch(function(){return{error:'HTTP '+resp.status};});
-        throw new Error(errBody.error||'HTTP '+resp.status);
-      }
-      var ai=await resp.json();
+      var currentUnit=document.getElementById('f-unit');
+      var ai=await analyzeInvoiceFile(f,currentUnit?currentUnit.value:'');
+      aiResult=ai;
       aiAnalyzing=false;render();
       // Pre-fill the form fields after render
       setTimeout(function(){
@@ -1597,7 +1559,8 @@ window.mgrScanReceipt=function(){
         if(a)a.value=ai.total||'';
         if(dt&&ai.date)dt.value=ai.date;
         if(c&&ai.category){for(var i=0;i<c.options.length;i++){if(c.options[i].value===ai.category){c.selectedIndex=i;break;}}}
-        toast('AI filled: '+ai.summary);
+        if(ai.duplicate_claims&&ai.duplicate_claims.length){toast('Possible duplicate: '+ai.duplicate_claims[0].claim_id);}
+        else{toast('AI filled: '+ai.summary);}
       },50);
     }catch(e){
       aiAnalyzing=false;render();

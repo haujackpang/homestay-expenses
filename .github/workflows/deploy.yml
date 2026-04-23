@@ -33,11 +33,9 @@ jobs:
           # Replace placeholders with actual secrets
           supabase_url = '${{ secrets.SUPABASE_URL }}'
           supabase_key = '${{ secrets.SUPABASE_KEY }}'
-          supabase_service_key = '${{ secrets.SUPABASE_SERVICE_KEY }}'
           
           content = content.replace('__SUPABASE_URL__', supabase_url)
           content = content.replace('__SUPABASE_KEY__', supabase_key)
-          content = content.replace('__SUPABASE_SERVICE_KEY__', supabase_service_key)
           
           # Verify all placeholders are replaced
           remaining = re.findall(r'__[A-Z_]+__', content)

@@ -32,6 +32,11 @@ async function logError(level: string, source: string, message: string, details?
 }
 
 const CATEGORIES = [
+  "Water Bill",
+  "Electricity Bill",
+  "Internet Bill",
+  "Rental",
+  "MFSF",
   "Utilities",
   "Maintenance & Repair",
   "Housekeeping & Cleaning",
@@ -159,20 +164,29 @@ EXAMPLES of what NOT to do:
 
 REFERENCE NUMBER EXTRACTION:
 - Look for invoice number, bill number, reference number, account number, receipt number on the document
-- Return in the "reference_number" field
+- Return the best invoice/bill number in both "invoice_number" and "reference_number"
 - If multiple reference numbers exist, return the most prominent one (invoice/bill number preferred)
 - If no reference number is found, return empty string
+
+MERCHANT AND UNIT:
+- Extract the merchant/vendor/company name, such as TNB, Indah Water, TM/Unifi, Syabas, Shopee, supplier shop name
+- If a homestay unit name/code appears, return it in "unit_hint"; otherwise return empty string
+- Return confidence from 0 to 1 based on how clearly you read the document
 
 Return this exact JSON structure:
 {
   "items": [
     {"name": "item description", "qty": 1, "price": 12.50}
   ],
+  "merchant_name": "vendor or merchant name",
+  "invoice_number": "invoice or bill number if found",
   "category": "one of the allowed categories",
   "total": 45.80,
   "date": "YYYY-MM-DD",
   "summary": "brief 1-line summary of what this receipt is for",
   "reference_number": "invoice or bill number if found",
+  "unit_hint": "unit code/name if visible",
+  "confidence": 0.85,
   "is_receipt": true
 }
 is_receipt: set to false ONLY if you are confident this image is NOT a receipt or invoice (e.g. selfie, nature photo, ID card, blank document, screenshot with no transaction data). Default to true for any document showing payment, purchase, billing, or utility information.`;
@@ -274,11 +288,15 @@ is_receipt: set to false ONLY if you are confident this image is NOT a receipt o
             price: Number(item.price) || 0,
           }))
         : [],
+      merchant_name: String(parsed.merchant_name || parsed.vendor || parsed.supplier || ""),
+      invoice_number: String(parsed.invoice_number || parsed.reference_number || ""),
       category: CATEGORIES.includes(parsed.category) ? parsed.category : "Other",
       total: Number(parsed.total) || 0,
       date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.date) ? parsed.date : "",
       summary: String(parsed.summary || "Receipt"),
-      reference_number: String(parsed.reference_number || ""),
+      reference_number: String(parsed.reference_number || parsed.invoice_number || ""),
+      unit_hint: String(parsed.unit_hint || ""),
+      confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0)),
       is_receipt: parsed.is_receipt !== false,
     };
 
