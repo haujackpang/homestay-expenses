@@ -3,9 +3,9 @@
 ## Current Task
 Latest testing issues reported by the user:
 
-1. Update PDF export layout for owner report. Status: implemented in code; needs deployment verification after push.
-2. PDF title should use property + unit name. Status: implemented when HostPlatform mapping exists.
-3. PDF should show booking details, cleaning fee, expense details, homestay management fee, owner expenses, and owner net amount. Status: implemented.
+1. Update report page to show Homestay Management Fee and Owner Profit instead of Total Expenses. Status: implemented in code; needs deployment verification after push.
+2. Simplify reservation details to show total only, not rental and extra guest separately. Status: implemented for report page and PDF.
+3. Simplify PDF sections per latest owner report rules. Status: implemented in code; needs deployment verification after push.
 4. Configure AI provider secret. Status: still blocked until `OPENAI_API_KEY` is provided/configured in test Supabase; no OpenAI key exists in test or live secrets at this time.
 
 ## Current Working Assumptions
@@ -16,8 +16,11 @@ Latest testing issues reported by the user:
 - The current OCR implementation uses `gpt-4o-mini` by default when `OPENAI_API_KEY` is available.
 - Test Supabase currently has no `OPENAI_API_KEY` and no `OPENROUTER_API_KEY`, so OCR returns a clear configuration error until a provider key is added.
 - Direct call to test `sync-units` returned HTTP 200 and synced 16 units, so the screenshot 401 is likely caused by stale browser auth token, not missing function deployment.
-- Report PDF cleaning fee uses `(cleaning_fee + laundry_fee) x reservation count`.
-- Report PDF homestay management fee uses booking total x `service_fee_pct` / 100, displayed as management fee/profit sharing.
+- Report PDF cleaning fee uses `(cleaning_fee + laundry_fee) x reservation count`, but only displays Total Cleaning Fee.
+- Homestay profit = sales - sharing expenses charged to Both.
+- Homestay Management Fee = homestay profit x `service_fee_pct` / 100.
+- Owner Expenses = total cleaning fee + expenses charged to Owner, excluding Homestay Management Fee.
+- Owner Profit = homestay profit - Homestay Management Fee - Owner Expenses.
 
 ## Do Not Do
 - Do not move changes to live unless explicitly requested.

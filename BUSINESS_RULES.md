@@ -37,12 +37,15 @@
 
 ## Reporting Rules
 - Manager report page should show reservation details for the selected unit/month.
-- Reservation detail fields should include guest name, check-in date, check-out date, nights, rental, extra guest, and total.
+- Reservation detail fields should include guest name, check-in date, check-out date, nights, and total. Total is rental + extra guest.
 - Report PDF title should use the property + unit name when HostPlatform mapping is available.
-- Report PDF booking detail fields should include guest name, check-in date, check-out date, nights, rental, extra guest, and total.
+- Report PDF booking detail fields should include guest name, check-in date, check-out date, nights, and total. Do not show rental and extra guest as separate columns.
 - Report PDF cleaning fee is calculated as `(unit cleaning fee + unit laundry fee) x reservation count`.
-- Report PDF homestay management fee is calculated from the unit `Profit Sharing %` against booking total.
-- Report PDF should show owner/shared expense claim details, an owner expenses summary, and the final owner net amount.
+- Report PDF should show only the total cleaning fee, not the per-booking cleaning/laundry rate or reservation count under cleaning.
+- Homestay profit is calculated as sales minus sharing expenses charged to Both.
+- Report PDF homestay management fee is calculated from the unit `Profit Sharing %` against homestay profit.
+- Owner expenses should include cleaning fee and expenses charged to Owner, but exclude Homestay Management Fee.
+- Report page and PDF should show Homestay Management Fee and Owner Profit instead of focusing on Total Expenses.
 
 ## Unit Configuration Rules
 - Cleaning and laundry rates are unit-level settings.

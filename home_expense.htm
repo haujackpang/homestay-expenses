@@ -1168,11 +1168,12 @@ async function exportReportPDF(){
     var cleaningRate=(parseFloat(cfg.cleaning_fee||0)+parseFloat(cfg.laundry_fee||0));
     var cleaningTotal=bkCount*cleaningRate;
     var profitPct=parseFloat(cfg.service_fee_pct||0)||0;
-    var managementFee=bkRev*profitPct/100;
     var sharedTotal=shared.reduce(function(s,c){return s+c.amount;},0);
+    var homestayProfit=bkRev-sharedTotal;
+    var managementFee=homestayProfit*profitPct/100;
     var ownerExpenseTotal=ownerCl.reduce(function(s,c){return s+c.amount;},0);
-    var totalOwnerCharges=cleaningTotal+managementFee+sharedTotal+ownerExpenseTotal;
-    var ownerNet=bkRev-totalOwnerCharges;
+    var ownerExpensesTotal=cleaningTotal+ownerExpenseTotal;
+    var ownerProfit=homestayProfit-managementFee-ownerExpensesTotal;
 
     doc.setFontSize(17);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
     doc.text(title,x,y);y+=7;
@@ -1181,7 +1182,7 @@ async function exportReportPDF(){
     line();
 
     section('Booking Details');
-    tableHeader([{t:'Guest',x:2},{t:'Check-in',x:54},{t:'Check-out',x:80},{t:'Nights',x:108},{t:'Rental',x:128},{t:'Extra',x:151},{t:'Total',x:172}]);
+    tableHeader([{t:'Guest',x:2},{t:'Check-in',x:70},{t:'Check-out',x:102},{t:'Nights',x:134},{t:'Total',x:172}]);
     doc.setFont(undefined,'normal');doc.setFontSize(7.4);doc.setTextColor(45,45,45);
     if(!pdfRes.length){doc.text('No booking records for this unit/month',x+2,y);y+=6;}
     pdfRes.forEach(function(r){
@@ -1189,57 +1190,50 @@ async function exportReportPDF(){
       var rental=parseFloat(r.rental||0),extra=parseFloat(r.extra_guest||0),total=rental+extra;
       var guest=doc.splitTextToSize(String(r.guest_name||'Guest'),48)[0]||'Guest';
       doc.text(guest,x+2,y);
-      doc.text(dmy(r.start_date),x+54,y);
-      doc.text(dmy(r.end_date),x+80,y);
-      doc.text(String(r.nights||0),x+111,y);
-      right(money(rental),x+148,y);
-      right(money(extra),x+170,y);
+      doc.text(dmy(r.start_date),x+70,y);
+      doc.text(dmy(r.end_date),x+102,y);
+      doc.text(String(r.nights||0),x+138,y);
       right(money(total),rCol,y);
       y+=5;
     });
-    row('Booking Total',money(bkRev),true);y+=2;
+    row('Sales',money(bkRev),true);y+=2;
 
     section('Cleaning Fee');
-    row('Per booking cleaning + laundry',money(cleaningRate),false);
-    row('Reservations',String(bkCount),false);
     row('Total Cleaning Fee',money(cleaningTotal),true);y+=2;
 
     section('Expenses Details');
-    var expenseRows=ownerCl.concat(shared).sort(function(a,b){return String(a.date||'').localeCompare(String(b.date||''));});
-    tableHeader([{t:'Date',x:2},{t:'Category',x:27},{t:'Description',x:68},{t:'Charge',x:143},{t:'Amount',x:168}]);
+    var expenseRows=ownerCl.concat(shared).sort(function(a,b){return String(a.category||'').localeCompare(String(b.category||''));});
+    var expenseCats={};expenseRows.forEach(function(c){if(!expenseCats[c.category])expenseCats[c.category]=0;expenseCats[c.category]+=c.amount;});
+    tableHeader([{t:'Category',x:2},{t:'Amount',x:168}]);
     doc.setFont(undefined,'normal');doc.setFontSize(7.4);doc.setTextColor(45,45,45);
     if(!expenseRows.length){doc.text('No owner/shared expenses for this unit/month',x+2,y);y+=6;}
-    expenseRows.forEach(function(c){
+    Object.entries(expenseCats).forEach(function(e){
       addPageIfNeeded(8);
-      doc.text(dmy(c.date),x+2,y);
-      doc.text(doc.splitTextToSize(c.category||'',38)[0]||'',x+27,y);
-      doc.text(doc.splitTextToSize(c.desc||'',70)[0]||'',x+68,y);
-      doc.text(c.chargedTo||'',x+143,y);
-      right(money(c.amount),rCol,y);
+      doc.text(doc.splitTextToSize(e[0]||'',130)[0]||'',x+2,y);
+      right(money(e[1]),rCol,y);
       y+=5;
     });
-    row('Owner Direct Expenses',money(ownerExpenseTotal),true);
-    row('Shared Expenses',money(sharedTotal),true);y+=2;
+    row('Sharing Expenses (Both)',money(sharedTotal),true);
+    row('Homestay Profit (Sales - Sharing Expenses)',money(homestayProfit),true);y+=2;
 
     section('Homestay Management Fee');
-    row('Profit Sharing %',profitPct.toFixed(2)+'%',false);
-    row('Booking Total x Profit Sharing %',money(managementFee),true);y+=2;
+    row('Homestay Management Fee',money(managementFee),true);y+=2;
 
     section('Owner Expenses');
     row('Cleaning Fee',money(cleaningTotal),false);
-    row('Homestay Management Fee',money(managementFee),false);
-    row('Owner Direct Expenses',money(ownerExpenseTotal),false);
-    row('Shared Expenses',money(sharedTotal),false);
-    row('Total Owner Expenses',money(totalOwnerCharges),true);
+    var ownerCats={};ownerCl.forEach(function(c){if(!ownerCats[c.category])ownerCats[c.category]=0;ownerCats[c.category]+=c.amount;});
+    Object.entries(ownerCats).forEach(function(e){row(e[0],money(e[1]),false);});
+    row('Total Owner Expenses',money(ownerExpensesTotal),true);
     y+=2;
 
     section('Owner');
     row('Owner',ownerName,false);
-    row('Booking Total',money(bkRev),false);
-    row('Less: Total Owner Expenses',money(totalOwnerCharges),false);
+    row('Homestay Profit',money(homestayProfit),false);
+    row('Less: Homestay Management Fee',money(managementFee),false);
+    row('Less: Owner Expenses',money(ownerExpensesTotal),false);
     doc.setDrawColor(0);doc.setLineWidth(0.5);doc.line(x,y,x+pw,y);y+=6;
     doc.setFontSize(12);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
-    doc.text('Owner Net Amount',x,y);right(money(ownerNet),rCol,y);y+=10;
+    doc.text('Owner Profit',x,y);right(money(ownerProfit),rCol,y);y+=10;
 
     if(y>pageBottom-8){doc.addPage();y=16;}
     doc.setFontSize(8);doc.setFont(undefined,'normal');doc.setTextColor(150,150,150);
@@ -1619,18 +1613,24 @@ function render(){
     var utCfg=unitConfig.filter(function(x){return x.unit_name===rptUnit;})[0]||{};
     var cfRate=parseFloat(utCfg.cleaning_fee||0),lfRate=parseFloat(utCfg.laundry_fee||0);
     var calcClean=bookingCount*cfRate,calcLaundry=bookingCount*lfRate;
+    var totalCleaning=calcClean+calcLaundry;
+    var rptProfitPct=parseFloat(utCfg.service_fee_pct||0)||0;
+    var homestayProfit=bookingRevenue-stS;
+    var managementFee=homestayProfit*rptProfitPct/100;
+    var ownerExpensesTotal=totalCleaning+stO;
+    var ownerProfit=homestayProfit-managementFee-ownerExpensesTotal;
     rptRes.sort(function(a,b){return String(a.start_date||'').localeCompare(String(b.start_date||''));});
     var resDetailHtml=rptRes.length?rptRes.map(function(r){
       var rental=parseFloat(r.rental||0),extra=parseFloat(r.extra_guest||0);
-      var total=parseFloat(r.total_charges||0)||rental+extra;
+      var total=rental+extra;
       var guest=esc(r.guest_name||'Guest');
-      return '<div style="background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 9px;margin-top:6px"><div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:5px"><div style="font-size:11px;font-weight:700;color:#111;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+guest+'</div><div style="font-size:11px;font-weight:700;color:#92400e;white-space:nowrap">RM '+total.toFixed(2)+'</div></div><div style="display:grid;grid-template-columns:1fr 1fr 48px;gap:5px;margin-bottom:5px"><div><div style="font-size:9px;color:#9ca3af">Check in</div><div style="font-size:10px;color:#374151;font-weight:600">'+fmtDateShort(r.start_date)+'</div></div><div><div style="font-size:9px;color:#9ca3af">Check out</div><div style="font-size:10px;color:#374151;font-weight:600">'+fmtDateShort(r.end_date)+'</div></div><div><div style="font-size:9px;color:#9ca3af">Nights</div><div style="font-size:10px;color:#374151;font-weight:600">'+(r.nights||0)+'</div></div></div><div style="display:flex;justify-content:space-between;border-top:1px dashed #fde68a;padding-top:5px"><span style="font-size:10px;color:#6b7280">Rental RM '+rental.toFixed(2)+'</span><span style="font-size:10px;color:#6b7280">Extra guest RM '+extra.toFixed(2)+'</span></div></div>';
+      return '<div style="background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 9px;margin-top:6px"><div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:5px"><div style="font-size:11px;font-weight:700;color:#111;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+guest+'</div><div style="font-size:11px;font-weight:700;color:#92400e;white-space:nowrap">RM '+total.toFixed(2)+'</div></div><div style="display:grid;grid-template-columns:1fr 1fr 48px;gap:5px"><div><div style="font-size:9px;color:#9ca3af">Check in</div><div style="font-size:10px;color:#374151;font-weight:600">'+fmtDateShort(r.start_date)+'</div></div><div><div style="font-size:9px;color:#9ca3af">Check out</div><div style="font-size:10px;color:#374151;font-weight:600">'+fmtDateShort(r.end_date)+'</div></div><div><div style="font-size:9px;color:#9ca3af">Nights</div><div style="font-size:10px;color:#374151;font-weight:600">'+(r.nights||0)+'</div></div></div></div>';
     }).join(''):'<div style="font-size:11px;color:#9ca3af;padding-top:6px">No reservation details for this unit/month</div>';
-    rhtml+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">📅 Bookings This Month</div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Reservations</span><span style="font-size:12px;font-weight:600">'+bookingCount+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Revenue (Rental+Extra)</span><span style="font-size:12px;font-weight:600">RM '+bookingRevenue.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px dashed #fde68a;margin-top:4px"><span style="font-size:11px;color:#6b7280">Est. Cleaning ('+bookingCount+'×RM'+cfRate.toFixed(2)+')</span><span style="font-size:11px;font-weight:600">RM '+calcClean.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Est. Laundry ('+bookingCount+'×RM'+lfRate.toFixed(2)+')</span><span style="font-size:11px;font-weight:600">RM '+calcLaundry.toFixed(2)+'</span></div><div style="font-size:11px;font-weight:700;color:#92400e;border-top:1px dashed #fde68a;margin-top:7px;padding-top:7px">Reservation Details</div>'+resDetailHtml+'</div>';
+    rhtml+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">📅 Bookings This Month</div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Reservations</span><span style="font-size:12px;font-weight:600">'+bookingCount+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Sales</span><span style="font-size:12px;font-weight:600">RM '+bookingRevenue.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px dashed #fde68a;margin-top:4px"><span style="font-size:11px;color:#6b7280">Total Cleaning Fee</span><span style="font-size:11px;font-weight:600">RM '+totalCleaning.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Homestay Profit</span><span style="font-size:11px;font-weight:600">RM '+homestayProfit.toFixed(2)+'</span></div><div style="font-size:11px;font-weight:700;color:#92400e;border-top:1px dashed #fde68a;margin-top:7px;padding-top:7px">Reservation Details</div>'+resDetailHtml+'</div>';
     rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#065f46;background:#d1fae5;padding:6px 10px;border-radius:8px;margin-bottom:6px">Shared Expenses (Both)</div>'+rptRows(sharedCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#065f46;border-top:2px solid #d1fae5;margin-top:4px"><span>Subtotal Shared</span><span>RM '+stS.toFixed(2)+'</span></div></div>';
-    rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:6px 10px;border-radius:8px;margin-bottom:6px">Owner Expenses</div>'+rptRows(ownerCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#1d4ed8;border-top:2px solid #dbeafe;margin-top:4px"><span>Subtotal Owner</span><span>RM '+stO.toFixed(2)+'</span></div></div>';
+    rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:6px 10px;border-radius:8px;margin-bottom:6px">Owner Expenses</div>'+rptRows(ownerCl)+'<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f3f4f6"><span style="font-size:11px;color:#1d4ed8">Total Cleaning Fee</span><span style="font-size:11px;font-weight:600">RM '+totalCleaning.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#1d4ed8;border-top:2px solid #dbeafe;margin-top:4px"><span>Total Owner Expenses</span><span>RM '+ownerExpensesTotal.toFixed(2)+'</span></div></div>';
     if(operatorCl.length>0){rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;background:#fef3c7;padding:6px 10px;border-radius:8px;margin-bottom:6px">Operator Expenses <span style="font-size:9px;font-weight:400;opacity:.7">(not in PDF)</span></div>'+rptRows(operatorCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#92400e;border-top:2px solid #fef3c7;margin-top:4px"><span>Subtotal Operator</span><span>RM '+stOp.toFixed(2)+'</span></div></div>';}
-    rhtml+='<div style="background:#111;border-radius:10px;padding:12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><span style="font-size:13px;font-weight:700;color:#fff">TOTAL EXPENSES</span><span style="font-size:16px;font-weight:800;color:#fff">RM '+grand.toFixed(2)+'</span></div>';
+    rhtml+='<div style="background:#111;border-radius:10px;padding:12px;margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:#d1fae5">HOMESTAY MANAGEMENT FEE</span><span style="font-size:14px;font-weight:800;color:#d1fae5">RM '+managementFee.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid rgba(255,255,255,.18);padding-top:7px"><span style="font-size:13px;font-weight:700;color:#fff">OWNER PROFIT</span><span style="font-size:16px;font-weight:800;color:#fff">RM '+ownerProfit.toFixed(2)+'</span></div></div>';
     rhtml+='<button class="pbtn btn-s" onclick="exportReportPDF()">⬇ Export PDF</button></div>';
     ms.innerHTML=rhtml;
   }

@@ -101,3 +101,9 @@ Decision: Update report PDF export into an owner-statement layout with property 
 
 Reason:
 The owner PDF needs to show how the final owner amount is derived, not only summarize expense categories.
+
+## 2026-04-23: Owner Profit Reporting Formula
+Decision: Report owner profit from sales after shared expenses, management fee, cleaning fee, and owner-charged expenses.
+
+Reason:
+The business wants reports to emphasize Homestay Management Fee and Owner Profit. Homestay profit is sales minus expenses charged to Both; management fee is calculated from that homestay profit, while owner expenses exclude the management fee.
