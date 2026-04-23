@@ -1130,56 +1130,124 @@ async function exportReportPDF(){
   var monthLabel=MONTHS[rptMonth]+' '+rptYear;
   try{
     var doc=new jsPDFLib({orientation:'p',unit:'mm',format:'a4'});
-    var x=15,y=18,pw=180,rCol=x+pw;
-    doc.setFontSize(18);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
-    doc.text('Expense Report',x,y);y+=8;
-    doc.setFontSize(10);doc.setFont(undefined,'normal');doc.setTextColor(80,80,80);
-    doc.text('Unit: '+rptUnit,x,y);doc.text('Owner: '+ownerName,x+60,y);doc.text('Period: '+monthLabel,x+120,y);y+=5;
-    doc.setDrawColor(180,180,180);doc.setLineWidth(0.4);doc.line(x,y,x+pw,y);y+=7;
-    function drawSection(title,arr,rgb){
-      if(!arr.length)return;
-      var cats={};arr.forEach(function(c){if(!cats[c.category])cats[c.category]=0;cats[c.category]+=c.amount;});
-      doc.setFontSize(11);doc.setFont(undefined,'bold');doc.setTextColor(rgb[0],rgb[1],rgb[2]);
-      doc.text(title,x,y);y+=6;
-      doc.setFontSize(9);doc.setFont(undefined,'normal');doc.setTextColor(60,60,60);
-      Object.entries(cats).forEach(function(e){
-        doc.text(e[0],x+4,y);
-        var amtStr='RM '+e[1].toFixed(2);
-        doc.text(amtStr,rCol-doc.getTextWidth(amtStr),y);
-        y+=5;
-      });
-      var st=arr.reduce(function(s,c){return s+c.amount;},0);
-      doc.setFont(undefined,'bold');doc.setTextColor(rgb[0],rgb[1],rgb[2]);
-      var stStr='RM '+st.toFixed(2);
-      doc.text('Subtotal',x+4,y);doc.text(stStr,rCol-doc.getTextWidth(stStr),y);
-      y+=8;doc.setTextColor(0,0,0);
+    var x=12,y=16,pw=186,rCol=x+pw,pageBottom=282;
+    function money(v){return 'RM '+(Number(v)||0).toFixed(2);}
+    function dmy(v){if(!v)return'--';var d=String(v).slice(0,10);return d.length===10?d.slice(8,10)+' '+(MONTHS[d.slice(5,7)]||d.slice(5,7))+' '+d.slice(0,4):String(v);}
+    function addPageIfNeeded(h){if(y+h>pageBottom){doc.addPage();y=16;}}
+    function line(){doc.setDrawColor(210,210,210);doc.setLineWidth(0.3);doc.line(x,y,x+pw,y);y+=5;}
+    function right(text,xx,yy){doc.text(text,xx-doc.getTextWidth(text),yy);}
+    function section(title){
+      addPageIfNeeded(12);
+      doc.setFontSize(11);doc.setFont(undefined,'bold');doc.setTextColor(17,24,39);
+      doc.text(title,x,y);y+=4;
+      doc.setDrawColor(230,230,230);doc.line(x,y,x+pw,y);y+=5;
     }
-    drawSection('SHARED EXPENSES (Both)',shared,[6,95,70]);
-    drawSection('OWNER EXPENSES',ownerCl,[29,78,216]);
-    // Operator expenses excluded from PDF
-    // Booking summary
+    function row(label,value,bold){
+      addPageIfNeeded(6);
+      doc.setFontSize(9);doc.setFont(undefined,bold?'bold':'normal');doc.setTextColor(55,65,81);
+      doc.text(label,x,y);right(value,rCol,y);y+=5;
+    }
+    function tableHeader(cols){
+      addPageIfNeeded(10);
+      doc.setFillColor(243,244,246);doc.rect(x,y-4,pw,7,'F');
+      doc.setFontSize(7.4);doc.setFont(undefined,'bold');doc.setTextColor(55,65,81);
+      cols.forEach(function(c){doc.text(c.t,x+c.x,y);});
+      y+=5;
+    }
+    function reportTitle(){
+      var hp=UNITS_DATA.filter(function(u){return u.source==='hostplatform'&&unitDisplayName(u)===rptUnit;})[0]||null;
+      if(hp)return ((hp.property_name||'').trim()+' '+(hp.name||rptUnit)).trim();
+      return rptUnit;
+    }
+    var title=reportTitle();
     var pdfHpIds=hpIdsForDisplayUnit(rptUnit);
     var pdfRes=reservations.filter(function(r){if(!r.start_date||!r.unit_name)return false;if(r.booking_type===6)return false;if(r.booking_status&&r.booking_status.indexOf('Cancel')>=0)return false;var unitMatch=r.unit_name===rptUnit||(r.hp_unit_id&&pdfHpIds.indexOf(r.hp_unit_id)>=0);return unitMatch&&r.start_date.slice(0,7)===ym;});
+    pdfRes.sort(function(a,b){return String(a.start_date||'').localeCompare(String(b.start_date||''));});
     var bkCount=pdfRes.length;
     var bkRev=pdfRes.reduce(function(s,r){return s+parseFloat(r.rental||0)+parseFloat(r.extra_guest||0);},0);
-    if(bkCount>0){
-      doc.setFontSize(11);doc.setFont(undefined,'bold');doc.setTextColor(146,64,14);
-      doc.text('BOOKINGS',x,y);y+=5;
-      doc.setFontSize(9);doc.setFont(undefined,'normal');doc.setTextColor(60,60,60);
-      doc.text('Reservations: '+bkCount,x+4,y);var revStr='RM '+bkRev.toFixed(2);doc.text('Revenue: '+revStr,x+80,y);y+=8;
-    }
-    doc.setDrawColor(0);doc.setLineWidth(0.6);doc.line(x,y,x+pw,y);y+=6;
+    var cleaningRate=(parseFloat(cfg.cleaning_fee||0)+parseFloat(cfg.laundry_fee||0));
+    var cleaningTotal=bkCount*cleaningRate;
+    var profitPct=parseFloat(cfg.service_fee_pct||0)||0;
+    var managementFee=bkRev*profitPct/100;
+    var sharedTotal=shared.reduce(function(s,c){return s+c.amount;},0);
+    var ownerExpenseTotal=ownerCl.reduce(function(s,c){return s+c.amount;},0);
+    var totalOwnerCharges=cleaningTotal+managementFee+sharedTotal+ownerExpenseTotal;
+    var ownerNet=bkRev-totalOwnerCharges;
+
+    doc.setFontSize(17);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
+    doc.text(title,x,y);y+=7;
+    doc.setFontSize(9);doc.setFont(undefined,'normal');doc.setTextColor(80,80,80);
+    doc.text('Owner: '+ownerName,x,y);doc.text('Period: '+monthLabel,x+82,y);y+=6;
+    line();
+
+    section('Booking Details');
+    tableHeader([{t:'Guest',x:2},{t:'Check-in',x:54},{t:'Check-out',x:80},{t:'Nights',x:108},{t:'Rental',x:128},{t:'Extra',x:151},{t:'Total',x:172}]);
+    doc.setFont(undefined,'normal');doc.setFontSize(7.4);doc.setTextColor(45,45,45);
+    if(!pdfRes.length){doc.text('No booking records for this unit/month',x+2,y);y+=6;}
+    pdfRes.forEach(function(r){
+      addPageIfNeeded(8);
+      var rental=parseFloat(r.rental||0),extra=parseFloat(r.extra_guest||0),total=rental+extra;
+      var guest=doc.splitTextToSize(String(r.guest_name||'Guest'),48)[0]||'Guest';
+      doc.text(guest,x+2,y);
+      doc.text(dmy(r.start_date),x+54,y);
+      doc.text(dmy(r.end_date),x+80,y);
+      doc.text(String(r.nights||0),x+111,y);
+      right(money(rental),x+148,y);
+      right(money(extra),x+170,y);
+      right(money(total),rCol,y);
+      y+=5;
+    });
+    row('Booking Total',money(bkRev),true);y+=2;
+
+    section('Cleaning Fee');
+    row('Per booking cleaning + laundry',money(cleaningRate),false);
+    row('Reservations',String(bkCount),false);
+    row('Total Cleaning Fee',money(cleaningTotal),true);y+=2;
+
+    section('Expenses Details');
+    var expenseRows=ownerCl.concat(shared).sort(function(a,b){return String(a.date||'').localeCompare(String(b.date||''));});
+    tableHeader([{t:'Date',x:2},{t:'Category',x:27},{t:'Description',x:68},{t:'Charge',x:143},{t:'Amount',x:168}]);
+    doc.setFont(undefined,'normal');doc.setFontSize(7.4);doc.setTextColor(45,45,45);
+    if(!expenseRows.length){doc.text('No owner/shared expenses for this unit/month',x+2,y);y+=6;}
+    expenseRows.forEach(function(c){
+      addPageIfNeeded(8);
+      doc.text(dmy(c.date),x+2,y);
+      doc.text(doc.splitTextToSize(c.category||'',38)[0]||'',x+27,y);
+      doc.text(doc.splitTextToSize(c.desc||'',70)[0]||'',x+68,y);
+      doc.text(c.chargedTo||'',x+143,y);
+      right(money(c.amount),rCol,y);
+      y+=5;
+    });
+    row('Owner Direct Expenses',money(ownerExpenseTotal),true);
+    row('Shared Expenses',money(sharedTotal),true);y+=2;
+
+    section('Homestay Management Fee');
+    row('Profit Sharing %',profitPct.toFixed(2)+'%',false);
+    row('Booking Total x Profit Sharing %',money(managementFee),true);y+=2;
+
+    section('Owner Expenses');
+    row('Cleaning Fee',money(cleaningTotal),false);
+    row('Homestay Management Fee',money(managementFee),false);
+    row('Owner Direct Expenses',money(ownerExpenseTotal),false);
+    row('Shared Expenses',money(sharedTotal),false);
+    row('Total Owner Expenses',money(totalOwnerCharges),true);
+    y+=2;
+
+    section('Owner');
+    row('Owner',ownerName,false);
+    row('Booking Total',money(bkRev),false);
+    row('Less: Total Owner Expenses',money(totalOwnerCharges),false);
+    doc.setDrawColor(0);doc.setLineWidth(0.5);doc.line(x,y,x+pw,y);y+=6;
     doc.setFontSize(12);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
-    var grand=shared.reduce(function(s,c){return s+c.amount;},0)+ownerCl.reduce(function(s,c){return s+c.amount;},0);
-    var grandStr='RM '+grand.toFixed(2);
-    doc.text('TOTAL EXPENSES',x,y);doc.text(grandStr,rCol-doc.getTextWidth(grandStr),y);y+=10;
+    doc.text('Owner Net Amount',x,y);right(money(ownerNet),rCol,y);y+=10;
+
+    if(y>pageBottom-8){doc.addPage();y=16;}
     doc.setFontSize(8);doc.setFont(undefined,'normal');doc.setTextColor(150,150,150);
-    doc.text('Generated: '+new Date().toLocaleDateString('en-MY')+' · Homestay Expense System',x,y);
-    doc.save('Expense_Report_'+rptUnit.replace(/\s+/g,'_')+'_'+MONTHS[rptMonth]+rptYear+'.pdf');
+    doc.text('Generated: '+new Date().toLocaleDateString('en-MY')+' - Homestay Expense System',x,y);
+    doc.save(title.replace(/[^\w]+/g,'_')+'_'+MONTHS[rptMonth]+rptYear+'.pdf');
     toast('PDF exported');
   }catch(e){console.error('PDF export error:',e);toast('Failed to export PDF');}
 }
-
 // ===== RENDER =====
 function render(){
   var ms=document.getElementById('ms'),tbt_el=document.getElementById('tbt'),bb_el=document.getElementById('bb'),tbr_el=document.getElementById('tbr'),nav=document.getElementById('nav'),lo=document.getElementById('lob');

@@ -95,3 +95,9 @@ Decision: Refresh the Supabase session token before Edge Function calls when it 
 
 Reason:
 The test Edge Function works from direct calls, but the browser can keep an expired session token and receive 401 before the function runs.
+
+## 2026-04-23: Owner Statement PDF Layout
+Decision: Update report PDF export into an owner-statement layout with property + unit title, booking details, cleaning fee, expense details, homestay management fee, owner expenses, and owner net amount.
+
+Reason:
+The owner PDF needs to show how the final owner amount is derived, not only summarize expense categories.
