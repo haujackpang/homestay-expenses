@@ -119,3 +119,9 @@ Decision: On the report page, rename `Shared Expenses (Both)` to `Expenses`, sho
 
 Reason:
 The report page should match the owner-report structure: cleaning fee is not an owner-expense line, while Owner Expenses are only claims charged to Owner.
+
+## 2026-04-23: Manual Sync Uses Anon Function Token
+Decision: Browser-triggered manual sync calls should authorize Edge Functions with the Supabase anon key instead of the current user session token.
+
+Reason:
+Direct test calls succeed, but a manager browser can send a stale or function-rejected session JWT and receive HTTP 401 before the function runs. The UI still limits sync access by role.

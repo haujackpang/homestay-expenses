@@ -3,9 +3,9 @@
 ## Current Task
 Latest testing issues reported by the user:
 
-1. Move Total Cleaning Fee into the report page Expenses section. Status: implemented in code; needs deployment verification after push.
-2. Rename report page `Shared Expenses (Both)` to `Expenses`. Status: implemented in code; needs deployment verification after push.
-3. Ensure report page Owner Expenses only shows expenses charged to Owner. Status: implemented in code; needs deployment verification after push.
+1. Fix manager Reservation Sync `Sync Now` HTTP 401. Status: implemented in code by using anon-key Edge Function authorization for manual sync calls; needs deployment verification after push.
+2. Direct test `sync-reservations` call returned HTTP 200 with fetched/upserted records, so credentials and function are healthy.
+3. Report page expense-section changes are deployed in test.
 4. Configure AI provider secret. Status: still blocked until `OPENAI_API_KEY` is provided/configured in test Supabase; no OpenAI key exists in test or live secrets at this time.
 
 ## Current Working Assumptions
@@ -16,6 +16,7 @@ Latest testing issues reported by the user:
 - The current OCR implementation uses `gpt-4o-mini` by default when `OPENAI_API_KEY` is available.
 - Test Supabase currently has no `OPENAI_API_KEY` and no `OPENROUTER_API_KEY`, so OCR returns a clear configuration error until a provider key is added.
 - Direct call to test `sync-units` returned HTTP 200 and synced 16 units, so the screenshot 401 is likely caused by stale browser auth token, not missing function deployment.
+- Direct call to test `sync-reservations` returned HTTP 200 and upserted records, so browser 401 is likely caused by stale/rejected user-session JWT before the function runs.
 - Report PDF cleaning fee uses `(cleaning_fee + laundry_fee) x reservation count`, displayed as `Cleaning fee` in the shared expenses/expense details area.
 - Homestay profit = sales - sharing expenses charged to Both.
 - Homestay Management Fee = homestay profit x `service_fee_pct` / 100.

@@ -66,6 +66,7 @@
 - `sync-reservations` imports HostPlatform reservation records.
 - Sync errors must be actionable. Avoid vague `Failed to fetch` messages when possible.
 - If sync fails with 401 in test, first check deployed GitHub/Supabase key configuration and function JWT/auth behavior.
+- Frontend manual sync calls may use the Supabase anon key for Edge Function authorization to avoid stale user-session JWT failures. UI role checks still control who can trigger sync.
 
 ## OCR / Invoice Input Rules
 - Expense invoice automation must run through Supabase Edge Functions, not directly from the browser to AI providers.

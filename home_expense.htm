@@ -200,6 +200,13 @@ async function callEdgeFunction(name,body){
   if(!r.ok||d.ok===false)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));
   return d;
 }
+async function callPublicEdgeFunction(name,body){
+  var headers={'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_KEY,'apikey':SUPABASE_KEY};
+  var r=await fetch(SUPABASE_URL+'/functions/v1/'+name,{method:'POST',headers:headers,body:JSON.stringify(body||{})});
+  var d=await r.json().catch(function(){return{error:'Request failed'};});
+  if(!r.ok||d.ok===false)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));
+  return d;
+}
 async function loadErrorLogs(){
   errorLogLoading=true;render();
   try{
@@ -382,7 +389,7 @@ async function loadReservations(){var{data}=await sb.from('reservations').select
 async function triggerSync(){
   syncRunning=true;render();
   try{
-    var d=await callEdgeFunction('sync-reservations',{type:'manual'});
+    var d=await callPublicEdgeFunction('sync-reservations',{type:'manual'});
     if(d.ok){
       await logAdminAction('sync-reservations.success',{upserted:d.upserted||0,fetched:d.fetched||0});
       toast('Sync done: '+d.upserted+' records');
@@ -1729,7 +1736,7 @@ window.triggerUnitSync=async function(){
   if(!isSystemAdmin){toast('Only admin can sync units');return;}
   unitSyncing=true;render();
   try{
-    var d=await callEdgeFunction('sync-units',{type:'manual'});
+    var d=await callPublicEdgeFunction('sync-units',{type:'manual'});
     if(d.ok){
       await loadUnits();
       await logAdminAction('sync-units.success',{synced:d.synced||0,name_changes:d.nameChanges||0});
