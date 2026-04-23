@@ -3,9 +3,9 @@
 ## Current Task
 Latest testing issues reported by the user:
 
-1. Update report page to show Homestay Management Fee and Owner Profit instead of Total Expenses. Status: implemented in code; needs deployment verification after push.
-2. Simplify reservation details to show total only, not rental and extra guest separately. Status: implemented for report page and PDF.
-3. Simplify PDF sections per latest owner report rules. Status: implemented in code; needs deployment verification after push.
+1. Move Total Cleaning Fee into the report page Expenses section. Status: implemented in code; needs deployment verification after push.
+2. Rename report page `Shared Expenses (Both)` to `Expenses`. Status: implemented in code; needs deployment verification after push.
+3. Ensure report page Owner Expenses only shows expenses charged to Owner. Status: implemented in code; needs deployment verification after push.
 4. Configure AI provider secret. Status: still blocked until `OPENAI_API_KEY` is provided/configured in test Supabase; no OpenAI key exists in test or live secrets at this time.
 
 ## Current Working Assumptions
@@ -21,6 +21,7 @@ Latest testing issues reported by the user:
 - Homestay Management Fee = homestay profit x `service_fee_pct` / 100.
 - Owner Expenses = expenses charged to Owner, excluding Cleaning fee and Homestay Management Fee.
 - Owner Profit = homestay profit - Homestay Management Fee - Owner Expenses.
+- Report page Expenses section includes shared claims and Total Cleaning Fee.
 
 ## Do Not Do
 - Do not move changes to live unless explicitly requested.

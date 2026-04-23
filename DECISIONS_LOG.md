@@ -113,3 +113,9 @@ Decision: Show PDF `Cleaning fee` in the shared expenses/expense details area an
 
 Reason:
 The PDF should present Cleaning fee as part of shared operating expenses, while Owner Expenses should only list expenses directly charged to Owner.
+
+## 2026-04-23: Report Page Expenses Section
+Decision: On the report page, rename `Shared Expenses (Both)` to `Expenses`, show `Total Cleaning Fee` in that section, and keep Owner Expenses limited to owner-charged claims.
+
+Reason:
+The report page should match the owner-report structure: cleaning fee is not an owner-expense line, while Owner Expenses are only claims charged to Owner.

@@ -42,6 +42,9 @@
 - Report PDF booking detail fields should include guest name, check-in date, check-out date, nights, and total. Do not show rental and extra guest as separate columns.
 - Report PDF cleaning fee is calculated as `(unit cleaning fee + unit laundry fee) x reservation count`.
 - Report PDF should show `Cleaning fee` under the shared expenses/expense details area, not under Owner Expenses.
+- Report page should show `Total Cleaning Fee` in the `Expenses` section, not in Owner Expenses.
+- Report page should label shared expense section as `Expenses`, not `Shared Expenses (Both)`.
+- Report page Owner Expenses should show only expenses charged to Owner.
 - Homestay profit is calculated as sales minus sharing expenses charged to Both.
 - Report PDF homestay management fee is calculated from the unit `Profit Sharing %` against homestay profit.
 - Owner expenses should include only expenses charged to Owner, and exclude Cleaning fee and Homestay Management Fee.
