@@ -155,3 +155,9 @@ Decision: Use `haujackpang/homestay-expenses` as the canonical live repo, `hauja
 
 Reason:
 The earlier repo/project mapping was wrong. Future deployments, Pages secrets, and verification must follow the user's corrected environment ownership so test and live stay properly separated.
+
+## 2026-04-24: Keep `homestayERP-prod` As Legacy Live Alias
+Decision: Maintain `haujackpang/homestayERP-prod` as a compatibility URL for existing bookmarks, and point it to the live Supabase environment.
+
+Reason:
+The user still opens the old `homestayERP-prod` GitHub Pages URL. Keeping it functional avoids access disruption while `haujackpang/homestay-expenses` remains the canonical live repo.
