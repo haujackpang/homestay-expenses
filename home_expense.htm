@@ -173,7 +173,7 @@ var fxCollapsed=true;
 var claims=[],BANK_INFO={},EMPS=[],ACTIVE_EMPS=[],UNITS_DATA=[];
 var editingUnit=null,unitFormError='';
 var authError='',authLoading=false;
-var isSystemAdmin=false,allUsers=[],editingUser=null,userFormError='';
+var isSystemAdmin=false,allUsers=[],editingUser=null,userFormError='',userListSource='auth';
 var resetPasswordUser=null,resetPasswordError='',resetPasswordDraft1='',resetPasswordDraft2='';
 var pendingFiles=[],pendingFileNames=[];
 var aiResult=null,aiAnalyzing=false,aiError='',newClaimStep='upload';
@@ -527,6 +527,7 @@ async function loadUsers(){
   try{
     var d=await callEdgeFunction('admin-users',{action:'list'});
     allUsers=d.users||[];
+    userListSource=allUsers.some(function(u){return u.source==='profile';})?'profile':'auth';
   }catch(e){console.error('loadUsers:',e);toast('User list failed: '+e.message);}
 }
 async function createUserAccount(){
@@ -1593,7 +1594,8 @@ function render(){
       var statusTag=!isActive?'<span style="font-size:9px;color:#991b1b;background:#fee2e2;padding:1px 5px;border-radius:99px;margin-left:4px">Inactive</span>':'';
       return '<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div class="avatar">'+ini+'</div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="font-size:13px;font-weight:600;color:#111">'+displayName+'</div>'+roleTag+statusTag+profileTag+'</div><div style="font-size:11px;color:#9ca3af;font-family:monospace">@'+username+'</div>'+actions+'</div></div>';
     }).join('');
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+allUsers.length+' login user(s)</span> from authentication. Only admin can manage accounts.</div></div>'+userCards+'<button class="pbtn btn-p" onclick="editingUser=null;userFormError=\'\';ss(\'userForm\',\'adminUsers\')">+ Add New User</button></div>';
+    var userSourceText=userListSource==='profile'?'from profiles/auth fallback':'from authentication';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+allUsers.length+' login user(s)</span> '+userSourceText+'. Only admin can manage accounts.</div></div>'+userCards+'<button class="pbtn btn-p" onclick="editingUser=null;userFormError=\'\';ss(\'userForm\',\'adminUsers\')">+ Add New User</button></div>';
   }
   else if(S==='userForm'){
     tbt_el.textContent=editingUser?'Edit User':'Add User';bb_el.style.display='block';adminNav('dash');

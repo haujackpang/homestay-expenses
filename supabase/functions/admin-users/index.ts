@@ -2,7 +2,10 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
-const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const SUPABASE_SERVICE_KEY =
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
+  Deno.env.get("SUPABASE_SERVICE_KEY") ||
+  "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -21,15 +24,6 @@ async function listLoginUsers(admin: ReturnType<typeof createClient>) {
   const perPage = 200;
   const authUsers: Array<Record<string, unknown>> = [];
 
-  for (let page = 1; page <= 20; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-    if (error) throw error;
-    const rows = (data?.users || []) as Array<Record<string, unknown>>;
-    if (!rows.length) break;
-    authUsers.push(...rows);
-    if (rows.length < perPage) break;
-  }
-
   const { data: profiles, error: profilesError } = await admin
     .from("profiles")
     .select("id, email, full_name, role, active");
@@ -41,15 +35,29 @@ async function listLoginUsers(admin: ReturnType<typeof createClient>) {
     if (id) profileById[id] = p as Record<string, unknown>;
   });
 
+  let authListError = "";
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      authListError = error.message || "Failed to list authentication users";
+      break;
+    }
+    const rows = (data?.users || []) as Array<Record<string, unknown>>;
+    if (!rows.length) break;
+    authUsers.push(...rows);
+    if (rows.length < perPage) break;
+  }
+
+  const seenIds: Record<string, boolean> = {};
   const users = authUsers
     .filter((u) => {
       const email = String(u.email || "").toLowerCase();
-      const aud = String(u.aud || "");
       const isAnonymous = u.is_anonymous === true;
-      return !!email && aud === "authenticated" && !isAnonymous;
+      return !!email && !isAnonymous;
     })
     .map((u) => {
       const id = String(u.id || "");
+      seenIds[id] = true;
       const p = profileById[id] || null;
       const email = String(u.email || (p?.email as string) || "").toLowerCase();
       const meta = (u.user_metadata || {}) as Record<string, unknown>;
@@ -70,9 +78,28 @@ async function listLoginUsers(admin: ReturnType<typeof createClient>) {
         role,
         active,
         has_profile: !!p,
+        source: "auth",
         last_sign_in_at: (u.last_sign_in_at as string) || null,
       };
     })
+    .concat(
+      (profiles || [])
+        .filter((p) => {
+          const id = String(p.id || "");
+          return !!id && !seenIds[id];
+        })
+        .map((p) => ({
+          id: String(p.id || ""),
+          email: String(p.email || "").toLowerCase(),
+          full_name: String(p.full_name || p.email || "User").trim(),
+          role: String(p.role || "employee"),
+          active: p.active !== false,
+          has_profile: true,
+          source: "profile",
+          warning: authListError || null,
+          last_sign_in_at: null,
+        })),
+    )
     .sort((a, b) => {
       const aRole = a.role === "admin" ? 0 : a.role === "manager" ? 1 : 2;
       const bRole = b.role === "admin" ? 0 : b.role === "manager" ? 1 : 2;
