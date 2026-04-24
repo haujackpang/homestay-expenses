@@ -139,14 +139,19 @@ body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;
 // ===== SUPABASE CONFIG =====
 var SUPABASE_URL='__SUPABASE_URL__';
 var SUPABASE_KEY='__SUPABASE_KEY__';
-// 本地开发时的降级配置（占位符未被替换）
-if(SUPABASE_URL==='__SUPABASE_URL__'){
-  SUPABASE_URL='https://afcifzghlkxvnpulahub.supabase.co';
-  SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmY2lmemdobGt4dm5wdWxhaHViIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwOTkxMTEsImV4cCI6MjA5MTY3NTExMX0.wzJOV0C_ibXzN-cf-ZwgLEWWcVzvYAGelW-bNxCmzvY';
-  console.warn('⚠️ Using local Test environment config');
+var TEST_SUPABASE_REF='afcifzghlkxvnpulahub';
+var LIVE_SUPABASE_REF='skwogboredsczcyhlqgn';
+var SUPABASE_CONFIG_ERROR='';
+var SUPABASE_PLACEHOLDERS=(SUPABASE_URL==='__SUPABASE_URL__'||SUPABASE_KEY==='__SUPABASE_KEY__');
+var sb=null;
+if(SUPABASE_PLACEHOLDERS){
+  SUPABASE_URL='';
+  SUPABASE_KEY='';
+  SUPABASE_CONFIG_ERROR='Supabase configuration is missing for this deployment.';
+  console.error(SUPABASE_CONFIG_ERROR);
+}else{
+  try{sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);}catch(e){SUPABASE_CONFIG_ERROR='Supabase init error: '+e.message;console.error(SUPABASE_CONFIG_ERROR);}
 }
-var sb;
-try{sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);}catch(e){console.error('Supabase init error:',e.message);}
 
 // ===== STATE =====
 var R=null,S='auth',PS=null,SEL=null,editingId=null,payTab='byEmp';
@@ -1206,7 +1211,9 @@ async function exportReportPDF(){
     row('Sales',money(bkRev),true);y+=2;
 
     section('Expenses Details');
-    var expenseRows=ownerCl.concat(shared).sort(function(a,b){return String(a.category||'').localeCompare(String(b.category||''));});
+    var expenseRows=ownerCl.concat(shared);
+    if(cleaningTotal>0)expenseRows.push({category:'Cleaning fee',amount:cleaningTotal});
+    expenseRows.sort(function(a,b){return String(a.category||'').localeCompare(String(b.category||''));});
     var expenseCats={};expenseRows.forEach(function(c){if(!expenseCats[c.category])expenseCats[c.category]=0;expenseCats[c.category]+=c.amount;});
     tableHeader([{t:'Category',x:2},{t:'Amount',x:168}]);
     doc.setFont(undefined,'normal');doc.setFontSize(7.4);doc.setTextColor(45,45,45);
@@ -1217,8 +1224,7 @@ async function exportReportPDF(){
       right(money(e[1]),rCol,y);
       y+=5;
     });
-    row('Sharing Expenses',money(sharedTotal),true);
-    row('Cleaning fee',money(cleaningTotal),true);
+    row('Expenses',money(sharedTotal+cleaningTotal),true);
     row('Homestay Profit',money(homestayProfit),true);y+=2;
 
     section('Homestay Management Fee');
@@ -1253,7 +1259,8 @@ function render(){
   var host=(location&&location.hostname?location.hostname:'').toLowerCase();
   var path=(location&&location.pathname?location.pathname:'').toLowerCase();
   // 改进测试环境检测：支持多种方式识别 Test 环境
-  var isTestEnv=(SUPABASE_URL.indexOf('afcifzghlkxvnpulahub')>=0)||(path.match(/\/homestayerp-test/i)!==null)||(path.match(/test/i)!==null&&host.indexOf('github.io')>=0);
+  var repoLooksTest=path.indexOf('/homestayerp-test')>=0;
+  var isTestEnv=(SUPABASE_URL.indexOf(TEST_SUPABASE_REF)>=0)||repoLooksTest;
   var watermarkEl=document.getElementById('watermark-test');
   if(isTestEnv){
     if(!watermarkEl){var wm=document.createElement('div');wm.id='watermark-test';wm.className='watermark';wm.textContent='TESTING';phoneEl.appendChild(wm);}
@@ -1618,6 +1625,8 @@ function render(){
     var cfRate=parseFloat(utCfg.cleaning_fee||0),lfRate=parseFloat(utCfg.laundry_fee||0);
     var calcClean=bookingCount*cfRate,calcLaundry=bookingCount*lfRate;
     var totalCleaning=calcClean+calcLaundry;
+    var sharedExpenseRows=sharedCl.slice();
+    if(totalCleaning>0)sharedExpenseRows.push({category:'Cleaning fee',amount:totalCleaning});
     var rptProfitPct=parseFloat(utCfg.service_fee_pct||0)||0;
     var homestayProfit=bookingRevenue-stS;
     var managementFee=homestayProfit*rptProfitPct/100;
@@ -1630,8 +1639,8 @@ function render(){
       var guest=esc(r.guest_name||'Guest');
       return '<div style="background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 9px;margin-top:6px"><div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:5px"><div style="font-size:11px;font-weight:700;color:#111;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+guest+'</div><div style="font-size:11px;font-weight:700;color:#92400e;white-space:nowrap">RM '+total.toFixed(2)+'</div></div><div style="display:grid;grid-template-columns:1fr 1fr 48px;gap:5px"><div><div style="font-size:9px;color:#9ca3af">Check in</div><div style="font-size:10px;color:#374151;font-weight:600">'+fmtDateShort(r.start_date)+'</div></div><div><div style="font-size:9px;color:#9ca3af">Check out</div><div style="font-size:10px;color:#374151;font-weight:600">'+fmtDateShort(r.end_date)+'</div></div><div><div style="font-size:9px;color:#9ca3af">Nights</div><div style="font-size:10px;color:#374151;font-weight:600">'+(r.nights||0)+'</div></div></div></div>';
     }).join(''):'<div style="font-size:11px;color:#9ca3af;padding-top:6px">No reservation details for this unit/month</div>';
-    rhtml+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">📅 Bookings This Month</div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Reservations</span><span style="font-size:12px;font-weight:600">'+bookingCount+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Sales</span><span style="font-size:12px;font-weight:600">RM '+bookingRevenue.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px dashed #fde68a;margin-top:4px"><span style="font-size:11px;color:#6b7280">Total Cleaning Fee</span><span style="font-size:11px;font-weight:600">RM '+totalCleaning.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Homestay Profit</span><span style="font-size:11px;font-weight:600">RM '+homestayProfit.toFixed(2)+'</span></div><div style="font-size:11px;font-weight:700;color:#92400e;border-top:1px dashed #fde68a;margin-top:7px;padding-top:7px">Reservation Details</div>'+resDetailHtml+'</div>';
-    rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#065f46;background:#d1fae5;padding:6px 10px;border-radius:8px;margin-bottom:6px">Expenses</div>'+rptRows(sharedCl)+'<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f3f4f6"><span style="font-size:11px;color:#065f46">Total Cleaning Fee</span><span style="font-size:11px;font-weight:600">RM '+totalCleaning.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#065f46;border-top:2px solid #d1fae5;margin-top:4px"><span>Subtotal Expenses</span><span>RM '+(stS+totalCleaning).toFixed(2)+'</span></div></div>';
+    rhtml+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">📅 Bookings This Month</div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Reservations</span><span style="font-size:12px;font-weight:600">'+bookingCount+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Sales</span><span style="font-size:12px;font-weight:600">RM '+bookingRevenue.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px dashed #fde68a;margin-top:4px"><span style="font-size:11px;color:#6b7280">Cleaning fee</span><span style="font-size:11px;font-weight:600">RM '+totalCleaning.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Homestay Profit</span><span style="font-size:11px;font-weight:600">RM '+homestayProfit.toFixed(2)+'</span></div><div style="font-size:11px;font-weight:700;color:#92400e;border-top:1px dashed #fde68a;margin-top:7px;padding-top:7px">Reservation Details</div>'+resDetailHtml+'</div>';
+    rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#065f46;background:#d1fae5;padding:6px 10px;border-radius:8px;margin-bottom:6px">Expenses</div>'+rptRows(sharedExpenseRows)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#065f46;border-top:2px solid #d1fae5;margin-top:4px"><span>Subtotal Expenses</span><span>RM '+(stS+totalCleaning).toFixed(2)+'</span></div></div>';
     rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:6px 10px;border-radius:8px;margin-bottom:6px">Owner Expenses</div>'+rptRows(ownerCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#1d4ed8;border-top:2px solid #dbeafe;margin-top:4px"><span>Total Owner Expenses</span><span>RM '+ownerExpensesTotal.toFixed(2)+'</span></div></div>';
     if(operatorCl.length>0){rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;background:#fef3c7;padding:6px 10px;border-radius:8px;margin-bottom:6px">Operator Expenses <span style="font-size:9px;font-weight:400;opacity:.7">(not in PDF)</span></div>'+rptRows(operatorCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#92400e;border-top:2px solid #fef3c7;margin-top:4px"><span>Subtotal Operator</span><span>RM '+stOp.toFixed(2)+'</span></div></div>';}
     rhtml+='<div style="background:#111;border-radius:10px;padding:12px;margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:#d1fae5">HOMESTAY MANAGEMENT FEE</span><span style="font-size:14px;font-weight:800;color:#d1fae5">RM '+managementFee.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid rgba(255,255,255,.18);padding-top:7px"><span style="font-size:13px;font-weight:700;color:#fff">OWNER PROFIT</span><span style="font-size:16px;font-weight:800;color:#fff">RM '+ownerProfit.toFixed(2)+'</span></div></div>';
@@ -1935,6 +1944,9 @@ function startInit(){
       console.log('Initializing app...');
       console.log('Supabase loaded:', typeof supabase !== 'undefined');
       console.log('sb client:', typeof sb !== 'undefined');
+      if(SUPABASE_CONFIG_ERROR){
+        throw new Error(SUPABASE_CONFIG_ERROR);
+      }
       if(!sb || !sb.auth){
         throw new Error('Supabase client not ready');
       }
@@ -1969,5 +1981,3 @@ if(document.readyState==='loading'){
 </script>
 </body>
 </html>
-
-

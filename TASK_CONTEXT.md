@@ -1,21 +1,18 @@
 # Task Context
 
 ## Current Task
-Latest release status:
+Current test-first fixes requested by the user on 2026-04-24:
 
-1. User explicitly approved live promotion on 2026-04-23.
-2. `homestayERP-prod` was created, GitHub Pages was enabled in workflow mode, and `main` was pushed to live.
-3. Live GitHub Pages deployment succeeded and is configured for live Supabase project `skwogboredsczcyhlqgn`.
-4. Live Supabase Edge Functions deployed: `analyze-receipt`, `process-invoice`, `sync-reservations`, `sync-units`.
-5. Live SQL upgrades applied idempotently: unit mapping column, unit-level cleaning/laundry columns, and invoice automation columns/functions.
-6. Live manual sync verification succeeded:
-   - Reservations: 4381 fetched, 4378 upserted.
-   - Units: 16 synced.
-7. Configure AI provider secret. Status: live has `OPENROUTER_API_KEY` fallback configured. OpenAI-specific OCR requires adding `OPENAI_API_KEY` and optional `OPENAI_OCR_MODEL` to the target Supabase secrets.
+1. Keep test and live strictly separated at database level. Live must not show the test watermark or test-only manual entries.
+2. Replace report wording from `Total Cleaning Fee` to `Cleaning fee`.
+3. Replace `Sharing Expenses` wording with `Expenses`.
+4. Show `Cleaning fee` inside the Expenses details list/table.
+5. These changes are being prepared in test first. Do not move them to live until the user explicitly approves again.
 
 ## Current Working Assumptions
 - User has already executed the test Supabase script that adds unit-level cleaning/laundry columns.
 - Test and live Supabase functions are deployed and direct function calls succeeded after secrets were copied/configured.
+- Live repo and live Supabase remain separate from test; app code must not contain runtime fallback behavior that reconnects live pages to test data.
 - Test database now has `units.mapped_unit_name`.
 - OpenAI API usage requires an API key in Supabase secrets. Codex itself is not an app-callable OCR backend.
 - The current OCR implementation uses `gpt-4o-mini` by default when `OPENAI_API_KEY` is available.
@@ -24,6 +21,7 @@ Latest release status:
 - Direct call to test `sync-units` returned HTTP 200 and synced 16 units, so the screenshot 401 is likely caused by stale browser auth token, not missing function deployment.
 - Direct call to test `sync-reservations` returned HTTP 200 and upserted records, so browser 401 is likely caused by stale/rejected user-session JWT before the function runs.
 - Report PDF cleaning fee uses `(cleaning_fee + laundry_fee) x reservation count`, displayed as `Cleaning fee` in the shared expenses/expense details area.
+- Report page should display the same wording as `Cleaning fee` and include it in the visible Expenses detail list.
 - Homestay profit = sales - sharing expenses charged to Both.
 - Homestay Management Fee = homestay profit x `service_fee_pct` / 100.
 - Owner Expenses = expenses charged to Owner, excluding Cleaning fee and Homestay Management Fee.

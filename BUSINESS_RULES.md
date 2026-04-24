@@ -10,6 +10,8 @@
 - Testing app must use `homestayERP-test`.
 - Test Supabase project ref: `afcifzghlkxvnpulahub`.
 - Live Supabase project ref: `skwogboredsczcyhlqgn`.
+- Missing deployment config must not silently fall back to the test Supabase project.
+- If Supabase config is missing, the app should fail clearly instead of showing mixed-environment data.
 - Do not push test changes to live unless explicitly requested.
 - Do not expose secret values in chat or committed files.
 - Default deployment target is test, not live.
@@ -42,7 +44,8 @@
 - Report PDF booking detail fields should include guest name, check-in date, check-out date, nights, and total. Do not show rental and extra guest as separate columns.
 - Report PDF cleaning fee is calculated as `(unit cleaning fee + unit laundry fee) x reservation count`.
 - Report PDF should show `Cleaning fee` under the shared expenses/expense details area, not under Owner Expenses.
-- Report page should show `Total Cleaning Fee` in the `Expenses` section, not in Owner Expenses.
+- Report page should show `Cleaning fee` in the `Expenses` section, not in Owner Expenses.
+- Report page `Expenses` details should include the calculated `Cleaning fee` row.
 - Report page should label shared expense section as `Expenses`, not `Shared Expenses (Both)`.
 - Report page Owner Expenses should show only expenses charged to Owner.
 - Homestay profit is calculated as sales minus sharing expenses charged to Both.

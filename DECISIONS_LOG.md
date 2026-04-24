@@ -131,3 +131,15 @@ Decision: After explicit user approval, create/use `homestayERP-prod`, enable Gi
 
 Reason:
 Live must run the same tested frontend, sync endpoints, OCR backend, unit mapping schema, and report-supporting schema as the test environment. A repo-only push is not enough when the feature depends on Supabase Functions and database columns.
+
+## 2026-04-24: Fail Closed On Missing Deployment Config
+Decision: Do not allow the deployed page to silently fall back to the test Supabase project when GitHub Pages secrets are missing or placeholders are not replaced.
+
+Reason:
+Test and live data must stay isolated. Missing deployment config should show a clear error, not connect to the wrong database or show a test watermark/data mix in live.
+
+## 2026-04-24: Cleaning Fee In Expenses Details
+Decision: On the report page and owner PDF, label the report summary row as `Cleaning fee` and include the calculated cleaning fee inside the Expenses details list/table.
+
+Reason:
+The user wants Cleaning fee treated as part of the Expenses detail presentation, with clearer wording and without implying test-only totals or a separate hidden bucket.
