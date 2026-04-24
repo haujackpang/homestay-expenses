@@ -167,3 +167,21 @@ Decision: Detect missing Supabase deployment config by validating URL/key shape,
 
 Reason:
 The build step replaces `__SUPABASE_URL__` and `__SUPABASE_KEY__` everywhere in the file. A literal-placeholder comparison inside runtime code becomes a self-fulfilling true condition and incorrectly shows the missing-config error even when secrets were injected correctly.
+
+## 2026-04-24: Cross-Environment Audit Result
+Decision: Record the audit finding that test and live currently contain mirrored `profiles` and mirrored `claims` rows for the common audited fields.
+
+Reason:
+Future cleanup work should start from the confirmed state, not assumptions. The current issue is not a simple one-sided contamination; both environments now hold the same user and claim rows, while live still runs an older `claims` schema.
+
+## 2026-04-24: Reservations And Units Are Not Fully Mirrored
+Decision: Treat `reservations`, `units`, and the environment settings/log tables as divergent until a source-of-truth decision is made.
+
+Reason:
+CLI-backed comparison showed `reservations` differ in count by 2 with shared rows diverging mainly on `hp_unit_id`, `extra_guest`, `rental`, and `total_charges`. `units` differ in count by 14, with one shared row differing in `property_short`, and the settings/log tables (`unit_config`, `unit_types`, `sync_logs`, `error_logs`) also differ. A blind delete or rewrite would risk removing valid operational data.
+
+## 2026-04-24: Admin Password Reset Support
+Decision: Add an explicit admin password reset action in the user management flow, backed by the existing Supabase service-role update path.
+
+Reason:
+Support staff need a direct way to help users who forget their passwords without manual database edits or exposing secrets. The admin list now offers a reset-password action, and the backend updates the auth user password through the service role.

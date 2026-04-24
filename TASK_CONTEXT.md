@@ -1,15 +1,13 @@
 # Task Context
 
 ## Current Task
-User corrected the canonical environment mapping on 2026-04-24:
+Continue the cross-environment data audit using direct Supabase CLI SQL.
 
-1. Live repo is `haujackpang/homestay-expenses`, not `haujackpang/homestayERP-prod`.
-2. Test repo remains `haujackpang/homestayERP-test`.
-3. Test Supabase project is `skwogboredsczcyhlqgn`.
-4. Live Supabase project is `afcifzghlkxvnpulahub`.
-5. Current action: update repo memory, fix GitHub Pages secrets for both canonical repos, and deploy the latest tested code to the real live repo.
-6. Keep `haujackpang/homestayERP-prod` working as a legacy live alias because the user still opens that URL.
-7. Repair the runtime config check so injected GitHub secrets do not falsely trigger the `Supabase configuration is missing` screen.
+Current focus:
+1. Compare the two Supabase projects by real data, not by memory alone.
+2. Confirm which tables are mirrored, which diverge, and which have environment-specific settings.
+3. Do not delete or rewrite rows until a source-of-truth decision is made.
+4. Support admin password resets for forgotten-password cases through the admin user flow.
 
 ## Current Working Assumptions
 - User has already executed the test Supabase script that adds unit-level cleaning/laundry columns.
@@ -18,6 +16,14 @@ User corrected the canonical environment mapping on 2026-04-24:
 - Previous `homestayERP-prod` repo should be treated as a non-canonical/legacy target unless the user explicitly says to use it.
 - The legacy `homestayERP-prod` Pages URL should stay accessible and point to live, not test.
 - Runtime config validation must not compare against placeholder literals that the deploy workflow replaces globally.
+- Audit completed on 2026-04-24:
+  - `profiles` are mirrored across test and live: 4 matching rows.
+  - `claims` are mirrored across test and live for common fields: 31 matching rows.
+  - Live `claims` schema is older than test and lacks newer OCR/import metadata columns.
+- Follow-up audit on 2026-04-24:
+  - `reservations` are not a perfect mirror: counts differ by 2, and shared rows diverge mainly on `hp_unit_id`, `extra_guest`, `rental`, and `total_charges`.
+  - `units` are not a perfect mirror: counts differ by 14 and one shared unit row differs in `property_short`.
+  - `unit_config`, `unit_types`, `sync_logs`, and `error_logs` also differ between the two projects.
 - Test database now has `units.mapped_unit_name`.
 - OpenAI API usage requires an API key in Supabase secrets. Codex itself is not an app-callable OCR backend.
 - The current OCR implementation uses `gpt-4o-mini` by default when `OPENAI_API_KEY` is available.

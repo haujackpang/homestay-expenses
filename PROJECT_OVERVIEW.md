@@ -44,6 +44,10 @@ Recent completed work:
 - Repo/environment mapping was corrected on 2026-04-24:
   - Test repo `homestayERP-test` -> Supabase `skwogboredsczcyhlqgn`
   - Live repo `homestay-expenses` -> Supabase `afcifzghlkxvnpulahub`
+- Follow-up CLI audit on 2026-04-24 found:
+  - `profiles` and `claims` are mirrored on the audited business fields.
+  - `reservations`, `units`, `unit_config`, `unit_types`, and log tables are not fully mirrored.
+  - Cleanup should not delete rows until a row-by-row source-of-truth decision is made.
 
 ## Project Memory Files
 These files are part of the working system and must be kept updated when relevant changes happen:
