@@ -17,6 +17,72 @@ function json(body: Record<string, unknown>, status = 200) {
   });
 }
 
+async function listLoginUsers(admin: ReturnType<typeof createClient>) {
+  const perPage = 200;
+  const authUsers: Array<Record<string, unknown>> = [];
+
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    const rows = (data?.users || []) as Array<Record<string, unknown>>;
+    if (!rows.length) break;
+    authUsers.push(...rows);
+    if (rows.length < perPage) break;
+  }
+
+  const { data: profiles, error: profilesError } = await admin
+    .from("profiles")
+    .select("id, email, full_name, role, active");
+  if (profilesError) throw profilesError;
+
+  const profileById: Record<string, Record<string, unknown>> = {};
+  (profiles || []).forEach((p) => {
+    const id = String(p.id || "");
+    if (id) profileById[id] = p as Record<string, unknown>;
+  });
+
+  const users = authUsers
+    .filter((u) => {
+      const email = String(u.email || "").toLowerCase();
+      const aud = String(u.aud || "");
+      const isAnonymous = u.is_anonymous === true;
+      return !!email && aud === "authenticated" && !isAnonymous;
+    })
+    .map((u) => {
+      const id = String(u.id || "");
+      const p = profileById[id] || null;
+      const email = String(u.email || (p?.email as string) || "").toLowerCase();
+      const meta = (u.user_metadata || {}) as Record<string, unknown>;
+      const fullName = String(
+        (p?.full_name as string) ||
+        (meta.full_name as string) ||
+        (meta.name as string) ||
+        email.split("@")[0] ||
+        "User",
+      ).trim();
+      const role = String((p?.role as string) || (email === "admin@homestay.app" ? "admin" : "employee"));
+      const active = p ? p.active !== false : true;
+
+      return {
+        id,
+        email,
+        full_name: fullName,
+        role,
+        active,
+        has_profile: !!p,
+        last_sign_in_at: (u.last_sign_in_at as string) || null,
+      };
+    })
+    .sort((a, b) => {
+      const aRole = a.role === "admin" ? 0 : a.role === "manager" ? 1 : 2;
+      const bRole = b.role === "admin" ? 0 : b.role === "manager" ? 1 : 2;
+      if (aRole !== bRole) return aRole - bRole;
+      return a.full_name.localeCompare(b.full_name);
+    });
+
+  return users;
+}
+
 async function requireAdmin(req: Request) {
   const authHeader = req.headers.get("Authorization") || "";
   const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY") || SUPABASE_SERVICE_KEY, {
@@ -48,9 +114,8 @@ serve(async (req: Request) => {
     const action = String(body.action || "");
 
     if (action === "list") {
-      const { data, error } = await admin.from("profiles").select("*").order("created_at");
-      if (error) throw error;
-      return json({ ok: true, users: data || [] });
+      const users = await listLoginUsers(admin);
+      return json({ ok: true, users });
     }
 
     if (action === "create") {
@@ -84,6 +149,17 @@ serve(async (req: Request) => {
         await admin.from("bank_info").upsert({ employee_name: fullName }, { onConflict: "employee_name" });
       }
       return json({ ok: true, user: { id: created.user.id, email, full_name: fullName, role, active: true } });
+    }
+
+    if (action === "reset-password") {
+      const userId = String(body.user_id || "");
+      const password = String(body.password || "");
+      if (!userId) return json({ error: "User id is required" }, 400);
+      if (!password || password.length < 6) return json({ error: "Password must be at least 6 characters" }, 400);
+
+      const { error } = await admin.auth.admin.updateUserById(userId, { password });
+      if (error) throw error;
+      return json({ ok: true });
     }
 
     if (action === "update") {

@@ -142,7 +142,13 @@ var SUPABASE_KEY='__SUPABASE_KEY__';
 var TEST_SUPABASE_REF='skwogboredsczcyhlqgn';
 var LIVE_SUPABASE_REF='afcifzghlkxvnpulahub';
 var SUPABASE_CONFIG_ERROR='';
-var SUPABASE_PLACEHOLDERS=(!SUPABASE_URL||SUPABASE_URL.indexOf('https://')!==0||SUPABASE_URL.indexOf('.supabase.co')<0||!SUPABASE_KEY||SUPABASE_KEY.indexOf('.')<0);
+SUPABASE_URL=String(SUPABASE_URL||'').trim();
+SUPABASE_KEY=String(SUPABASE_KEY||'').trim();
+function isSupabasePublicKey(v){
+  if(!v)return false;
+  return v.indexOf('sb_publishable_')===0||v.indexOf('.')>0;
+}
+var SUPABASE_PLACEHOLDERS=(!SUPABASE_URL||SUPABASE_URL.indexOf('https://')!==0||SUPABASE_URL.indexOf('.supabase.co')<0||!isSupabasePublicKey(SUPABASE_KEY));
 var sb=null;
 if(SUPABASE_PLACEHOLDERS){
   SUPABASE_URL='';
@@ -168,6 +174,7 @@ var claims=[],BANK_INFO={},EMPS=[],ACTIVE_EMPS=[],UNITS_DATA=[];
 var editingUnit=null,unitFormError='';
 var authError='',authLoading=false;
 var isSystemAdmin=false,allUsers=[],editingUser=null,userFormError='';
+var resetPasswordUser=null,resetPasswordError='',resetPasswordDraft1='',resetPasswordDraft2='';
 var pendingFiles=[],pendingFileNames=[];
 var aiResult=null,aiAnalyzing=false,aiError='',newClaimStep='upload';
 var errorLogs=[],errorLogLoading=false;
@@ -490,6 +497,7 @@ async function doLogout(){
   await sb.auth.signOut();
   currentUser=null;currentProfile=null;R=null;S='auth';PS=null;claims=[];BANK_INFO={};EMPS=[];ACTIVE_EMPS=[];UNITS_DATA=[];
   isSystemAdmin=false;allUsers=[];editingUser=null;userFormError='';editingUnit=null;unitFormError='';
+  resetPasswordUser=null;resetPasswordError='';resetPasswordDraft1='';resetPasswordDraft2='';
   showInactiveUnits=false;
   render();
 }
@@ -512,7 +520,7 @@ async function initSession(user){
 
 async function openUsersScreen(){
   await loadUsers();
-  ss('adminUsers','adminDash');
+  ss('adminUsers','adminUsers');
 }
 async function loadUsers(){
   if(!isSystemAdmin)return;
@@ -534,7 +542,7 @@ async function createUserAccount(){
   userFormError='';
   await loadUsers();await loadBankInfo();
   toast('Account created: @'+username);
-  ss('adminUsers','adminDash');
+  ss('adminUsers','adminUsers');
 }
 async function updateUserAccount(){
   if(!editingUser)return;
@@ -550,7 +558,44 @@ async function updateUserAccount(){
   userFormError='';editingUser=null;
   await loadUsers();await loadBankInfo();
   toast('Account updated');
-  ss('adminUsers','adminDash');
+  ss('adminUsers','adminUsers');
+}
+async function submitResetPassword(){
+  if(!resetPasswordUser)return;
+  var p1=document.getElementById('rp-pw'),p2=document.getElementById('rp-pw2');
+  if(!p1||!p2){resetPasswordError='Password fields are missing';render();return;}
+  var pw1=String(p1.value||'');
+  var pw2=String(p2.value||'');
+  resetPasswordDraft1=pw1;
+  resetPasswordDraft2=pw2;
+  if(!pw1||!pw2){resetPasswordError='Please fill both password fields';render();return;}
+  var t1=pw1.trim();
+  var t2=pw2.trim();
+  if(!t1||!t2){resetPasswordError='Please fill both password fields';render();return;}
+  if(t1.length<6){resetPasswordError='Password must be at least 6 characters';render();return;}
+  if(t1!==t2){resetPasswordError='Passwords do not match';render();return;}
+  try{
+    await callEdgeFunction('admin-users',{action:'reset-password',user_id:resetPasswordUser.id,password:t1});
+  }catch(e){
+    resetPasswordError=e.message||'Failed to reset password';
+    render();
+    return;
+  }
+  var name=resetPasswordUser.full_name;
+  resetPasswordUser=null;
+  resetPasswordError='';
+  resetPasswordDraft1='';
+  resetPasswordDraft2='';
+  await loadUsers();
+  toast('Password updated for '+name);
+  ss('adminUsers','adminUsers');
+}
+function resetUserPassword(userId,name){
+  resetPasswordUser=allUsers.filter(function(u){return u.id===userId;})[0]||null;
+  resetPasswordError='';
+  resetPasswordDraft1='';
+  resetPasswordDraft2='';
+  ss('resetPasswordForm','adminUsers');
 }
 async function deleteUserAccount(userId,name){
   if(!confirm('Deactivate account: '+name+'?\nUser will not be able to login.')){return;}
@@ -608,7 +653,8 @@ function expMonthSelect(selVal){
   return'<div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="f-expmonth">'+opts.join('')+'</select></div>';
 }
 function ss(s,p){PS=p||S;S=s;pendingFiles=[];pendingFileNames=[];if(s!=='newClaim'){aiResult=null;aiError='';aiAnalyzing=false;newClaimStep='upload';}render();}
-function goBack(){ss(PS||(R==='admin'?'adminDash':'empHome'));}
+function adminHomeScreen(){return isSystemAdmin?'adminUsers':'adminDash';}
+function goBack(){ss(PS||(R==='admin'?adminHomeScreen():'empHome'));}
 
 // ===== RECEIPT UPLOAD =====
 function togglePayType(t){
@@ -1038,7 +1084,7 @@ async function saveBankInfo(){
   var b=document.getElementById('p-bank'),a=document.getElementById('p-acc'),n=document.getElementById('p-name');
   if(!b||!a||!n||!b.value||!a.value||!n.value){toast('Please fill all fields');return;}
   await dbUpdateBankInfo(editingBankEmp,b.value,a.value,n.value);
-  await loadBankInfo();toast('Bank info saved for '+editingBankEmp);editingBankEmp=null;ss('adminEmployees','adminDash');
+  await loadBankInfo();toast('Bank info saved for '+editingBankEmp);editingBankEmp=null;ss('adminEmployees','adminUsers');
 }
 async function saveEmpEdit(){
   var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date'),emv=document.getElementById('f-expmonth');
@@ -1281,7 +1327,7 @@ function render(){
   function adminNav(a){
     nav.style.display='flex';
     if(isSystemAdmin){
-      var its=[['users','👥','Users',"openUsers()"],['emps','👥','Staff',"ss('adminEmployees','adminDash')"],['units','🏘','Units',"ss('adminUnits','adminDash')"],['logs','🪵','Logs',"openErrorLogs()"]];
+      var its=[['users','👥','Users',"openUsers()"],['emps','👥','Staff',"ss('adminEmployees','adminUsers')"],['units','🏘','Units',"ss('adminUnits','adminUsers')"],['logs','🪵','Logs',"openErrorLogs()"]];
     } else {
       var its=[['dash','⊞','Dash',"ss('adminDash')"],['list','☰','Claims',"ss('adminList','adminDash')"],['pay','💳','Pay',"ss('adminPay','adminDash')"],['sub','＋','Submit',"ss('mgrNewClaim','adminDash')"],['report','📊','Report',"ss('reportHome','adminDash')"]];
     }
@@ -1364,6 +1410,7 @@ function render(){
     }
   }
   else if(S==='adminDash'){
+    if(isSystemAdmin){ss('adminUsers','adminUsers');return;}
     tbt_el.textContent='Manager Dashboard';adminNav('dash');
     var months=['All'].concat(Object.keys(MONTHS));var years=['All'].concat(YEARS);var unitOpts=['All Units'].concat(UNITS);
     function dm(v){dashFltMonth=v;render();}function dy(v){dashFltYear=v;render();}function du(v){dashFltUnit=v;render();}
@@ -1444,7 +1491,7 @@ function render(){
     var emp=editingBankEmp;if(!emp){ss('adminEmployees');return;}
     var bi=BANK_INFO[emp]||{};var ini=initials(emp);
     tbt_el.textContent='Bank Info';bb_el.style.display='block';adminNav('emps');
-    ms.innerHTML='<div class="scr"><div style="display:flex;align-items:center;gap:12px;background:#f9fafb;border-radius:12px;padding:12px;border:1px solid #e5e7eb"><div class="avatar" style="width:44px;height:44px;font-size:16px">'+ini+'</div><div><div style="font-size:15px;font-weight:600;color:#111">'+emp+'</div><div style="font-size:12px;color:#6b7280">Employee</div></div></div><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">This bank info will be shown during pay out for accurate transfer.</div></div><div class="fg"><label class="fl">Bank name *</label><input class="fi" id="p-bank" value="'+(bi.bank||'')+'" placeholder="e.g. Maybank, CIMB, Public Bank"/></div><div class="fg"><label class="fl">Account number *</label><input class="fi" id="p-acc" value="'+(bi.acc||'')+'" placeholder="e.g. 1234 5678 9012"/></div><div class="fg"><label class="fl">Full name (as per bank) *</label><input class="fi" id="p-name" value="'+(bi.fullName||'')+'" placeholder="Full legal name"/></div><button class="pbtn btn-p" onclick="saveBankInfo()">Save Bank Info</button>'+(bi.bank?'<button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminEmployees\',\'adminDash\')">Cancel</button>':'')+'</div>';
+    ms.innerHTML='<div class="scr"><div style="display:flex;align-items:center;gap:12px;background:#f9fafb;border-radius:12px;padding:12px;border:1px solid #e5e7eb"><div class="avatar" style="width:44px;height:44px;font-size:16px">'+ini+'</div><div><div style="font-size:15px;font-weight:600;color:#111">'+emp+'</div><div style="font-size:12px;color:#6b7280">Employee</div></div></div><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">This bank info will be shown during pay out for accurate transfer.</div></div><div class="fg"><label class="fl">Bank name *</label><input class="fi" id="p-bank" value="'+(bi.bank||'')+'" placeholder="e.g. Maybank, CIMB, Public Bank"/></div><div class="fg"><label class="fl">Account number *</label><input class="fi" id="p-acc" value="'+(bi.acc||'')+'" placeholder="e.g. 1234 5678 9012"/></div><div class="fg"><label class="fl">Full name (as per bank) *</label><input class="fi" id="p-name" value="'+(bi.fullName||'')+'" placeholder="Full legal name"/></div><button class="pbtn btn-p" onclick="saveBankInfo()">Save Bank Info</button>'+(bi.bank?'<button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminEmployees\',adminHomeScreen())">Cancel</button>':'')+'</div>';
   }
   else if(S==='adminUnits'){
     if(!isSystemAdmin){toast('Only admin can access units');ss(R==='admin'?'adminDash':'empHome');return;}
@@ -1486,7 +1533,7 @@ function render(){
     var isHP=editingUnit&&editingUnit.source==='hostplatform';
     var shortOpts=shortCodeOptions(editingUnit?editingUnit.property_short||'':'');
     var mappedOpts=isHP?internalUnitMappingOptions(editingUnit.mapped_unit_name||'',editingUnit.id):'';
-    ms.innerHTML='<div class="scr">'+(unitFormError?'<div class="info-box" style="background:#fee2e2"><div style="font-size:11px;color:#991b1b">'+unitFormError+'</div></div>':'')+(isHP?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">HP unit — map this HostPlatform property + unit to an internal unit.</div></div><div class="fg"><label class="fl">HostPlatform unit</label><input class="fi" value="'+editingUnit.name+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">HostPlatform property</label><input class="fi" value="'+(editingUnit.property_name||'')+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">Internal unit</label><select class="fi" id="unit-mapped" onchange="syncEditUnitShort()">'+mappedOpts+'</select></div>':'<div class="fg"><label class="fl">Unit name *</label><input class="fi" id="unit-name" value="'+(editingUnit?editingUnit.name:'')+'" placeholder="e.g. MP Office"/></div>')+'<div class="fg"><label class="fl">Property short code</label><select class="fi" id="unit-short">'+shortOpts+'</select></div>'+(isHP?'<div class="ai-manual-link" style="margin-top:2px" onclick="openPropertyMapping()">Manage all unit mappings →</div>':'')+'<button class="pbtn btn-p" onclick="saveUnit()">'+(editingUnit?'Save Changes':'Add Unit')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminUnits\',\'adminDash\')">Cancel</button></div>';
+    ms.innerHTML='<div class="scr">'+(unitFormError?'<div class="info-box" style="background:#fee2e2"><div style="font-size:11px;color:#991b1b">'+unitFormError+'</div></div>':'')+(isHP?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">HP unit — map this HostPlatform property + unit to an internal unit.</div></div><div class="fg"><label class="fl">HostPlatform unit</label><input class="fi" value="'+editingUnit.name+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">HostPlatform property</label><input class="fi" value="'+(editingUnit.property_name||'')+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">Internal unit</label><select class="fi" id="unit-mapped" onchange="syncEditUnitShort()">'+mappedOpts+'</select></div>':'<div class="fg"><label class="fl">Unit name *</label><input class="fi" id="unit-name" value="'+(editingUnit?editingUnit.name:'')+'" placeholder="e.g. MP Office"/></div>')+'<div class="fg"><label class="fl">Property short code</label><select class="fi" id="unit-short">'+shortOpts+'</select></div>'+(isHP?'<div class="ai-manual-link" style="margin-top:2px" onclick="openPropertyMapping()">Manage all unit mappings →</div>':'')+'<button class="pbtn btn-p" onclick="saveUnit()">'+(editingUnit?'Save Changes':'Add Unit')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminUnits\',adminHomeScreen())">Cancel</button></div>';
   }
   else if(S==='adminPay'){
     tbt_el.textContent='Pay Out';bb_el.style.display='block';adminNav('pay');
@@ -1516,20 +1563,34 @@ function render(){
   else if(S==='adminUsers'){
     tbt_el.textContent='Manage Users';bb_el.style.display='block';adminNav('dash');
     var userCards=allUsers.map(function(u){
-      var ini=initials(u.full_name);
+      var displayName=(u.full_name||'').trim()||((u.email||'').split('@')[0]||'User');
+      var ini=initials(displayName);
       var roleTag=u.role==='admin'?'<span style="font-size:10px;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:99px">Admin</span>':u.role==='manager'?'<span style="font-size:10px;color:#065f46;background:#d1fae5;padding:1px 6px;border-radius:99px">Manager</span>':'<span style="font-size:10px;color:#6b7280;background:#f3f4f6;padding:1px 6px;border-radius:99px">Employee</span>';
-      var username=u.email.replace('@homestay.app','');
+      var username=(u.email||'').replace('@homestay.app','');
       var isActive=u.active!==false;
-      var actions=u.role!=='admin'?'<div style="display:flex;gap:8px;margin-top:3px"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();editUser(\''+u.id+'\')">Edit</span>'+(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();deleteUserAccount(\''+u.id+'\',\''+u.full_name.replace(/'/g,"\\'")+'\')">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();reactivateUser(\''+u.id+'\',\''+u.full_name.replace(/'/g,"\\'")+'\')">Reactivate</span>')+'</div>':'';
+      var hasProfile=u.has_profile!==false;
+      var safeName=displayName.replace(/'/g,"\\'");
+      var profileTag=hasProfile?'':'<span style="font-size:9px;color:#92400e;background:#fef3c7;padding:1px 5px;border-radius:99px;margin-left:4px">No Profile</span>';
+      var resetAction='<span style="font-size:11px;color:#92400e;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();resetUserPassword(\''+u.id+'\',\''+safeName+'\')">Reset password</span>';
+      var lifecycleActions=(u.role!=='admin'&&hasProfile)?(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();deleteUserAccount(\''+u.id+'\',\''+safeName+'\')">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();reactivateUser(\''+u.id+'\',\''+safeName+'\')">Reactivate</span>'):'';
+      var editAction=(u.role!=='admin'&&hasProfile)?'<span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();editUser(\''+u.id+'\')">Edit</span>':'';
+      var actions='<div style="display:flex;gap:8px;margin-top:3px">'+editAction+resetAction+lifecycleActions+'</div>';
       var statusTag=!isActive?'<span style="font-size:9px;color:#991b1b;background:#fee2e2;padding:1px 5px;border-radius:99px;margin-left:4px">Inactive</span>':'';
-      return '<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div class="avatar">'+ini+'</div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="font-size:13px;font-weight:600;color:#111">'+u.full_name+'</div>'+roleTag+statusTag+'</div><div style="font-size:11px;color:#9ca3af;font-family:monospace">@'+username+'</div>'+actions+'</div></div>';
+      return '<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div class="avatar">'+ini+'</div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="font-size:13px;font-weight:600;color:#111">'+displayName+'</div>'+roleTag+statusTag+profileTag+'</div><div style="font-size:11px;color:#9ca3af;font-family:monospace">@'+username+'</div>'+actions+'</div></div>';
     }).join('');
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+allUsers.length+' user(s)</span> in the system. Only admin can manage accounts.</div></div>'+userCards+'<button class="pbtn btn-p" onclick="editingUser=null;userFormError=\'\';ss(\'userForm\',\'adminUsers\')">+ Add New User</button></div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+allUsers.length+' login user(s)</span> from authentication. Only admin can manage accounts.</div></div>'+userCards+'<button class="pbtn btn-p" onclick="editingUser=null;userFormError=\'\';ss(\'userForm\',\'adminUsers\')">+ Add New User</button></div>';
   }
   else if(S==='userForm'){
     tbt_el.textContent=editingUser?'Edit User':'Add User';bb_el.style.display='block';adminNav('dash');
     var isEditing=!!editingUser;
-    ms.innerHTML='<div class="scr">'+(userFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px 12px;border-radius:8px;text-align:center">'+userFormError+'</div>':'')+(isEditing?'<div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Editing:</span> '+editingUser.full_name+' (@'+editingUser.email.replace('@homestay.app','')+')</div></div>':'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">The username will be used for login. Example: username <b>ahmad</b> → login as <b>ahmad</b>.</div></div>')+(isEditing?'':'<div class="fg"><label class="fl">Username *</label><input class="fi" id="uf-user" placeholder="e.g. ahmad" autocapitalize="off"/></div>')+'<div class="fg"><label class="fl">Full name *</label><input class="fi" id="uf-name" value="'+(isEditing?editingUser.full_name:'')+'"/></div><div class="fg"><label class="fl">Role *</label><select class="fi" id="uf-role"><option value="employee"'+(isEditing&&editingUser.role==='employee'?' selected':'')+'>Employee</option><option value="manager"'+(isEditing&&editingUser.role==='manager'?' selected':'')+'>Manager</option></select></div><div class="fg"><label class="fl">Password '+(isEditing?'(leave blank to keep current)':'*')+'</label><input class="fi" id="uf-pw" type="password" placeholder="Min 6 characters"/></div><button class="pbtn btn-s" onclick="'+(isEditing?'updateUserAccount()':'createUserAccount()')+'">'+(isEditing?'Save Changes':'Create Account')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="editingUser=null;userFormError=\'\';ss(\'adminUsers\',\'adminDash\')">Cancel</button></div>';
+    ms.innerHTML='<div class="scr">'+(userFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px 12px;border-radius:8px;text-align:center">'+userFormError+'</div>':'')+(isEditing?'<div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Editing:</span> '+editingUser.full_name+' (@'+editingUser.email.replace('@homestay.app','')+')</div></div>':'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">The username will be used for login. Example: username <b>ahmad</b> → login as <b>ahmad</b>.</div></div>')+(isEditing?'':'<div class="fg"><label class="fl">Username *</label><input class="fi" id="uf-user" placeholder="e.g. ahmad" autocapitalize="off"/></div>')+'<div class="fg"><label class="fl">Full name *</label><input class="fi" id="uf-name" value="'+(isEditing?editingUser.full_name:'')+'"/></div><div class="fg"><label class="fl">Role *</label><select class="fi" id="uf-role"><option value="employee"'+(isEditing&&editingUser.role==='employee'?' selected':'')+'>Employee</option><option value="manager"'+(isEditing&&editingUser.role==='manager'?' selected':'')+'>Manager</option></select></div><div class="fg"><label class="fl">Password '+(isEditing?'(leave blank to keep current)':'*')+'</label><input class="fi" id="uf-pw" type="password" placeholder="Min 6 characters"/></div><button class="pbtn btn-s" onclick="'+(isEditing?'updateUserAccount()':'createUserAccount()')+'">'+(isEditing?'Save Changes':'Create Account')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="editingUser=null;userFormError=\'\';ss(\'adminUsers\',adminHomeScreen())">Cancel</button></div>';
+  }
+  else if(S==='resetPasswordForm'){
+    tbt_el.textContent='Reset Password';bb_el.style.display='block';adminNav('dash');
+    var rp=resetPasswordUser;
+    if(!rp){ss('adminUsers','adminUsers');return;}
+    var rpUsername=rp.email.replace('@homestay.app','');
+    ms.innerHTML='<div class="scr">'+(resetPasswordError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px 12px;border-radius:8px;text-align:center">'+resetPasswordError+'</div>':'')+'<div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Resetting:</span> '+rp.full_name+' (@'+rpUsername+')</div><div style="font-size:11px;color:#92400e;margin-top:3px">This updates the login password only.</div></div><div class="fg"><label class="fl">New password *</label><input class="fi" id="rp-pw" type="password" placeholder="Min 6 characters" autocomplete="new-password" value="'+esc(resetPasswordDraft1)+'" oninput="resetPasswordDraft1=this.value"/></div><div class="fg"><label class="fl">Confirm password *</label><input class="fi" id="rp-pw2" type="password" placeholder="Re-enter the new password" autocomplete="new-password" value="'+esc(resetPasswordDraft2)+'" oninput="resetPasswordDraft2=this.value"/></div><button class="pbtn btn-s" onclick="submitResetPassword()">Update Password</button><button class="pbtn btn-o" style="margin-top:6px" onclick="resetPasswordUser=null;resetPasswordError=\'\';resetPasswordDraft1=\'\';resetPasswordDraft2=\'\';ss(\'adminUsers\',adminHomeScreen())">Cancel</button></div>';
   }
   else if(S==='mgrNewClaim'){
     tbt_el.textContent='Submit Expense';bb_el.style.display='block';adminNav('sub');
@@ -1775,8 +1836,13 @@ window.doLogin=doLogin;
 window.openUsers=openUsersScreen;
 window.createUserAccount=createUserAccount;
 window.updateUserAccount=updateUserAccount;
+window.submitResetPassword=submitResetPassword;
 window.deleteUserAccount=deleteUserAccount;window.reactivateUser=reactivateUser;
-window.editUser=function(uid){editingUser=allUsers.filter(function(u){return u.id===uid;})[0];userFormError='';ss('userForm','adminUsers');};
+window.editUser=function(uid){
+  editingUser=allUsers.filter(function(u){return u.id===uid;})[0];
+  if(editingUser&&editingUser.has_profile===false){toast('Profile row missing for this login user');editingUser=null;return;}
+  userFormError='';ss('userForm','adminUsers');
+};
 window.doApprove=async function(){
   var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),emv=document.getElementById('rv-expmonth'),chg=document.getElementById('rv-charged');
   if(!cat||!cat.value){toast('Please assign a category');return;}
@@ -1847,7 +1913,7 @@ window.saveUnit=async function(){
       await logAdminAction('unit-mapping.saved',{unit_id:editingUnit.id,mapped_unit_name:mappedUnit,property_short:propertyShort});
       toast(mappedUnit?'Unit updated':'Mapping cleared');
       editingUnit=null;
-      ss('adminUnits','adminDash');
+      ss('adminUnits','adminUsers');
     }catch(e){
       unitFormError='Failed to update unit';
       render();
@@ -1858,11 +1924,11 @@ window.saveUnit=async function(){
     var name=nameEl.value.trim();
     if(editingUnit){
       var ok=await dbUpdateUnit(editingUnit.id,{name:name,property_short:propertyShort});
-      if(ok){await loadUnits();await logAdminAction('unit.saved',{unit_id:editingUnit.id,unit_name:name,property_short:propertyShort});toast('Unit updated');editingUnit=null;ss('adminUnits','adminDash');}
+      if(ok){await loadUnits();await logAdminAction('unit.saved',{unit_id:editingUnit.id,unit_name:name,property_short:propertyShort});toast('Unit updated');editingUnit=null;ss('adminUnits','adminUsers');}
       else{unitFormError='Failed to update. Name may already exist.';render();}
     }else{
       var ok=await dbInsertUnit(name,propertyShort);
-      if(ok){await loadUnits();await logAdminAction('unit.saved',{unit_name:name,property_short:propertyShort});toast('Unit "'+name+'" added');ss('adminUnits','adminDash');}
+      if(ok){await loadUnits();await logAdminAction('unit.saved',{unit_name:name,property_short:propertyShort});toast('Unit "'+name+'" added');ss('adminUnits','adminUsers');}
       else{unitFormError='Failed to add. Name may already exist.';render();}
     }
   }
@@ -1924,7 +1990,7 @@ window.mgrChangeToApprove=async function(){
 };
 window.openErrorLogs=function(){
   if(!isSystemAdmin){toast('Only admin can access logs');return;}
-  ss('errorLogs','adminDash');
+  ss('errorLogs',adminHomeScreen());
   loadErrorLogs();
   loadSyncLogs().then(function(){if(S==='errorLogs')render();});
 };
@@ -1981,3 +2047,5 @@ if(document.readyState==='loading'){
 </script>
 </body>
 </html>
+
+
