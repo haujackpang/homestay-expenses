@@ -143,3 +143,9 @@ Decision: On the report page and owner PDF, label the report summary row as `Cle
 
 Reason:
 The user wants Cleaning fee treated as part of the Expenses detail presentation, with clearer wording and without implying test-only totals or a separate hidden bucket.
+
+## 2026-04-24: Promote Environment Separation And Report Label Fixes To Live
+Decision: After test verification, promote the environment-isolation fix and report wording/detail fixes to `homestayERP-prod`.
+
+Reason:
+These changes correct live-visible behavior: live must stay on the live database without a hidden fallback to test, and the report page wording/details must match the approved business presentation.

@@ -1,13 +1,13 @@
 # Task Context
 
 ## Current Task
-Current test-first fixes requested by the user on 2026-04-24:
+Live promotion approved by the user on 2026-04-24 for the already-tested fixes:
 
 1. Keep test and live strictly separated at database level. Live must not show the test watermark or test-only manual entries.
 2. Replace report wording from `Total Cleaning Fee` to `Cleaning fee`.
 3. Replace `Sharing Expenses` wording with `Expenses`.
 4. Show `Cleaning fee` inside the Expenses details list/table.
-5. These changes are being prepared in test first. Do not move them to live until the user explicitly approves again.
+5. Current action: promote the tested commit to `homestayERP-prod` and verify live output against the live Supabase project.
 
 ## Current Working Assumptions
 - User has already executed the test Supabase script that adds unit-level cleaning/laundry columns.
@@ -29,7 +29,7 @@ Current test-first fixes requested by the user on 2026-04-24:
 - Report page Expenses section includes shared claims and Total Cleaning Fee.
 
 ## Do Not Do
-- Do not move future changes to live unless explicitly requested again.
+- Do not move future changes to live unless explicitly requested again after this promotion is finished.
 - Do not remove unit configuration fields.
 - Do not reintroduce unit-type-based rate logic.
 - Do not expose secret values in final messages.
