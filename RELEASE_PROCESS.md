@@ -5,12 +5,12 @@ This file defines how changes move through test and live environments for this p
 
 ## Environments
 - Test repo: `homestayERP-test`
-- Live repo: `homestayERP-prod`
-- Test Supabase project: `afcifzghlkxvnpulahub`
-- Live Supabase project: `skwogboredsczcyhlqgn`
+- Live repo: `homestay-expenses`
+- Test Supabase project: `skwogboredsczcyhlqgn`
+- Live Supabase project: `afcifzghlkxvnpulahub`
 
 ## Current Live Setup
-- Live repo `homestayERP-prod` exists under `haujackpang`.
+- Live repo `homestay-expenses` is the canonical production repo under `haujackpang`.
 - GitHub Pages is enabled using workflow deployment.
 - Repo secrets required by `.github/workflows/deploy.yml`:
   - `SUPABASE_URL`
@@ -37,7 +37,7 @@ This file defines how changes move through test and live environments for this p
 - Live deployment requires a clear user instruction in that turn.
 - Prefer promoting a tested change, not redoing the work separately for live.
 - When moving to live, verify:
-  - target repo is `homestayERP-prod`
+  - target repo is `homestay-expenses`
   - target Supabase environment is live
   - required secrets/config are correct for live
 - If the promoted feature depends on Supabase Functions or database schema, deploy the matching functions and run only idempotent live SQL upgrades that are required for the tested code to work.

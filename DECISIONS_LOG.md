@@ -149,3 +149,9 @@ Decision: After test verification, promote the environment-isolation fix and rep
 
 Reason:
 These changes correct live-visible behavior: live must stay on the live database without a hidden fallback to test, and the report page wording/details must match the approved business presentation.
+
+## 2026-04-24: Correct Canonical Repo And Supabase Mapping
+Decision: Use `haujackpang/homestay-expenses` as the canonical live repo, `haujackpang/homestayERP-test` as the test repo, `skwogboredsczcyhlqgn` as the test Supabase project, and `afcifzghlkxvnpulahub` as the live Supabase project.
+
+Reason:
+The earlier repo/project mapping was wrong. Future deployments, Pages secrets, and verification must follow the user's corrected environment ownership so test and live stay properly separated.

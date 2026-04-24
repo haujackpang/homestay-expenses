@@ -8,8 +8,9 @@
 
 ## Environment Rules
 - Testing app must use `homestayERP-test`.
-- Test Supabase project ref: `afcifzghlkxvnpulahub`.
-- Live Supabase project ref: `skwogboredsczcyhlqgn`.
+- Live app must use `homestay-expenses`.
+- Test Supabase project ref: `skwogboredsczcyhlqgn`.
+- Live Supabase project ref: `afcifzghlkxvnpulahub`.
 - Missing deployment config must not silently fall back to the test Supabase project.
 - If Supabase config is missing, the app should fail clearly instead of showing mixed-environment data.
 - Do not push test changes to live unless explicitly requested.
