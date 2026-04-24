@@ -9,6 +9,7 @@ User corrected the canonical environment mapping on 2026-04-24:
 4. Live Supabase project is `afcifzghlkxvnpulahub`.
 5. Current action: update repo memory, fix GitHub Pages secrets for both canonical repos, and deploy the latest tested code to the real live repo.
 6. Keep `haujackpang/homestayERP-prod` working as a legacy live alias because the user still opens that URL.
+7. Repair the runtime config check so injected GitHub secrets do not falsely trigger the `Supabase configuration is missing` screen.
 
 ## Current Working Assumptions
 - User has already executed the test Supabase script that adds unit-level cleaning/laundry columns.
@@ -16,6 +17,7 @@ User corrected the canonical environment mapping on 2026-04-24:
 - Live repo and live Supabase remain separate from test; app code must not contain runtime fallback behavior that reconnects live pages to test data.
 - Previous `homestayERP-prod` repo should be treated as a non-canonical/legacy target unless the user explicitly says to use it.
 - The legacy `homestayERP-prod` Pages URL should stay accessible and point to live, not test.
+- Runtime config validation must not compare against placeholder literals that the deploy workflow replaces globally.
 - Test database now has `units.mapped_unit_name`.
 - OpenAI API usage requires an API key in Supabase secrets. Codex itself is not an app-callable OCR backend.
 - The current OCR implementation uses `gpt-4o-mini` by default when `OPENAI_API_KEY` is available.

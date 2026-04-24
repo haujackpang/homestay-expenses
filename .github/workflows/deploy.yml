@@ -44,9 +44,9 @@ jobs:
               exit(1)
           
           # Debug: verify correct environment
-          if 'afcifzghlkxvnpulahub' in supabase_url:
+          if 'skwogboredsczcyhlqgn' in supabase_url:
               print("✓ Configured for TEST environment")
-          elif 'skwogboredsczcyhlqgn' in supabase_url:
+          elif 'afcifzghlkxvnpulahub' in supabase_url:
               print("✓ Configured for LIVE environment")
           else:
               print(f"⚠ WARNING: Unknown Supabase project: {supabase_url}")

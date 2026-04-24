@@ -161,3 +161,9 @@ Decision: Maintain `haujackpang/homestayERP-prod` as a compatibility URL for exi
 
 Reason:
 The user still opens the old `homestayERP-prod` GitHub Pages URL. Keeping it functional avoids access disruption while `haujackpang/homestay-expenses` remains the canonical live repo.
+
+## 2026-04-24: Placeholder Detection Must Not Use Replaceable Literals
+Decision: Detect missing Supabase deployment config by validating URL/key shape, not by comparing against placeholder literals that GitHub Actions also replaces.
+
+Reason:
+The build step replaces `__SUPABASE_URL__` and `__SUPABASE_KEY__` everywhere in the file. A literal-placeholder comparison inside runtime code becomes a self-fulfilling true condition and incorrectly shows the missing-config error even when secrets were injected correctly.

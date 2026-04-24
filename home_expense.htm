@@ -139,10 +139,10 @@ body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;
 // ===== SUPABASE CONFIG =====
 var SUPABASE_URL='__SUPABASE_URL__';
 var SUPABASE_KEY='__SUPABASE_KEY__';
-var TEST_SUPABASE_REF='afcifzghlkxvnpulahub';
-var LIVE_SUPABASE_REF='skwogboredsczcyhlqgn';
+var TEST_SUPABASE_REF='skwogboredsczcyhlqgn';
+var LIVE_SUPABASE_REF='afcifzghlkxvnpulahub';
 var SUPABASE_CONFIG_ERROR='';
-var SUPABASE_PLACEHOLDERS=(SUPABASE_URL==='__SUPABASE_URL__'||SUPABASE_KEY==='__SUPABASE_KEY__');
+var SUPABASE_PLACEHOLDERS=(!SUPABASE_URL||SUPABASE_URL.indexOf('https://')!==0||SUPABASE_URL.indexOf('.supabase.co')<0||!SUPABASE_KEY||SUPABASE_KEY.indexOf('.')<0);
 var sb=null;
 if(SUPABASE_PLACEHOLDERS){
   SUPABASE_URL='';
