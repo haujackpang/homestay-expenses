@@ -652,9 +652,24 @@ function expMonthSelect(selVal){
   for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();opts.push('<option value="'+v+'"'+(selVal===v?' selected':'')+'>'+lbl+'</option>');}
   return'<div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="f-expmonth">'+opts.join('')+'</select></div>';
 }
-function ss(s,p){PS=p||S;S=s;pendingFiles=[];pendingFileNames=[];if(s!=='newClaim'){aiResult=null;aiError='';aiAnalyzing=false;newClaimStep='upload';}render();}
+function normalizeAdminScreenName(screen){
+  if(isSystemAdmin&&screen==='adminDash')return'adminUsers';
+  return screen;
+}
+function ss(s,p){
+  var next=normalizeAdminScreenName(s);
+  var parent=normalizeAdminScreenName(p||S);
+  PS=parent;S=next;
+  pendingFiles=[];pendingFileNames=[];
+  if(next!=='newClaim'){aiResult=null;aiError='';aiAnalyzing=false;newClaimStep='upload';}
+  render();
+}
 function adminHomeScreen(){return isSystemAdmin?'adminUsers':'adminDash';}
-function goBack(){ss(PS||(R==='admin'?adminHomeScreen():'empHome'));}
+function goBack(){
+  var fallback=R==='admin'?adminHomeScreen():'empHome';
+  var target=normalizeAdminScreenName(PS||fallback);
+  ss(target);
+}
 
 // ===== RECEIPT UPLOAD =====
 function togglePayType(t){
