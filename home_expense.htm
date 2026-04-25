@@ -951,15 +951,6 @@ async function pdfToImageFile(file){
   });
 }
 
-function fileToDataUrl(file){
-  var reader=new FileReader();
-  return new Promise(function(resolve,reject){
-    reader.onload=function(){resolve(reader.result);};
-    reader.onerror=reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 function loadImageElement(src){
   return new Promise(function(resolve,reject){
     var img=new Image();
@@ -1001,6 +992,17 @@ async function optimizeImageForAI(file){
   }
 }
 
+async function uploadScanFileForAI(file){
+  var userId=currentUser&&currentUser.id?currentUser.id:'unknown';
+  var safeName=(file.name||'receipt-scan.jpg').replace(/[^a-zA-Z0-9._-]+/g,'_');
+  var path='ai-scan/'+userId+'/'+Date.now()+'_'+safeName;
+  var res=await sb.storage.from('receipts').upload(path,file,{upsert:true,contentType:file.type||'image/jpeg'});
+  if(res.error)throw new Error('Failed to upload receipt for AI scan.');
+  var urlData=sb.storage.from('receipts').getPublicUrl(path);
+  if(!urlData||!urlData.data||!urlData.data.publicUrl)throw new Error('Failed to prepare receipt for AI scan.');
+  return {path:path,url:urlData.data.publicUrl};
+}
+
 function pickReceiptForAI(){
   var inp=document.getElementById('receipt-input');
   if(!inp){inp=document.createElement('input');inp.type='file';inp.id='receipt-input';inp.accept='image/*,.pdf';inp.style.display='none';inp.setAttribute('capture','environment');document.body.appendChild(inp);}
@@ -1027,10 +1029,10 @@ async function analyzeInvoiceFile(f,unit){
   var ext=scanFile.name.split('.').pop().toLowerCase();
   var mimeMap={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',pdf:'application/pdf'};
   var mimeType=(scanFile.type||mimeMap[ext]||'image/jpeg').toLowerCase();
-  var base64=await fileToDataUrl(scanFile);
+  var uploadedScan=await uploadScanFileForAI(scanFile);
   var result;
   try{
-    result=await callEdgeFunction('process-invoice',{base64Data:base64,mimeType:mimeType,unit:unit||''});
+    result=await callEdgeFunction('process-invoice',{fileUrl:uploadedScan.url,mimeType:mimeType,unit:unit||''});
   }catch(e){
     var msg=e&&e.message?e.message:String(e||'');
     if(msg==='Failed to fetch'||msg.toLowerCase().indexOf('network request failed')>=0){
