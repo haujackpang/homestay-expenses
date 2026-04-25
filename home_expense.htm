@@ -991,6 +991,7 @@ async function startAIAnalysis(){
     var f=pendingFiles[0];
     aiResult=await analyzeInvoiceFile(f,'');
     newClaimStep='review';
+    if(aiResult&&aiResult.duplicate_claims&&aiResult.duplicate_claims.length)toast(duplicateClaimMessage(aiResult));
   }catch(e){
     console.error('AI analysis error:',e);
     aiError=e.message||'Analysis failed. Try a clearer photo.';
@@ -1038,6 +1039,20 @@ function generateDescription(ai){
 }
 function formatAiDescription(ai){
   return (ai&&ai.description)||generateDescription(ai);
+}
+function duplicateReasonLabel(reason){
+  if(reason==='invoice_number')return'Invoice number already exists in another submitted claim.';
+  if(reason==='merchant_amount_month')return'Same merchant, amount, and expense month already exist in another submitted claim.';
+  if(reason==='amount_month_party')return'Same amount and month already exist for the same employee or unit.';
+  return'Possible duplicate found in another submitted claim.';
+}
+function primaryDuplicateClaim(ai){
+  return ai&&ai.duplicate_claims&&ai.duplicate_claims.length?ai.duplicate_claims[0]:null;
+}
+function duplicateClaimMessage(ai){
+  var dup=primaryDuplicateClaim(ai);
+  if(!dup)return'';
+  return 'Duplicate blocked: '+dup.claim_id+'. '+duplicateReasonLabel(dup.duplicate_reason)+' Save as Draft if you need to keep this receipt first.';
 }
 
 function goToManualEntry(){
@@ -1167,6 +1182,7 @@ async function submitNewClaim(asDraft){
   if(!desc||!amt||!dt)return;
   var dv=desc.value,av=parseFloat(amt.value),dtv=dt.value,cv=cat?cat.value:'';
   if(!asDraft&&(!dv||!av||!dtv)){toast('Please fill all required fields');return;}
+  if(!asDraft&&aiResult&&aiResult.duplicate_claims&&aiResult.duplicate_claims.length){toast(duplicateClaimMessage(aiResult));return;}
   // AI amount mismatch check (Feature 3)
   if(!asDraft&&aiResult&&aiResult.total>0&&av>0&&Math.abs(aiResult.total-av)>0.01){
     if(!confirm('⚠️ Amount mismatch: AI extracted RM '+aiResult.total.toFixed(2)+' but you entered RM '+av.toFixed(2)+'. Submit anyway?'))return;
@@ -1175,18 +1191,15 @@ async function submitNewClaim(asDraft){
   if(!asDraft&&av&&dtv){
     var dupMonth=dtv.slice(0,7);
     var dups=claims.filter(function(c){return c.emp===myName()&&c.amount===av&&c.date.slice(0,7)===dupMonth&&c.status!=='Rejected'&&c.status!=='Draft';});
-    if(dups.length>0){if(!confirm('Warning: You already have a similar claim (RM '+av.toFixed(2)+') in '+dupMonth+'. Submit anyway?'))return;}
+    if(dups.length>0)toast('Heads up: You already have a similar claim (RM '+av.toFixed(2)+') in '+dupMonth+'.');
   }
   // Attachment duplicate check: same AI reference number (Feature 1)
   if(!asDraft&&aiResult&&aiResult.reference_number){
     var rfN=(aiResult.reference_number||'').trim();
     if(rfN){
       var refDups=claims.filter(function(c){return c.desc&&c.desc.indexOf(rfN)>=0&&c.status!=='Rejected'&&c.status!=='Draft';});
-      if(refDups.length>0){if(!confirm('⚠️ This receipt (ref: '+rfN+') was already submitted in '+refDups[0].id+'. Submit anyway?'))return;}
+      if(refDups.length>0)toast('Heads up: This receipt ref '+rfN+' already appears in '+refDups[0].id+'.');
     }
-  }
-  if(!asDraft&&aiResult&&aiResult.duplicate_claims&&aiResult.duplicate_claims.length){
-    if(!confirm('⚠️ Possible duplicate found: '+aiResult.duplicate_claims[0].claim_id+'. Submit anyway?'))return;
   }
   var cid=await getNextClaimId('HE');
   var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:(dtv||new Date().toISOString().slice(0,10)).slice(0,7);
@@ -1203,6 +1216,7 @@ async function submitMgrClaim(){
   if(!desc||!amt||!dt)return;
   var dv=desc.value,av=parseFloat(amt.value),dtv=dt.value,cv=cat?cat.value:'Other',uv=unit?unit.value:'';
   if(!dv||!av||!dtv){toast('Please fill all required fields');return;}
+  if(aiResult&&aiResult.duplicate_claims&&aiResult.duplicate_claims.length){toast(duplicateClaimMessage(aiResult));return;}
   var charged=document.getElementById('f-charged');
   var isMP=uv==='MP Office';
   if(!isMP&&(!charged||!charged.value)){toast('Please select who to charge');return;}
@@ -1212,7 +1226,7 @@ async function submitMgrClaim(){
     var dupEmp=isCompany?'':mgrFormEmp;
     var dupMonth=dtv.slice(0,7);
     var dups=claims.filter(function(c){return c.emp===dupEmp&&c.amount===av&&c.date.slice(0,7)===dupMonth&&c.status!=='Rejected'&&c.status!=='Draft';});
-    if(dups.length>0){if(!confirm('Warning: A similar claim (RM '+av.toFixed(2)+') already exists for '+(dupEmp||'company')+' in '+dupMonth+'. Submit anyway?'))return;}
+    if(dups.length>0)toast('Heads up: A similar claim (RM '+av.toFixed(2)+') already exists for '+(dupEmp||'company')+' in '+dupMonth+'.');
   }
   var cid=await getNextClaimId(isCompany?'CO':'MGR');
   var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:dtv.slice(0,7);
@@ -2045,7 +2059,8 @@ window.mgrScanReceipt=function(){
         if(u&&unitVal){for(var j=0;j<u.options.length;j++){if(u.options[j].value===unitVal){u.selectedIndex=j;break;}}toggleChargeTo(u.value,'f-charge-wrap');}
         var expVal=(ai.suggested&&ai.suggested.expense_month)||ai.expense_month||'';
         if(em&&expVal){for(var k=0;k<em.options.length;k++){if(em.options[k].value===expVal){em.selectedIndex=k;break;}}}
-        if(ai.duplicate_claims&&ai.duplicate_claims.length){toast('Possible duplicate: '+ai.duplicate_claims[0].claim_id);}
+        if(ai.suggested&&ai.suggested.unit_warning)toast(ai.suggested.unit_warning);
+        if(ai.duplicate_claims&&ai.duplicate_claims.length){toast(duplicateClaimMessage(ai));}
         else{toast('AI filled: '+ai.summary);}
       },50);
     }catch(e){

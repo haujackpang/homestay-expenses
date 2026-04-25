@@ -57,10 +57,39 @@ function monthLabel(month: string) {
   return `${MONTH_LABELS[idx]} ${month.slice(2, 4)}`;
 }
 
+function cleanText(value: unknown) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function itemNames(items: Array<{ name?: unknown }>) {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const item of items) {
+    const name = cleanText(item?.name);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+    if (names.length >= 3) break;
+  }
+  return names;
+}
+
 function normalizedDescription(ai: Record<string, unknown>, unit: string, month: string) {
   const category = String(ai.category || "");
   const prefix = BILL_PREFIX[category];
-  if (!prefix) return String(ai.description || ai.summary || "Receipt");
+  if (!prefix) {
+    const merchant = cleanText(ai.merchant_name);
+    const invoiceNumber = cleanText(ai.invoice_number || ai.reference_number);
+    const summary = cleanText(ai.summary || ai.description || merchant || category || "Receipt");
+    const items = Array.isArray(ai.items) ? ai.items as Array<{ name?: unknown }> : [];
+    const parts = [summary];
+    if (invoiceNumber) parts.push(`Invoice ${invoiceNumber}`);
+    const names = itemNames(items);
+    if (names.length) parts.push(`Items: ${names.join(", ")}`);
+    return parts.join(" | ");
+  }
   const parts = [`[${prefix}]`];
   if (unit) parts.push(unit);
   const label = monthLabel(month);
@@ -112,6 +141,7 @@ serve(async (req: Request) => {
     const descriptionUnit = selectedUnit || String(ai.unit_hint || "").trim();
     ai.expense_month = month;
     ai.description = normalizedDescription(ai, descriptionUnit, month);
+    const aiUnitHint = String(ai.unit_hint || "").trim();
 
     const { data: duplicates } = await admin.rpc("find_possible_duplicate_claims", {
       p_invoice_number: ai.invoice_number || ai.reference_number || "",
@@ -147,6 +177,9 @@ serve(async (req: Request) => {
           : descriptionUnit,
         hp_unit_id: unitMatch?.hp_unit_id || null,
         source_type: "ai_scan",
+        unit_warning: selectedUnit && aiUnitHint && selectedUnit.toLowerCase() !== aiUnitHint.toLowerCase()
+          ? `AI detected unit "${aiUnitHint}" while the form is set to "${selectedUnit}". Please confirm before submit.`
+          : "",
       },
     });
   } catch (err) {

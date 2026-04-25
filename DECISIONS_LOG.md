@@ -96,6 +96,18 @@ Decision: Utility/internet OCR descriptions must be normalized server-side to `[
 Reason:
 AI extraction can vary. The accounting/reporting description must be stable, and utility bills received in the following month normally belong to the previous month unless the invoice explicitly states a different service period.
 
+## 2026-04-25: Test OCR Uses OpenRouter Qwen-First
+Decision: The current test receipt-scanning experiment should prefer OpenRouter with a configurable Qwen-VL primary model, plus a vision-only OpenRouter fallback list.
+
+Reason:
+The user wants to validate receipt scanning specifically against the previously chosen OpenRouter vision path in test. Keeping model choice in Supabase secrets makes it easier to switch Qwen variants or fallback models without changing browser code.
+
+## 2026-04-25: Duplicate Receipt Hits Block Final Submit In Test
+Decision: In the current test OCR flow, duplicate matches returned by `find_possible_duplicate_claims` must block final submit, but draft save remains allowed.
+
+Reason:
+The database-side duplicate function is the canonical source of truth. Blocking final submit reduces accidental double-claiming while still letting staff keep work-in-progress receipts as drafts.
+
 ## 2026-04-23: Reservation Details In Manager Report
 Decision: Add reservation detail cards to the report page for the selected unit/month.
 

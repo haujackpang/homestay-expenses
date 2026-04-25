@@ -38,9 +38,11 @@ Recent unit-pairing context:
   - matched legacy HP duplicates were deactivated
   - two unmatched legacy HP rows (`KT 150A`, `SG 34F`) remain active until HP returns canonical replacements
 - OpenAI API usage requires an API key in Supabase secrets. Codex itself is not an app-callable OCR backend.
-- The current OCR implementation uses `gpt-4o-mini` by default when `OPENAI_API_KEY` is available.
-- Test Supabase currently has no `OPENAI_API_KEY` and no `OPENROUTER_API_KEY`, so OCR returns a clear configuration error until a provider key is added.
-- Live Supabase has `OPENROUTER_API_KEY`; OCR can use fallback there. Add `OPENAI_API_KEY` to live when switching specifically to OpenAI.
+- Test Supabase now has `OPENROUTER_API_KEY`, and the current test experiment should prefer OpenRouter receipt OCR rather than OpenAI.
+- Test OCR should use `OPENROUTER_OCR_PRIMARY_MODEL` first, with optional `OPENROUTER_OCR_FALLBACK_MODELS` as a vision-only fallback chain.
+- Default test OCR primary model is `qwen/qwen2.5-vl-32b-instruct:free` unless the secret is changed later.
+- Non-utility OCR descriptions should include invoice/reference details and key item names; `[WB]`, `[EB]`, and `[INT]` bill descriptions stay standardized.
+- Duplicate hits from `find_possible_duplicate_claims` should hard-block final submit in test, but still allow draft save.
 - Direct call to test `sync-units` returned HTTP 200 and synced 16 units, so the screenshot 401 is likely caused by stale browser auth token, not missing function deployment.
 - Direct call to test `sync-reservations` returned HTTP 200 and upserted records, so browser 401 is likely caused by stale/rejected user-session JWT before the function runs.
 - Manage Users 401/Unauthorized issues were traced to the admin-users backend permission check and function secret/env mismatch, then fixed by updating the function and redeploying.
@@ -65,7 +67,7 @@ Recent unit-pairing context:
 - Do not remove unit configuration fields.
 - Do not reintroduce unit-type-based rate logic.
 - Do not expose secret values in final messages.
-- Do not claim OCR is fully runnable in test until an AI provider key has been configured.
+- Do not route the current test OCR experiment back to OpenAI-first behavior unless explicitly requested.
 - Do not allow duplicate active HP mappings to the same internal unit.
 - Do not treat inactive legacy HP rows as valid pairing rows in the UI.
 

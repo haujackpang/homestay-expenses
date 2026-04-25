@@ -2,19 +2,11 @@ import "https://deno.land/x/xhr@0.3.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || "";
-const OPENAI_MODEL = Deno.env.get("OPENAI_OCR_MODEL") || "gpt-4o-mini";
 const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") || "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-
-const OPENROUTER_MODELS = [
-  "nvidia/nemotron-nano-12b-v2-vl:free",
-  "google/gemma-3-27b-it:free",
-  "google/gemma-3-12b-it:free",
-  "google/gemma-3-4b-it:free",
-  "openrouter/free",
-];
+const OPENROUTER_PRIMARY_MODEL = Deno.env.get("OPENROUTER_OCR_PRIMARY_MODEL") || "qwen/qwen2.5-vl-32b-instruct:free";
+const OPENROUTER_FALLBACK_MODELS = (Deno.env.get("OPENROUTER_OCR_FALLBACK_MODELS") || "").trim();
 
 const CATEGORIES = [
   "Water Bill",
@@ -109,6 +101,53 @@ function billDescription(category: string, unit: string, month: string, fallback
   return parts.join(" ");
 }
 
+function cleanText(value: unknown) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function itemNames(items: Array<{ name?: unknown }>) {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const item of items) {
+    const name = cleanText(item?.name);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+    if (names.length >= 3) break;
+  }
+  return names;
+}
+
+function nonBillDescription(
+  category: string,
+  merchant: string,
+  invoiceNumber: string,
+  summary: string,
+  items: Array<{ name?: unknown }>,
+) {
+  const base = cleanText(summary) || cleanText(merchant) || category || "Receipt";
+  const parts = [base];
+  if (invoiceNumber) parts.push(`Invoice ${invoiceNumber}`);
+  const names = itemNames(items);
+  if (names.length) parts.push(`Items: ${names.join(", ")}`);
+  return parts.join(" | ");
+}
+
+function receiptDescription(
+  category: string,
+  unit: string,
+  month: string,
+  merchant: string,
+  invoiceNumber: string,
+  summary: string,
+  items: Array<{ name?: unknown }>,
+) {
+  if (BILL_PREFIX[category]) return billDescription(category, unit, month, summary || category || "Receipt");
+  return nonBillDescription(category, merchant, invoiceNumber, summary, items);
+}
+
 function parseJson(rawText: string) {
   const clean = rawText.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
   try {
@@ -148,12 +187,17 @@ Important extraction rules:
 - Total must be the final amount payable/paid in RM. For utility bills, use Amount Due / Total Payable / Jumlah Perlu Dibayar / Amaun, not kWh, meter units, litres, m3, or usage.
 - Date must be the invoice/bill/transaction date in YYYY-MM-DD. If unreadable, return an empty string.
 - Category must be exactly one allowed category.
+- Extract merchant_name whenever a vendor, shop, landlord, or bill issuer is visible.
+- Extract invoice_number whenever an invoice, receipt, bill, or reference number is visible.
+- Extract item lines into items[] whenever line items are readable. Do not omit obvious purchased items.
+- summary must be a short readable one-line summary of the receipt in plain English.
 - Utility description rules:
   - Water Bill description format is [WB] UNIT Mon YY.
   - Electricity Bill description format is [EB] UNIT Mon YY.
   - Internet Bill description format is [INT] UNIT Mon YY.
   - If the bill date is in March 2026 and there is no explicit service period, the expense/bill period is February 2026, so Mon YY is Feb 26.
   - If the document has an explicit service/billing period, use that period for expense_month.
+- For non-utility receipts, include invoice_number and key purchased items in summary/description when they are visible.
 - ${unitRule}
 
 Return this exact JSON structure:
@@ -175,41 +219,14 @@ Return this exact JSON structure:
 }`;
 }
 
-async function analyzeWithOpenAI(prompt: string, dataUrl: string) {
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      input: [
-        {
-          role: "user",
-          content: [
-            { type: "input_text", text: prompt },
-            { type: "input_image", image_url: dataUrl, detail: "high" },
-          ],
-        },
-      ],
-      temperature: 0.1,
-      max_output_tokens: 2048,
-    }),
-  });
-
-  const text = await response.text();
-  let data: any = {};
-  try {
-    data = JSON.parse(text);
-  } catch {
-    data = { raw: text };
-  }
-  if (!response.ok) {
-    const msg = data?.error?.message || `OpenAI HTTP ${response.status}`;
-    throw new Error(msg);
-  }
-  return extractResponseText(data);
+function openRouterModels() {
+  const fallbackModels = OPENROUTER_FALLBACK_MODELS
+    ? OPENROUTER_FALLBACK_MODELS.split(",").map((m) => cleanText(m)).filter(Boolean)
+    : [
+      "qwen/qwen2.5-vl-72b-instruct:free",
+      "nvidia/nemotron-nano-12b-v2-vl:free",
+    ];
+  return [OPENROUTER_PRIMARY_MODEL, ...fallbackModels].filter((model, idx, arr) => model && arr.indexOf(model) === idx);
 }
 
 async function analyzeWithOpenRouter(prompt: string, dataUrl: string) {
@@ -217,7 +234,7 @@ async function analyzeWithOpenRouter(prompt: string, dataUrl: string) {
   let lastErr = "";
   let usedModel = "";
 
-  for (const model of OPENROUTER_MODELS) {
+  for (const model of openRouterModels()) {
     try {
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -271,8 +288,8 @@ async function analyzeWithOpenRouter(prompt: string, dataUrl: string) {
   }
 
   if (!rawText) throw new Error("All OpenRouter models failed. Last error: " + lastErr);
-  await logError("info", "analyze-receipt", "AI OCR fallback used OpenRouter", { model: usedModel });
-  return rawText;
+  await logError("info", "analyze-receipt", "AI OCR used OpenRouter", { model: usedModel });
+  return { rawText, usedModel };
 }
 
 function normalizeResult(parsed: any, selectedUnit: string, provider: string, model: string) {
@@ -280,19 +297,22 @@ function normalizeResult(parsed: any, selectedUnit: string, provider: string, mo
   const date = normalizeDate(parsed?.date);
   const unit = String(selectedUnit || parsed?.unit_hint || "").trim();
   const month = expenseMonth(category, date, parsed?.expense_month || parsed?.bill_period_month);
-  const fallbackSummary = String(parsed?.summary || parsed?.description || category || "Receipt");
-  const description = billDescription(category, unit, month, String(parsed?.description || fallbackSummary));
+  const normalizedItems = Array.isArray(parsed?.items)
+    ? parsed.items.map((item: { name?: string; qty?: number; price?: number }) => ({
+        name: String(item.name || "Unknown item"),
+        qty: Number(item.qty) || 1,
+        price: Number(item.price) || 0,
+      }))
+    : [];
+  const merchantName = cleanText(parsed?.merchant_name || parsed?.vendor || parsed?.supplier || "");
+  const invoiceNumber = cleanText(parsed?.invoice_number || parsed?.reference_number || "");
+  const fallbackSummary = cleanText(parsed?.summary || parsed?.description || merchantName || category || "Receipt");
+  const description = receiptDescription(category, unit, month, merchantName, invoiceNumber, fallbackSummary, normalizedItems);
 
   return {
-    items: Array.isArray(parsed?.items)
-      ? parsed.items.map((item: { name?: string; qty?: number; price?: number }) => ({
-          name: String(item.name || "Unknown item"),
-          qty: Number(item.qty) || 1,
-          price: Number(item.price) || 0,
-        }))
-      : [],
-    merchant_name: String(parsed?.merchant_name || parsed?.vendor || parsed?.supplier || ""),
-    invoice_number: String(parsed?.invoice_number || parsed?.reference_number || ""),
+    items: normalizedItems,
+    merchant_name: merchantName,
+    invoice_number: invoiceNumber,
     category,
     total: Number(parsed?.total) || 0,
     date,
@@ -300,7 +320,7 @@ function normalizeResult(parsed: any, selectedUnit: string, provider: string, mo
     bill_period_month: validMonth(parsed?.bill_period_month) || month,
     description,
     summary: fallbackSummary,
-    reference_number: String(parsed?.reference_number || parsed?.invoice_number || ""),
+    reference_number: cleanText(parsed?.reference_number || parsed?.invoice_number || ""),
     unit_hint: unit,
     confidence: Math.max(0, Math.min(1, Number(parsed?.confidence) || 0)),
     is_receipt: parsed?.is_receipt !== false,
@@ -352,28 +372,17 @@ serve(async (req: Request) => {
     const dataUrl = `data:${detectedMime};base64,${base64Data}`;
 
     let rawText = "";
-    let provider = "";
+    let provider = "openrouter";
     let model = "";
 
-    if (OPENAI_API_KEY) {
-      try {
-        rawText = await analyzeWithOpenAI(prompt, dataUrl);
-        provider = "openai";
-        model = OPENAI_MODEL;
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        await logError("warn", "analyze-receipt", "OpenAI OCR failed; trying fallback if configured", { message: msg, model: OPENAI_MODEL });
-      }
-    }
-
-    if (!rawText && OPENROUTER_API_KEY) {
-      rawText = await analyzeWithOpenRouter(prompt, dataUrl);
-      provider = "openrouter";
-      model = "fallback";
+    if (OPENROUTER_API_KEY) {
+      const result = await analyzeWithOpenRouter(prompt, dataUrl);
+      rawText = result.rawText;
+      model = result.usedModel;
     }
 
     if (!rawText) {
-      return json({ error: "AI OCR is not configured. Add OPENAI_API_KEY to Supabase secrets, or configure OPENROUTER_API_KEY fallback." }, 500);
+      return json({ error: "AI OCR is not configured. Add OPENROUTER_API_KEY to Supabase secrets." }, 500);
     }
 
     let parsed;
