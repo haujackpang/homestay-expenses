@@ -183,6 +183,7 @@ var rptUnit='',rptMonth='',rptYear='';
 var editingUnitType=null,editingUnitCfg=null,utFormError='',ucFormError='';
 var syncLogs=[],syncLoading=false,syncRunning=false,unitSyncing=false;
 var showInactiveUnits=false;
+var unitPairingFilter='All',unitPairingSearch='';
 var reservations=[];
 
 // ===== FRONTEND ERROR LOGGER =====
@@ -255,14 +256,21 @@ function uniqueNames(arr){
 function internalUnitRows(){
   return UNITS_DATA
     .filter(function(u){return u.source!=='hostplatform'&&u.active!==false;})
-    .map(function(u){return{value:unitDisplayName(u),shortCode:(u.property_short||'').toUpperCase()};})
+    .map(function(u){
+      var display=unitDisplayName(u);
+      return{
+        value:display,
+        label:(u.name||display||'').trim()||display,
+        shortCode:(u.property_short||'').toUpperCase()
+      };
+    })
     .sort(function(a,b){return a.value.localeCompare(b.value);});
 }
 function internalUnitOptions(selected){
   var sel=selected||'';
   var rows=internalUnitRows();
   var opts=['<option value="">— Select internal unit —</option>'];
-  rows.forEach(function(r){opts.push('<option value="'+r.value+'" data-short="'+r.shortCode+'"'+(sel===r.value?' selected':'')+'>'+r.value+'</option>');});
+  rows.forEach(function(r){opts.push('<option value="'+r.value+'" data-short="'+r.shortCode+'"'+(sel===r.value?' selected':'')+'>'+r.label+'</option>');});
   if(sel&&!rows.some(function(r){return r.value===sel;}))opts.push('<option value="'+sel+'" selected>'+sel+' (legacy)</option>');
   return opts.join('');
 }
@@ -278,9 +286,19 @@ function internalUnitMappingOptions(selected,exceptUnitId){
   var used=mappedInternalUnitNames(exceptUnitId||'');
   var rows=internalUnitRows().filter(function(r){return !used[r.value]||r.value===sel;});
   var opts=['<option value="">-- Unmapped --</option>'];
-  rows.forEach(function(r){opts.push('<option value="'+r.value+'" data-short="'+r.shortCode+'"'+(sel===r.value?' selected':'')+'>'+r.value+'</option>');});
+  rows.forEach(function(r){opts.push('<option value="'+r.value+'" data-short="'+r.shortCode+'"'+(sel===r.value?' selected':'')+'>'+r.label+'</option>');});
   if(sel&&!rows.some(function(r){return r.value===sel;}))opts.push('<option value="'+sel+'" selected>'+sel+' (legacy)</option>');
   return opts.join('');
+}
+function internalUnitShortCode(unitName){
+  if(!unitName)return'';
+  var row=internalUnitRows().filter(function(r){return r.value===unitName;})[0];
+  return row?String(row.shortCode||'').toUpperCase():'';
+}
+function selectedOptionShortCode(selEl){
+  if(!selEl)return'';
+  var opt=selEl.options[selEl.selectedIndex];
+  return opt?String(opt.getAttribute('data-short')||'').toUpperCase():'';
 }
 function hpIdsForDisplayUnit(unitName){
   return UNITS_DATA
@@ -311,9 +329,26 @@ function hpUnitRows(){
       return a.unitName.localeCompare(b.unitName);
     });
 }
+function pairingFilterRows(){
+  var term=String(unitPairingSearch||'').toLowerCase().trim();
+  return hpUnitRows().filter(function(u){
+    if(unitPairingFilter==='Paired'&&!u.mappedUnitName)return false;
+    if(unitPairingFilter==='Unmapped'&&u.mappedUnitName)return false;
+    if(!term)return true;
+    var hay=[u.propertyName,u.unitName,u.mappedUnitName,u.propertyShort].join(' ').toLowerCase();
+    return hay.indexOf(term)>=0;
+  });
+}
+function pairingCount(filter){
+  return hpUnitRows().filter(function(u){
+    if(filter==='Paired')return !!u.mappedUnitName;
+    if(filter==='Unmapped')return !u.mappedUnitName;
+    return true;
+  }).length;
+}
 function shortCodeOptions(selected){
   var sel=(selected||'').toUpperCase();
-  var opts=['<option value="">— Unpair —</option>'];
+  var opts=['<option value="">-- None --</option>'];
   PROPERTY_SHORT_CODES.forEach(function(code){
     opts.push('<option value="'+code+'"'+(sel===code?' selected':'')+'>'+code+'</option>');
   });
@@ -1512,44 +1547,60 @@ function render(){
   else if(S==='adminUnits'){
     if(!isSystemAdmin){toast('Only admin can access units');ss(R==='admin'?'adminDash':'empHome');return;}
     tbt_el.textContent='Units';bb_el.style.display='block';adminNav('units');
-    var activeUnits=UNITS_DATA.filter(function(u){return u.active!==false;});
-    var inactiveUnits=UNITS_DATA.filter(function(u){return u.active===false;});
+    var internalActive=UNITS_DATA.filter(function(u){return u.source!=='hostplatform'&&u.active!==false;}).length;
+    var internalInactive=UNITS_DATA.filter(function(u){return u.source!=='hostplatform'&&u.active===false;}).length;
+    var hpCount=UNITS_DATA.filter(function(u){return u.source==='hostplatform';}).length;
+    var hpMapped=pairingCount('Paired');
+    var hpUnmapped=pairingCount('Unmapped');
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+UNITS_DATA.length+' total unit row(s)</span><br/>Internal units: '+internalActive+' active'+(internalInactive?' + '+internalInactive+' inactive':'')+'<br/>HostPlatform rows: '+hpCount+' total / '+hpMapped+' paired / '+hpUnmapped+' unmapped</div></div><button class="pbtn btn-p" style="width:100%;margin-bottom:8px" onclick="triggerUnitSync()"'+(unitSyncing?' disabled':'')+'>'+(unitSyncing?'Syncing...':'Sync from HP')+'</button><div style="display:flex;flex-direction:column;gap:8px"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'internalUnits\',\'adminUnits\')"><div><div style="font-size:13px;font-weight:600;color:#111">Internal Units</div><div style="font-size:11px;color:#6b7280">Create and edit the system unit names your team uses.</div><div style="font-size:10px;color:#2563eb;margin-top:4px">'+internalActive+' active'+(internalInactive?' / '+internalInactive+' inactive':'')+'</div></div><span style="font-size:16px;color:#6b7280">&rsaquo;</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="openPropertyMapping()"><div><div style="font-size:13px;font-weight:600;color:#111">HostPlatform Pairing</div><div style="font-size:11px;color:#6b7280">Pair each HostPlatform property + unit to one internal unit.</div><div style="font-size:10px;color:#2563eb;margin-top:4px">'+hpMapped+' paired / '+hpUnmapped+' unmapped</div></div><span style="font-size:16px;color:#6b7280">&rsaquo;</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitConfigList\',\'adminUnits\')"><div><div style="font-size:13px;font-weight:600;color:#111">Unit Configuration</div><div style="font-size:11px;color:#6b7280">Owner, rates, profit sharing</div></div><span style="font-size:16px;color:#6b7280">&rsaquo;</span></div></div></div>';
+  }
+  else if(S==='internalUnits'){
+    if(!isSystemAdmin){toast('Only admin can access units');ss(R==='admin'?'adminDash':'empHome');return;}
+    tbt_el.textContent='Internal Units';bb_el.style.display='block';adminNav('units');
+    var activeUnits=UNITS_DATA.filter(function(u){return u.source!=='hostplatform'&&u.active!==false;}).sort(function(a,b){return (a.name||'').localeCompare(b.name||'');});
+    var inactiveUnits=UNITS_DATA.filter(function(u){return u.source!=='hostplatform'&&u.active===false;}).sort(function(a,b){return (a.name||'').localeCompare(b.name||'');});
     var activeCount=activeUnits.length;
     var inactiveCount=inactiveUnits.length;
-    var hpCount=UNITS_DATA.filter(function(u){return u.source==='hostplatform';}).length;
     var visibleUnits=showInactiveUnits?activeUnits.concat(inactiveUnits):activeUnits;
     var rows=visibleUnits.length?visibleUnits.map(function(u){
       var isActive=u.active!==false;
-      var isHP=u.source==='hostplatform';
-      var displayName=unitDisplayName(u);
-      var sourceBadge=isHP?'<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px;margin-left:5px">HP</span>':'<span style="font-size:10px;background:#f3f4f6;color:#6b7280;padding:1px 5px;border-radius:4px;margin-left:5px">Manual</span>';
-      var subtitle=u.property_name?'<div style="font-size:10px;color:#6b7280">'+u.property_name+' · HP unit: '+u.name+(u.mapped_unit_name?' · Mapped: '+u.mapped_unit_name:'')+'</div>':'';
-      var syncedInfo=u.synced_at?'<div style="font-size:10px;color:#9ca3af">Synced: '+new Date(u.synced_at).toLocaleString('en-MY',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})+'</div>':'';
-      return'<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#111">'+displayName+sourceBadge+'</div>'+(isActive?'<div style="font-size:11px;color:#065f46">Active</div>':'<div style="font-size:11px;color:#991b1b">Deactivated</div>')+subtitle+syncedInfo+'</div><div style="display:flex;gap:10px;align-items:center"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnit(\''+u.id+'\')">Edit</span>'+(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',false)">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',true)">Activate</span>')+'</div></div>';
-    }).join(''):(inactiveCount?'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No active units. Tap "Show Deactivated" to view hidden units.</div>':'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">Click "Sync from HP" to import units, or add manually.</div>');
+      var displayCode=(u.property_short||'').toUpperCase();
+      var detail=displayCode?'<div style="font-size:10px;color:#6b7280">Display code: '+displayCode+' (display/report only)</div>':'<div style="font-size:10px;color:#9ca3af">No display code</div>';
+      return'<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#111">'+(u.name||'')+'<span style="font-size:10px;background:#f3f4f6;color:#6b7280;padding:1px 5px;border-radius:4px;margin-left:5px">Internal</span></div>'+(isActive?'<div style="font-size:11px;color:#065f46">Active</div>':'<div style="font-size:11px;color:#991b1b">Deactivated</div>')+detail+'</div><div style="display:flex;gap:10px;align-items:center"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnit(\''+u.id+'\')">Edit</span>'+(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',false)">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',true)">Activate</span>')+'</div></div>';
+    }).join(''):(inactiveCount?'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No active internal units. Tap "Show Deactivated" to view hidden units.</div>':'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">Add your first internal unit to start pairing.</div>');
     var toggleInactiveBtn=inactiveCount?'<button class="pbtn btn-o" style="width:100%;margin-bottom:8px" onclick="toggleInactiveUnits()">'+(showInactiveUnits?'Hide Deactivated':'Show Deactivated')+' ('+inactiveCount+')</button>':'';
-    var setupCards='<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="openPropertyMapping()"><div><div style="font-size:12px;font-weight:600;color:#111">Unit Mapping</div><div style="font-size:10px;color:#6b7280">Pair HP property + unit to internal unit</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitConfigList\',\'adminUnits\')"><div><div style="font-size:12px;font-weight:600;color:#111">Unit Configuration</div><div style="font-size:10px;color:#6b7280">Owner, rates, profit sharing</div></div><span style="font-size:16px;color:#6b7280">›</span></div></div>';
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+UNITS_DATA.length+' unit(s) | '+activeCount+' active | '+inactiveCount+' deactivated | '+hpCount+' from HP</span> - manager view defaults to active units only.</div></div><div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-p" style="flex:1" onclick="triggerUnitSync()"'+(unitSyncing?' disabled':'')+'>'+(unitSyncing?'Syncing...':'Sync from HP')+'</button><button class="pbtn btn-o" style="flex:1" onclick="openNewUnitForm()">+ Add Manual</button></div>'+setupCards+toggleInactiveBtn+rows+'</div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Internal units are your system names.</span> Display code is optional and is used for display/reporting only.</div></div><div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-p" style="flex:1" onclick="openNewUnitForm()">+ Add Internal Unit</button><button class="pbtn btn-o" style="flex:1" onclick="openPropertyMapping()">Open Pairing</button></div>'+toggleInactiveBtn+rows+'</div>';
   }
   else if(S==='propertyMapping'){
     if(!isSystemAdmin){toast('Only admin can access mapping');ss(R==='admin'?'adminDash':'empHome');return;}
-    tbt_el.textContent='Unit Mapping';bb_el.style.display='block';adminNav('units');
-    var units=hpUnitRows();
+    tbt_el.textContent='HostPlatform Pairing';bb_el.style.display='block';adminNav('units');
+    var units=pairingFilterRows();
+    var totalHp=pairingCount('All');
+    var totalPaired=pairingCount('Paired');
+    var totalUnmapped=pairingCount('Unmapped');
+    var searchVal=String(unitPairingSearch||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+    function filterBtn(label){
+      var active=unitPairingFilter===label;
+      return'<button class="pbtn '+(active?'btn-p':'btn-o')+'" style="flex:1;padding:10px 8px" onclick="unitPairingFilter=\''+label+'\';render()">'+label+' ('+pairingCount(label)+')</button>';
+    }
     var rows=units.length?units.map(function(u){
-      var opts=shortCodeOptions(u.propertyShort);
       var unitOpts=internalUnitMappingOptions(u.mappedUnitName,u.unitId);
-      var st=u.active?'<span style="font-size:10px;color:#065f46">Active</span>':'<span style="font-size:10px;color:#991b1b">Inactive</span>';
-      return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="min-width:0;flex:1"><div style="font-size:12px;font-weight:600;color:#111">'+u.propertyName+' · '+u.unitName+'</div><div style="font-size:10px;color:#6b7280">Mapped to: '+(u.mappedUnitName||'Unmapped')+'</div></div>'+st+'</div><div class="fg" style="margin-top:8px"><label class="fl">Internal unit</label><select class="fi" id="pm-unit-'+u.domKey+'" onchange="syncMappingShort(\''+u.domKey+'\')">'+unitOpts+'</select></div><div style="display:flex;gap:6px;align-items:center;margin-top:8px"><select class="fi" id="pm-short-'+u.domKey+'" style="flex:1">'+opts+'</select><button class="pbtn btn-s" style="min-width:92px" onclick="savePropertyMapping(\''+String(u.unitId||'').replace(/'/g,"\\'")+'\',\''+u.domKey+'\')">Save</button></div></div>';
-    }).join(''):'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No HostPlatform unit found yet. Sync units first.</div>';
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Map each HP property + unit to one internal unit.</span> Short code is filled from the internal unit when available.</div></div>'+rows+'</div>';
+      var actionLabel=u.mappedUnitName?'Update Pairing':'Save Pairing';
+      var clearBtn=u.mappedUnitName?'<button class="pbtn btn-o" style="min-width:84px" onclick="clearPropertyMapping(\''+String(u.unitId||'').replace(/'/g,"\\'")+'\',\''+u.domKey+'\')">Clear</button>':'';
+      var derivedShort=u.mappedUnitName?internalUnitShortCode(u.mappedUnitName):'';
+      var displayShort=derivedShort||(u.mappedUnitName?(u.propertyShort||''):'');
+      return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0;flex:1"><div style="font-size:10px;color:#6b7280">HostPlatform property</div><div style="font-size:12px;font-weight:600;color:#111">'+u.propertyName+'</div><div style="font-size:10px;color:#6b7280;margin-top:6px">HostPlatform unit</div><div style="font-size:12px;font-weight:600;color:#111">'+u.unitName+'</div></div><div style="text-align:right"><div style="font-size:10px;color:'+(u.mappedUnitName?'#065f46':'#92400e')+'">'+(u.mappedUnitName?'Paired':'Unmapped')+'</div><div style="font-size:10px;color:'+(u.active?'#065f46':'#991b1b')+'">'+(u.active?'Active':'Inactive')+'</div><div style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline;margin-top:6px" onclick="editUnit(\''+String(u.unitId||'').replace(/'/g,"\\'")+'\')">Open</div></div></div><div style="font-size:10px;color:#6b7280;margin-top:8px">'+(u.mappedUnitName?'Paired to internal unit: '+u.mappedUnitName:'Choose one internal unit to pair.')+'</div><div class="fg" style="margin-top:8px"><label class="fl">Pair to internal unit</label><select class="fi" id="pm-unit-'+u.domKey+'" onchange="syncMappingShort(\''+u.domKey+'\')">'+unitOpts+'</select></div><div class="fg" style="margin-top:8px"><label class="fl">Display code</label><input class="fi" id="pm-short-'+u.domKey+'" value="'+displayShort+'" readonly style="background:#f3f4f6"/></div><div style="display:flex;gap:6px;align-items:center;margin-top:8px"><button class="pbtn btn-s" style="flex:1" onclick="savePropertyMapping(\''+String(u.unitId||'').replace(/'/g,"\\'")+'\',\''+u.domKey+'\')">'+actionLabel+'</button>'+clearBtn+'</div></div>';
+    }).join(''):(totalHp?'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No HostPlatform rows match the current filter.</div>':'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No HostPlatform unit found yet. Sync units first.</div>');
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Pair each HostPlatform property + unit to one internal unit.</span> Display code is filled from the selected internal unit and stays read-only here.</div></div><div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-o" style="flex:1" onclick="ss(\'internalUnits\',\'adminUnits\')">Internal Units</button><button class="pbtn btn-p" style="flex:1" onclick="triggerUnitSync()"'+(unitSyncing?' disabled':'')+'>'+(unitSyncing?'Syncing...':'Sync from HP')+'</button></div><div class="fg"><label class="fl">Search property or unit</label><input class="fi" value="'+searchVal+'" placeholder="e.g. KT or 150A" oninput="unitPairingSearch=this.value;render()"/></div><div style="display:flex;gap:6px;margin-bottom:8px">'+filterBtn('All')+filterBtn('Unmapped')+filterBtn('Paired')+'</div><div style="font-size:10px;color:#6b7280;margin-bottom:8px">'+totalHp+' HostPlatform row(s) / '+totalPaired+' paired / '+totalUnmapped+' unmapped</div>'+rows+'</div>';
   }
   else if(S==='unitForm'){
     if(!isSystemAdmin){toast('Only admin can access units');ss(R==='admin'?'adminDash':'empHome');return;}
-    tbt_el.textContent=editingUnit?'Edit Unit':'New Unit';bb_el.style.display='block';adminNav('units');
     var isHP=editingUnit&&editingUnit.source==='hostplatform';
-    var shortOpts=shortCodeOptions(editingUnit?editingUnit.property_short||'':'');
+    tbt_el.textContent=isHP?'Pair HostPlatform Unit':(editingUnit?'Edit Internal Unit':'New Internal Unit');bb_el.style.display='block';adminNav('units');
+    var shortOpts=isHP?'':shortCodeOptions(editingUnit?editingUnit.property_short||'':'');
     var mappedOpts=isHP?internalUnitMappingOptions(editingUnit.mapped_unit_name||'',editingUnit.id):'';
-    ms.innerHTML='<div class="scr">'+(unitFormError?'<div class="info-box" style="background:#fee2e2"><div style="font-size:11px;color:#991b1b">'+unitFormError+'</div></div>':'')+(isHP?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">HP unit — map this HostPlatform property + unit to an internal unit.</div></div><div class="fg"><label class="fl">HostPlatform unit</label><input class="fi" value="'+editingUnit.name+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">HostPlatform property</label><input class="fi" value="'+(editingUnit.property_name||'')+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">Internal unit</label><select class="fi" id="unit-mapped" onchange="syncEditUnitShort()">'+mappedOpts+'</select></div>':'<div class="fg"><label class="fl">Unit name *</label><input class="fi" id="unit-name" value="'+(editingUnit?editingUnit.name:'')+'" placeholder="e.g. MP Office"/></div>')+'<div class="fg"><label class="fl">Property short code</label><select class="fi" id="unit-short">'+shortOpts+'</select></div>'+(isHP?'<div class="ai-manual-link" style="margin-top:2px" onclick="openPropertyMapping()">Manage all unit mappings →</div>':'')+'<button class="pbtn btn-p" onclick="saveUnit()">'+(editingUnit?'Save Changes':'Add Unit')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminUnits\',adminHomeScreen())">Cancel</button></div>';
+    var hpDisplayCode=isHP?(internalUnitShortCode(editingUnit.mapped_unit_name||'')||((editingUnit.mapped_unit_name||'')?(editingUnit.property_short||''):'')):'';
+    ms.innerHTML='<div class="scr">'+(unitFormError?'<div class="info-box" style="background:#fee2e2"><div style="font-size:11px;color:#991b1b">'+unitFormError+'</div></div>':'')+(isHP?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">Pair this HostPlatform property + unit to one internal unit.</div></div><div class="fg"><label class="fl">HostPlatform property</label><input class="fi" value="'+(editingUnit.property_name||'')+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">HostPlatform unit</label><input class="fi" value="'+editingUnit.name+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">Pair to internal unit</label><select class="fi" id="unit-mapped" onchange="syncEditUnitShort()">'+mappedOpts+'</select></div><div class="fg"><label class="fl">Display code</label><input class="fi" id="unit-short" value="'+hpDisplayCode+'" readonly style="background:#f3f4f6"/></div><div class="ai-manual-link" style="margin-top:2px" onclick="openPropertyMapping()">Manage all HostPlatform pairing -></div>':'<div class="fg"><label class="fl">Unit name *</label><input class="fi" id="unit-name" value="'+(editingUnit?editingUnit.name:'')+'" placeholder="e.g. MP Office"/></div><div class="fg"><label class="fl">Display code (optional)</label><select class="fi" id="unit-short">'+shortOpts+'</select><div style="font-size:10px;color:#6b7280;margin-top:4px">Used for display/reporting only. Not used for HostPlatform pairing.</div></div>')+'<button class="pbtn btn-p" onclick="saveUnit()">'+(isHP?(editingUnit&&editingUnit.mapped_unit_name?'Update Pairing':'Save Pairing'):(editingUnit?'Save Changes':'Add Internal Unit'))+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\''+(isHP?'propertyMapping':'internalUnits')+'\',\'adminUnits\')">Cancel</button></div>';
   }
   else if(S==='adminPay'){
     tbt_el.textContent='Pay Out';bb_el.style.display='block';adminNav('pay');
@@ -1872,7 +1923,18 @@ window.doReject=async function(){var r=document.getElementById('rv-reason');awai
 window.saveMgrEdit=saveMgrEdit;window.saveEmpEdit=saveEmpEdit;window.submitEmpEdit=submitEmpEdit;
 window.submitNewClaim=submitNewClaim;window.submitMgrClaim=submitMgrClaim;
 window.markClaimed=markClaimed;window.saveBankInfo=saveBankInfo;
-window.openPropertyMapping=function(){ss('propertyMapping','adminUnits');};
+window.openPropertyMapping=function(){
+  unitFormError='';
+  unitPairingFilter='All';
+  unitPairingSearch='';
+  ss('propertyMapping','adminUnits');
+};
+window.clearPropertyMapping=function(unitId,domKey){
+  var unitSel=document.getElementById('pm-unit-'+domKey);
+  if(unitSel)unitSel.value='';
+  syncMappingShort(domKey);
+  savePropertyMapping(unitId,domKey);
+};
 window.syncMappingShort=function(domKey){
   var unitSel=document.getElementById('pm-unit-'+domKey),shortSel=document.getElementById('pm-short-'+domKey);
   if(!unitSel||!shortSel)return;
@@ -1892,22 +1954,22 @@ window.savePropertyMapping=async function(unitId,domKey){
   var unitSel=document.getElementById('pm-unit-'+domKey);
   var sel=document.getElementById('pm-short-'+domKey);
   var mappedUnit=unitSel&&unitSel.value?unitSel.value:'';
-  var code=sel&&sel.value?sel.value.toUpperCase():'';
-  if(!mappedUnit)code='';
+  var code=mappedUnit?selectedOptionShortCode(unitSel):'';
+  if(sel)sel.value=code;
   var conflict=mappingConflict(unitId,mappedUnit);
-  if(conflict){toast(mappedUnit+' is already paired');return;}
+  if(conflict){toast('This internal unit is already paired to another active HostPlatform unit');return;}
   try{
     await dbAssignUnitMapping(unitId,mappedUnit,code);
     await loadUnits();
     await logAdminAction('unit-mapping.saved',{unit_id:unitId,mapped_unit_name:mappedUnit,property_short:code});
-    toast(mappedUnit?'Mapped to '+mappedUnit:'Mapping cleared');
+    toast(mappedUnit?'Paired to internal unit '+mappedUnit:'Pairing cleared');
     ss('propertyMapping','adminUnits');
   }catch(e){
     toast('Save failed: '+(e.message||'unknown'));
   }
 };
-window.openNewUnitForm=function(){editingUnit=null;unitFormError='';ss('unitForm','adminUnits');};
-window.editUnit=function(id){editingUnit=UNITS_DATA.filter(function(u){return u.id===id;})[0];unitFormError='';ss('unitForm','adminUnits');};
+window.openNewUnitForm=function(){editingUnit=null;unitFormError='';ss('unitForm','internalUnits');};
+window.editUnit=function(id){editingUnit=UNITS_DATA.filter(function(u){return u.id===id;})[0];unitFormError='';ss('unitForm',editingUnit&&editingUnit.source==='hostplatform'?'propertyMapping':'internalUnits');};
 window.toggleUnitActive=async function(id,active){
   if(!isSystemAdmin){toast('Only admin can manage units');return;}
   var ok=await dbUpdateUnit(id,{active:active});
@@ -1916,36 +1978,36 @@ window.toggleUnitActive=async function(id,active){
 };
 window.saveUnit=async function(){
   if(!isSystemAdmin){toast('Only admin can save units');return;}
-  var shortEl=document.getElementById('unit-short');
-  var propertyShort=shortEl&&shortEl.value?shortEl.value.toUpperCase():'';
   if(editingUnit&&editingUnit.source==='hostplatform'){
     var mappedEl=document.getElementById('unit-mapped');
     var mappedUnit=mappedEl&&mappedEl.value?mappedEl.value:'';
-    if(!mappedUnit)propertyShort='';
+    var propertyShort=mappedUnit?selectedOptionShortCode(mappedEl):'';
     var conflict=mappingConflict(editingUnit.id,mappedUnit);
-    if(conflict){unitFormError=mappedUnit+' is already paired to another HP unit';render();return;}
+    if(conflict){unitFormError='This internal unit is already paired to another active HostPlatform unit';render();return;}
     try{
       await dbAssignUnitMapping(editingUnit.id,mappedUnit,propertyShort);
       await loadUnits();
       await logAdminAction('unit-mapping.saved',{unit_id:editingUnit.id,mapped_unit_name:mappedUnit,property_short:propertyShort});
-      toast(mappedUnit?'Unit updated':'Mapping cleared');
+      toast(mappedUnit?'Paired to internal unit '+mappedUnit:'Pairing cleared');
       editingUnit=null;
-      ss('adminUnits','adminUsers');
+      ss('propertyMapping','adminUnits');
     }catch(e){
-      unitFormError='Failed to update unit';
+      unitFormError='Failed to update pairing';
       render();
     }
   }else{
+    var shortEl=document.getElementById('unit-short');
+    var propertyShort=shortEl&&shortEl.value?shortEl.value.toUpperCase():'';
     var nameEl=document.getElementById('unit-name');
     if(!nameEl||!nameEl.value.trim()){unitFormError='Unit name is required';render();return;}
     var name=nameEl.value.trim();
     if(editingUnit){
       var ok=await dbUpdateUnit(editingUnit.id,{name:name,property_short:propertyShort});
-      if(ok){await loadUnits();await logAdminAction('unit.saved',{unit_id:editingUnit.id,unit_name:name,property_short:propertyShort});toast('Unit updated');editingUnit=null;ss('adminUnits','adminUsers');}
+      if(ok){await loadUnits();await logAdminAction('unit.saved',{unit_id:editingUnit.id,unit_name:name,property_short:propertyShort});toast('Internal unit updated');editingUnit=null;ss('internalUnits','adminUnits');}
       else{unitFormError='Failed to update. Name may already exist.';render();}
     }else{
       var ok=await dbInsertUnit(name,propertyShort);
-      if(ok){await loadUnits();await logAdminAction('unit.saved',{unit_name:name,property_short:propertyShort});toast('Unit "'+name+'" added');ss('adminUnits','adminUsers');}
+      if(ok){await loadUnits();await logAdminAction('unit.saved',{unit_name:name,property_short:propertyShort});toast('Internal unit "'+name+'" added');editingUnit=null;ss('internalUnits','adminUnits');}
       else{unitFormError='Failed to add. Name may already exist.';render();}
     }
   }
