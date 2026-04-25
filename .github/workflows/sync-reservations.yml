@@ -1,0 +1,47 @@
+name: Scheduled Reservation Import (Test)
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-reservations-test
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: github.repository == 'haujackpang/homestayERP-test'
+    steps:
+      - name: Verify test repository
+        run: |
+          if [ "${{ github.repository }}" != "haujackpang/homestayERP-test" ]; then
+            echo "This workflow is only allowed in the test repository."
+            exit 1
+          fi
+
+      - name: Import reservations from HostPlatform
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_KEY:-}" ]; then
+            echo "Missing SUPABASE_URL or SUPABASE_KEY."
+            exit 1
+          fi
+
+          response="$(curl -sS --fail-with-body \
+            -X POST \
+            "${SUPABASE_URL}/functions/v1/sync-reservations" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"type":"scheduled"}')"
+
+          echo "$response"
