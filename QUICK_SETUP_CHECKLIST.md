@@ -3,10 +3,10 @@
 ## Current Naming
 
 - Test repo: `haujackpang/homestayERP-test`
-- Test Supabase: `skwogboredsczcyhlqgn`
+- Test Supabase: `afcifzghlkxvnpulahub`
 - Test app: `https://haujackpang.github.io/homestayERP-test`
 - Live repo: `haujackpang/homestay-expenses`
-- Live Supabase: `afcifzghlkxvnpulahub`
+- Live Supabase: `skwogboredsczcyhlqgn`
 - Live app: `https://haujackpang.github.io/homestay-expenses`
 
 Do not use `haujackpang/homestayERP-prod`; it is obsolete.
@@ -21,8 +21,8 @@ For each active repo, confirm these secrets exist:
 
 Expected `SUPABASE_URL` values:
 
-- Test: `https://skwogboredsczcyhlqgn.supabase.co`
-- Live: `https://afcifzghlkxvnpulahub.supabase.co`
+- Test: `https://afcifzghlkxvnpulahub.supabase.co`
+- Live: `https://skwogboredsczcyhlqgn.supabase.co`
 
 Use the helper script when possible:
 

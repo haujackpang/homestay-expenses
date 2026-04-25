@@ -6,8 +6,8 @@ This file is the current reference for GitHub Actions secrets.
 
 | Environment | GitHub repo | Supabase project ref | Pages URL |
 | --- | --- | --- | --- |
-| Test | `haujackpang/homestayERP-test` | `skwogboredsczcyhlqgn` | `https://haujackpang.github.io/homestayERP-test` |
-| Live | `haujackpang/homestay-expenses` | `afcifzghlkxvnpulahub` | `https://haujackpang.github.io/homestay-expenses` |
+| Test | `haujackpang/homestayERP-test` | `afcifzghlkxvnpulahub` | `https://haujackpang.github.io/homestayERP-test` |
+| Live | `haujackpang/homestay-expenses` | `skwogboredsczcyhlqgn` | `https://haujackpang.github.io/homestay-expenses` |
 
 `haujackpang/homestayERP-prod` is obsolete and must not be used as the live deployment target.
 
@@ -28,13 +28,13 @@ Do not commit secret values into this repo. Use GitHub Secrets only.
 Test repo:
 
 ```text
-SUPABASE_URL=https://skwogboredsczcyhlqgn.supabase.co
+SUPABASE_URL=https://afcifzghlkxvnpulahub.supabase.co
 ```
 
 Live repo:
 
 ```text
-SUPABASE_URL=https://afcifzghlkxvnpulahub.supabase.co
+SUPABASE_URL=https://skwogboredsczcyhlqgn.supabase.co
 ```
 
 ## Recommended Setup

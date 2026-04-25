@@ -6,8 +6,8 @@ This file defines how changes move through test and live environments for this p
 ## Environments
 - Test repo: `homestayERP-test`
 - Live repo: `homestay-expenses`
-- Test Supabase project: `skwogboredsczcyhlqgn`
-- Live Supabase project: `afcifzghlkxvnpulahub`
+- Test Supabase project: `afcifzghlkxvnpulahub`
+- Live Supabase project: `skwogboredsczcyhlqgn`
 - Obsolete repo: `homestayERP-prod` must not be used as the live deployment target.
 
 ## Current Live Setup

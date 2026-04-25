@@ -175,7 +175,7 @@ Reason:
 These changes correct live-visible behavior: live must stay on the live database without a hidden fallback to test, and the report page wording/details must match the approved business presentation.
 
 ## 2026-04-24: Correct Canonical Repo And Supabase Mapping
-Decision: Use `haujackpang/homestay-expenses` as the canonical live repo, `haujackpang/homestayERP-test` as the test repo, `skwogboredsczcyhlqgn` as the test Supabase project, and `afcifzghlkxvnpulahub` as the live Supabase project.
+Decision: Use `haujackpang/homestay-expenses` as the canonical live repo, `haujackpang/homestayERP-test` as the test repo, `afcifzghlkxvnpulahub` as the test Supabase project, and `skwogboredsczcyhlqgn` as the live Supabase project.
 
 Reason:
 The earlier repo/project mapping was wrong. Future deployments, Pages secrets, and verification must follow the user's corrected environment ownership so test and live stay properly separated.
@@ -226,7 +226,13 @@ Reason:
 The fix was validated in test, then deployed to the canonical live repo and live Supabase project so both environments share the same user-management behavior.
 
 ## 2026-04-25: `homestayERP-prod` Is Obsolete
-Decision: Stop treating `haujackpang/homestayERP-prod` as a live alias. The active environments are now test repo `haujackpang/homestayERP-test` with Supabase `skwogboredsczcyhlqgn`, and live repo `haujackpang/homestay-expenses` with Supabase `afcifzghlkxvnpulahub`.
+Decision: Stop treating `haujackpang/homestayERP-prod` as a live alias. The active environments are now test repo `haujackpang/homestayERP-test` with Supabase `afcifzghlkxvnpulahub`, and live repo `haujackpang/homestay-expenses` with Supabase `skwogboredsczcyhlqgn`.
+
+## 2026-04-26: Reverse Canonical Supabase Environment Mapping
+Decision: Treat `skwogboredsczcyhlqgn` as live and `afcifzghlkxvnpulahub` as test for all repo secrets, deploy guards, and setup documentation.
+
+Reason:
+The previously documented mapping was backwards. Keeping repo secrets, workflow validation, and setup docs aligned with the corrected mapping prevents future deployments and smoke tests from targeting the wrong Supabase environment.
 
 Reason:
 The user confirmed `homestayERP-prod` is no longer used. Keeping it in setup guides or automation risks pushing live work to the wrong repo.
