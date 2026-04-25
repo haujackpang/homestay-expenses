@@ -7,6 +7,8 @@ Current focus:
 1. Environment separation has been re-tightened: test is `homestayERP-test` / `skwogboredsczcyhlqgn`, live is `homestay-expenses` / `afcifzghlkxvnpulahub`, and `homestayERP-prod` is obsolete.
 2. The `TESTING` watermark should be controlled by the test Pages path only, not by Supabase URL alone.
 3. Pushing to live means code/workflow/functions/required idempotent DB structure only; do not copy or sync table data between environments.
+4. HostPlatform pairing now assumes only active canonical `source='hostplatform'` rows should be shown in the pairing list.
+5. Use `supabase-repair-hp-unit-pairing.sql` when a target environment has legacy HP rows, missing `hp_unit_id` uniqueness, or blank pairing after sync.
 
 Recent unit-pairing context:
 1. `Units` now acts as a landing page with separate entry points for `Internal Units`, `HostPlatform Pairing`, and `Unit Configuration`.
@@ -30,6 +32,11 @@ Recent unit-pairing context:
   - `units` are not a perfect mirror: counts differ by 14 and one shared unit row differs in `property_short`.
   - `unit_config`, `unit_types`, `sync_logs`, and `error_logs` also differ between the two projects.
 - Test database now has `units.mapped_unit_name`.
+- Test database repair on 2026-04-25 confirmed:
+  - internal/manual rows no longer carry HP identity fields
+  - `units_hp_unit_id_idx` now protects non-null `hp_unit_id`
+  - matched legacy HP duplicates were deactivated
+  - two unmatched legacy HP rows (`KT 150A`, `SG 34F`) remain active until HP returns canonical replacements
 - OpenAI API usage requires an API key in Supabase secrets. Codex itself is not an app-callable OCR backend.
 - The current OCR implementation uses `gpt-4o-mini` by default when `OPENAI_API_KEY` is available.
 - Test Supabase currently has no `OPENAI_API_KEY` and no `OPENROUTER_API_KEY`, so OCR returns a clear configuration error until a provider key is added.
@@ -60,6 +67,7 @@ Recent unit-pairing context:
 - Do not expose secret values in final messages.
 - Do not claim OCR is fully runnable in test until an AI provider key has been configured.
 - Do not allow duplicate active HP mappings to the same internal unit.
+- Do not treat inactive legacy HP rows as valid pairing rows in the UI.
 
 ## Memory Update Requirement
 - When business rules, release targets, deployment state, or current priorities change, update the relevant memory files before ending the turn.

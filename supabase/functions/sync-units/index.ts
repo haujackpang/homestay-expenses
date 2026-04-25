@@ -16,6 +16,19 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function requireSyncEnv() {
+  const missing = [
+    !SUPABASE_SERVICE_KEY ? "SUPABASE_SERVICE_ROLE_KEY" : "",
+    !RESERVATION_EMAIL ? "RESERVATION_EMAIL" : "",
+    !RESERVATION_PASSWORD ? "RESERVATION_PASSWORD" : "",
+    !RESERVATION_API_BASE ? "RESERVATION_API_BASE" : "",
+  ].filter(Boolean);
+
+  if (missing.length) {
+    throw new Error(`Missing required env: ${missing.join(", ")}`);
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
@@ -26,6 +39,8 @@ serve(async (req: Request) => {
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
   try {
+    requireSyncEnv();
+
     // 1. Login to HP API
     const loginResp = await fetch(`${RESERVATION_API_BASE}/auth/session-login`, {
       method: "POST",
@@ -83,10 +98,14 @@ serve(async (req: Request) => {
     }
 
     // 3. Get existing HP units from DB to detect name changes
-    const { data: existingUnits } = await sb
+    const { data: existingUnits, error: existingUnitsError } = await sb
       .from("units")
       .select("hp_unit_id, name, property_name")
       .eq("source", "hostplatform");
+    if (existingUnitsError) {
+      throw new Error(`Failed to load existing HostPlatform units: ${existingUnitsError.message}`);
+    }
+    const writeErrors: string[] = [];
 
     const existingMap: Record<string, { name: string; property_name: string }> = {};
     if (existingUnits) {
@@ -120,22 +139,28 @@ serve(async (req: Request) => {
         nameChanges.push({ hp_unit_id: hpId, newName: unitName });
       }
 
-      const { error } = await sb.from("units").upsert(
-        {
-          hp_unit_id: hpId,
-          name: unitName,
-          property_name: propertyName,
-          hp_property_id: hpPropertyId,
-          source: "hostplatform",
-          active: true,
-          synced_at: syncedAt,
-        },
-        { onConflict: "hp_unit_id" }
-      );
+      const payload = {
+        hp_unit_id: hpId,
+        name: unitName,
+        property_name: propertyName,
+        hp_property_id: hpPropertyId,
+        source: "hostplatform",
+        active: true,
+        synced_at: syncedAt,
+      };
+      const writeQuery = existing
+        ? sb.from("units").update(payload).eq("hp_unit_id", hpId)
+        : sb.from("units").insert(payload);
+      const { error } = await writeQuery;
 
       if (error) {
         console.error(`Upsert unit ${hpId} (${unitName}):`, error);
+        writeErrors.push(`upsert ${unitName || hpId}: ${error.message}`);
       }
+    }
+
+    if (writeErrors.length) {
+      throw new Error(`Failed to write ${writeErrors.length} HostPlatform unit row(s). First error: ${writeErrors[0]}`);
     }
 
     // 5. Update claims.unit display name where unit name changed
@@ -146,15 +171,23 @@ serve(async (req: Request) => {
         .eq("hp_unit_id", change.hp_unit_id);
       if (error) {
         console.error(`Update claims for unit ${change.hp_unit_id}:`, error);
+        writeErrors.push(`claims update ${change.hp_unit_id}: ${error.message}`);
       }
+    }
+
+    if (writeErrors.length) {
+      throw new Error(`Sync write follow-up failed. First error: ${writeErrors[0]}`);
     }
 
     // 6. Deactivate HP units no longer returned by the API
     //    Query all hostplatform units from DB, then deactivate those not in seenHpIds
-    const { data: allHpDbUnits } = await sb
+    const { data: allHpDbUnits, error: allHpDbUnitsError } = await sb
       .from("units")
       .select("hp_unit_id")
       .eq("source", "hostplatform");
+    if (allHpDbUnitsError) {
+      throw new Error(`Failed to load current HostPlatform units: ${allHpDbUnitsError.message}`);
+    }
 
     if (allHpDbUnits && allHpDbUnits.length > 0) {
       const seenSet = new Set(seenHpIds);
@@ -169,6 +202,7 @@ serve(async (req: Request) => {
           .in("hp_unit_id", toDeactivate);
         if (error) {
           console.error("Deactivate missing units:", error);
+          throw new Error(`Failed to deactivate missing HP units: ${error.message}`);
         } else {
           console.log(`Deactivated ${toDeactivate.length} units no longer in HP`);
         }

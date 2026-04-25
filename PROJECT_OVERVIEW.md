@@ -31,6 +31,12 @@ Testing environment remains the default working target in `homestayERP-test`.
 Canonical live environment is `homestay-expenses`.
 
 Recent completed work:
+- HostPlatform unit pairing data was repaired in test:
+  - `units.hp_unit_id` is now treated as nullable for internal units and protected by a unique non-null index for synced HP rows.
+  - Legacy `auto_synced` rows are normalized into the canonical `source='hostplatform'` model.
+  - Legacy HP duplicates that already have a canonical `property_name + unit` replacement are deactivated instead of continuing to clutter pairing.
+  - The pairing screen now shows active HostPlatform rows only, while the Units summary still reports how many inactive HP rows are hidden.
+  - `sync-units` and `sync-reservations` now fail closed when required env/config is missing instead of returning a misleading success.
 - Environment separation was tightened:
   - Test remains `homestayERP-test` with Supabase `skwogboredsczcyhlqgn`.
   - Live remains `homestay-expenses` with Supabase `afcifzghlkxvnpulahub`.

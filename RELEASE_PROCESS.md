@@ -35,6 +35,15 @@ This file defines how changes move through test and live environments for this p
 5. Validate in test environment.
 6. Wait for explicit user approval before touching live.
 
+## HostPlatform Unit Repair Rule
+- If `HostPlatform Pairing` is blank after a unit sync, check the target `units` table before changing UI behavior.
+- The canonical model is:
+  - active HP rows use `source='hostplatform'`
+  - internal/manual rows do not keep HP identity fields
+  - `hp_unit_id` must be nullable for internal rows and uniquely indexed when non-null
+- Use `supabase-repair-hp-unit-pairing.sql` for idempotent repair in the target environment first.
+- After that repair, redeploy `sync-units` and `sync-reservations` in the same environment before promoting further.
+
 ## Live Promotion Rule
 - Live deployment requires a clear user instruction in that turn.
 - Prefer promoting a tested change, not redoing the work separately for live.

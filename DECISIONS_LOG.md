@@ -1,5 +1,11 @@
 # Decisions Log
 
+## 2026-04-25: Canonicalize HostPlatform Unit Rows Before Pairing
+Decision: Repair `units` so active HostPlatform rows use the canonical `source='hostplatform'` plus real `hp_unit_id`, while internal/manual rows carry no HP identity fields and matched legacy HP duplicates are deactivated.
+
+Reason:
+The pairing UI depends on canonical HostPlatform rows. Legacy `auto_synced` rows, fake/random `hp_unit_id` values on internal rows, and a global unique-name constraint caused sync drift and blank pairing results even after a successful HP sync.
+
 ## 2026-04-25: Separate Internal Units From HostPlatform Pairing
 Decision: Split the admin unit UX into distinct `Internal Units` and `HostPlatform Pairing` flows, while keeping the existing storage fields and pairing logic unchanged.
 

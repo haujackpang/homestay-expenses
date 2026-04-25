@@ -16,6 +16,19 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function requireSyncEnv() {
+  const missing = [
+    !SUPABASE_SERVICE_KEY ? "SUPABASE_SERVICE_ROLE_KEY" : "",
+    !RESERVATION_EMAIL ? "RESERVATION_EMAIL" : "",
+    !RESERVATION_PASSWORD ? "RESERVATION_PASSWORD" : "",
+    !RESERVATION_API_BASE ? "RESERVATION_API_BASE" : "",
+  ].filter(Boolean);
+
+  if (missing.length) {
+    throw new Error(`Missing required env: ${missing.join(", ")}`);
+  }
+}
+
 // ── Helpers ──────────────────────────────────────────────────────
 
 /** Extract code from parentheses, fallback to full string */
@@ -56,6 +69,8 @@ serve(async (req: Request) => {
   let logId: number | null = null;
 
   try {
+    requireSyncEnv();
+
     // Determine sync type from body (manual vs auto)
     let syncType = "auto";
     try {
@@ -90,7 +105,13 @@ serve(async (req: Request) => {
     if (!token) throw new Error("No token in login response");
 
     // 3. Load HP units for matching unit_raw → hp_unit_id
-    const { data: hpUnits } = await sb.from("units").select("hp_unit_id, name").eq("source", "hostplatform");
+    const { data: hpUnits, error: hpUnitsError } = await sb
+      .from("units")
+      .select("hp_unit_id, name")
+      .eq("source", "hostplatform");
+    if (hpUnitsError) {
+      throw new Error(`Failed to load HostPlatform units: ${hpUnitsError.message}`);
+    }
     const unitRawToHpId: Record<string, string> = {};
     if (hpUnits) {
       for (const u of hpUnits) {
