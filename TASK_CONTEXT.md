@@ -38,7 +38,7 @@ Recent unit-pairing context:
   - `units_hp_unit_id_idx` now protects non-null `hp_unit_id`
   - matched legacy HP duplicates were deactivated
   - two unmatched legacy HP rows (`KT 150A`, `SG 34F`) remain active until HP returns canonical replacements
-- Live reservation import was added as an hourly GitHub Actions schedule that calls `sync-reservations`.
+- Live reservation import now runs every 5 minutes in `haujackpang/homestay-expenses`, while test runs daily at 12:00 AM in `haujackpang/homestayERP-test`.
 - OpenAI API usage requires an API key in Supabase secrets. Codex itself is not an app-callable OCR backend.
 - The current OCR implementation uses `gpt-4o-mini` by default when `OPENAI_API_KEY` is available.
 - Test Supabase currently has no `OPENAI_API_KEY` and no `OPENROUTER_API_KEY`, so OCR returns a clear configuration error until a provider key is added.

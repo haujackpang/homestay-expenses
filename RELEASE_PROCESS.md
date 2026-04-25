@@ -45,9 +45,9 @@ This file defines how changes move through test and live environments for this p
 - After that repair, redeploy `sync-units` and `sync-reservations` in the same environment before promoting further.
 
 ## Reservation Import Schedule
-- Live reservation imports are handled by the `Scheduled Reservation Import` GitHub Actions workflow in `haujackpang/homestay-expenses`.
-- The schedule is hourly and should stay live-only.
-- Test should not gain a copy of the live reservation schedule unless the user explicitly asks for it.
+- Live reservation imports are handled by `Scheduled Reservation Import` in `haujackpang/homestay-expenses` and run every 5 minutes.
+- Test reservation imports are handled by `Scheduled Reservation Import (Test)` in `haujackpang/homestayERP-test` and run daily at 12:00 AM.
+- Keep the schedules repo-specific so test and live do not share cadence or secrets.
 
 ## Live Promotion Rule
 - Live deployment requires a clear user instruction in that turn.
