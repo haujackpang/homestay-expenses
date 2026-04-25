@@ -4,7 +4,7 @@
 Latest completed task: simplify the unit-pairing UX so admin users can understand the difference between internal units and HostPlatform pairing.
 
 Current focus:
-1. Environment separation has been re-tightened: test is `homestayERP-test` / `skwogboredsczcyhlqgn`, live is `homestay-expenses` / `afcifzghlkxvnpulahub`, and `homestayERP-prod` is obsolete.
+1. Environment separation has been re-tightened: test is `homestayERP-test` / `afcifzghlkxvnpulahub`, live is `homestay-expenses` / `skwogboredsczcyhlqgn`, and `homestayERP-prod` is obsolete.
 2. The `TESTING` watermark should be controlled by the test Pages path only, not by Supabase URL alone.
 3. Pushing to live means code/workflow/functions/required idempotent DB structure only; do not copy or sync table data between environments.
 4. HostPlatform pairing now assumes only active canonical `source='hostplatform'` rows should be shown in the pairing list.
@@ -19,7 +19,7 @@ Recent unit-pairing context:
 - User has already executed the test Supabase script that adds unit-level cleaning/laundry columns.
 - Test and live Supabase functions are deployed and direct function calls succeeded after secrets were copied/configured.
 - `admin-users` now supports user listing fallback and password reset updates for system admin accounts.
-- The same `admin-users` fix was deployed to both test project `skwogboredsczcyhlqgn` and live project `afcifzghlkxvnpulahub`.
+- The same `admin-users` fix was deployed to both test project `afcifzghlkxvnpulahub` and live project `skwogboredsczcyhlqgn`.
 - Live repo and live Supabase remain separate from test; app code must not contain runtime fallback behavior that reconnects live pages to test data.
 - Previous `homestayERP-prod` repo should be treated as obsolete and not used for deployment.
 - Runtime config validation must not compare against placeholder literals that the deploy workflow replaces globally.

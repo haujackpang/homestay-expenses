@@ -50,9 +50,9 @@ jobs:
 
           configured_env = 'UNKNOWN'
           if 'skwogboredsczcyhlqgn' in supabase_url:
-              configured_env = 'TEST'
-          elif 'afcifzghlkxvnpulahub' in supabase_url:
               configured_env = 'LIVE'
+          elif 'afcifzghlkxvnpulahub' in supabase_url:
+              configured_env = 'TEST'
           else:
               print(f"ERROR: Unknown Supabase project: {supabase_url}")
               exit(1)

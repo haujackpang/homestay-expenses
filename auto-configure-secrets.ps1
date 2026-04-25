@@ -13,14 +13,14 @@ $Environments = @{
     test = @{
         Label = "TEST"
         Repo = "haujackpang/homestayERP-test"
-        ProjectRef = "skwogboredsczcyhlqgn"
-        Url = "https://skwogboredsczcyhlqgn.supabase.co"
+        ProjectRef = "afcifzghlkxvnpulahub"
+        Url = "https://afcifzghlkxvnpulahub.supabase.co"
     }
     live = @{
         Label = "LIVE"
         Repo = "haujackpang/homestay-expenses"
-        ProjectRef = "afcifzghlkxvnpulahub"
-        Url = "https://afcifzghlkxvnpulahub.supabase.co"
+        ProjectRef = "skwogboredsczcyhlqgn"
+        Url = "https://skwogboredsczcyhlqgn.supabase.co"
     }
 }
 

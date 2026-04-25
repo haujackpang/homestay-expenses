@@ -4,8 +4,8 @@
 
 | Environment | Git remote | GitHub repo | Supabase project | App URL |
 | --- | --- | --- | --- | --- |
-| Test | `origin-test` | `haujackpang/homestayERP-test` | `skwogboredsczcyhlqgn` | `https://haujackpang.github.io/homestayERP-test` |
-| Live | `origin` | `haujackpang/homestay-expenses` | `afcifzghlkxvnpulahub` | `https://haujackpang.github.io/homestay-expenses` |
+| Test | `origin-test` | `haujackpang/homestayERP-test` | `afcifzghlkxvnpulahub` | `https://haujackpang.github.io/homestayERP-test` |
+| Live | `origin` | `haujackpang/homestay-expenses` | `skwogboredsczcyhlqgn` | `https://haujackpang.github.io/homestay-expenses` |
 
 The old `homestayERP-prod` repo is obsolete and should not be used for live deployment.
 
@@ -35,8 +35,8 @@ Use `GITHUB_SECRETS_CONFIG.md` as the source of truth.
 
 Expected repo pairing:
 
-- `haujackpang/homestayERP-test` must use `https://skwogboredsczcyhlqgn.supabase.co`.
-- `haujackpang/homestay-expenses` must use `https://afcifzghlkxvnpulahub.supabase.co`.
+- `haujackpang/homestayERP-test` must use `https://afcifzghlkxvnpulahub.supabase.co`.
+- `haujackpang/homestay-expenses` must use `https://skwogboredsczcyhlqgn.supabase.co`.
 
 The deploy workflow checks this pairing and fails if a known active repo is configured with the wrong Supabase project.
 

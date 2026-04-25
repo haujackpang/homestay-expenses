@@ -43,7 +43,7 @@ home_expense.htm → android-app/app/src/main/assets/home_expense.htm
 
 ## Supabase 配置
 
-- Project URL: `https://skwogboredsczcyhlqgn.supabase.co`
+- Project URL: `https://afcifzghlkxvnpulahub.supabase.co`
 - RLS 策略在 `fix-policies.sql` 和 `supabase-setup.sql`
 - Edge Function 需要环境变量：`OPENROUTER_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 

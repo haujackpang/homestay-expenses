@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ── Config ──────────────────────────────────────────────────────
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "https://skwogboredsczcyhlqgn.supabase.co";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "https://afcifzghlkxvnpulahub.supabase.co";
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const RESERVATION_EMAIL = Deno.env.get("RESERVATION_EMAIL") || "";
 const RESERVATION_PASSWORD = Deno.env.get("RESERVATION_PASSWORD") || "";

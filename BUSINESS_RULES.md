@@ -10,8 +10,8 @@
 - Testing app must use `homestayERP-test`.
 - Live app must use `homestay-expenses`.
 - `homestayERP-prod` is obsolete and must not be used as the live repo.
-- Test Supabase project ref: `skwogboredsczcyhlqgn`.
-- Live Supabase project ref: `afcifzghlkxvnpulahub`.
+- Test Supabase project ref: `afcifzghlkxvnpulahub`.
+- Live Supabase project ref: `skwogboredsczcyhlqgn`.
 - Missing deployment config must not silently fall back to the test Supabase project.
 - If Supabase config is missing, the app should fail clearly instead of showing mixed-environment data.
 - Test-only UI, including the `TESTING` watermark, must be based on the test Pages path and not on Supabase URL alone.

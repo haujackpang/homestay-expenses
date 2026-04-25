@@ -6,8 +6,8 @@ This document describes how scheduled HostPlatform reservation sync should be co
 
 | Environment | Supabase project ref | Function URL base |
 | --- | --- | --- |
-| Test | `skwogboredsczcyhlqgn` | `https://skwogboredsczcyhlqgn.supabase.co/functions/v1` |
-| Live | `afcifzghlkxvnpulahub` | `https://afcifzghlkxvnpulahub.supabase.co/functions/v1` |
+| Test | `afcifzghlkxvnpulahub` | `https://afcifzghlkxvnpulahub.supabase.co/functions/v1` |
+| Live | `skwogboredsczcyhlqgn` | `https://skwogboredsczcyhlqgn.supabase.co/functions/v1` |
 
 Do not copy cron jobs, reservations, units, or sync logs between environments. Configure each project directly.
 
@@ -23,7 +23,7 @@ select cron.schedule(
   '0 1 * * *',
   $$
   select net.http_post(
-    url := 'https://skwogboredsczcyhlqgn.supabase.co/functions/v1/sync-reservations',
+    url := 'https://afcifzghlkxvnpulahub.supabase.co/functions/v1/sync-reservations',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer [TEST_ANON_KEY]'
@@ -47,7 +47,7 @@ select cron.schedule(
   '*/5 * * * *',
   $$
   select net.http_post(
-    url := 'https://afcifzghlkxvnpulahub.supabase.co/functions/v1/sync-reservations',
+    url := 'https://skwogboredsczcyhlqgn.supabase.co/functions/v1/sync-reservations',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer [LIVE_ANON_KEY]'
