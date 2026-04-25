@@ -229,6 +229,15 @@ function openRouterModels() {
   return [OPENROUTER_PRIMARY_MODEL, ...fallbackModels].filter((model, idx, arr) => model && arr.indexOf(model) === idx);
 }
 
+function shouldTryNextOpenRouterModel(status: number, errMsg: string) {
+  const normalized = cleanText(errMsg).toLowerCase();
+  if ([400, 404, 408, 409, 425, 429, 500, 502, 503, 504].includes(status)) return true;
+  if (normalized.includes("no endpoints found")) return true;
+  if (normalized.includes("provider returned error")) return true;
+  if (normalized.includes("temporarily unavailable")) return true;
+  return false;
+}
+
 async function analyzeWithOpenRouter(prompt: string, dataUrl: string) {
   let rawText = "";
   let lastErr = "";
@@ -269,7 +278,7 @@ async function analyzeWithOpenRouter(prompt: string, dataUrl: string) {
         } catch { /* keep HTTP status */ }
         await logError("warn", "analyze-receipt", `OpenRouter model ${model} failed: ${errMsg}`, { model, status: response.status });
         lastErr = errMsg;
-        if ([429, 502, 503].includes(response.status)) continue;
+        if (shouldTryNextOpenRouterModel(response.status, errMsg)) continue;
         break;
       }
 
