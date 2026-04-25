@@ -993,14 +993,11 @@ async function optimizeImageForAI(file){
 }
 
 async function uploadScanFileForAI(file){
-  var userId=currentUser&&currentUser.id?currentUser.id:'unknown';
-  var safeName=(file.name||'receipt-scan.jpg').replace(/[^a-zA-Z0-9._-]+/g,'_');
-  var path='ai-scan/'+userId+'/'+Date.now()+'_'+safeName;
-  var res=await sb.storage.from('receipts').upload(path,file,{upsert:true,contentType:file.type||'image/jpeg'});
-  if(res.error)throw new Error('Failed to upload receipt for AI scan.');
-  var urlData=sb.storage.from('receipts').getPublicUrl(path);
-  if(!urlData||!urlData.data||!urlData.data.publicUrl)throw new Error('Failed to prepare receipt for AI scan.');
-  return {path:path,url:urlData.data.publicUrl};
+  var upload=await callEdgeFunction('process-invoice',{action:'create-ai-scan-upload',fileName:file.name||'receipt-scan.jpg',mimeType:file.type||'image/jpeg'});
+  if(!upload||!upload.path||!upload.token)throw new Error('Failed to prepare receipt for AI scan.');
+  var res=await sb.storage.from('receipts').uploadToSignedUrl(upload.path,upload.token,file,{contentType:file.type||'image/jpeg'});
+  if(res.error)throw new Error('Failed to upload receipt for AI scan: '+(res.error.message||'Storage upload rejected.'));
+  return {path:upload.path};
 }
 
 function pickReceiptForAI(){
@@ -1032,7 +1029,7 @@ async function analyzeInvoiceFile(f,unit){
   var uploadedScan=await uploadScanFileForAI(scanFile);
   var result;
   try{
-    result=await callEdgeFunction('process-invoice',{fileUrl:uploadedScan.url,mimeType:mimeType,unit:unit||''});
+    result=await callEdgeFunction('process-invoice',{storagePath:uploadedScan.path,mimeType:mimeType,unit:unit||''});
   }catch(e){
     var msg=e&&e.message?e.message:String(e||'');
     if(msg==='Failed to fetch'||msg.toLowerCase().indexOf('network request failed')>=0){

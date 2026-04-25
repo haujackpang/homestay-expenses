@@ -97,6 +97,25 @@ function normalizedDescription(ai: Record<string, unknown>, unit: string, month:
   return parts.join(" ");
 }
 
+async function ensureReceiptsBucket(admin: ReturnType<typeof createClient>) {
+  const { data } = await admin.storage.getBucket("receipts");
+  if (data) return;
+  const { error } = await admin.storage.createBucket("receipts", {
+    public: false,
+    fileSizeLimit: 10 * 1024 * 1024,
+  });
+  if (error && !String(error.message || "").toLowerCase().includes("already exists")) {
+    throw error;
+  }
+}
+
+function safeStorageName(value: unknown) {
+  const name = String(value || "receipt-scan.jpg")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return name || "receipt-scan.jpg";
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "POST required" }, 405);
@@ -118,6 +137,31 @@ serve(async (req: Request) => {
     if (!profile || profile.active === false) return json({ error: "Profile not active" }, 403);
 
     const body = await req.json();
+    if (body.action === "create-ai-scan-upload") {
+      await ensureReceiptsBucket(admin);
+      const safeName = safeStorageName(body.fileName);
+      const path = `ai-scan/${userData.user.id}/${Date.now()}_${safeName}`;
+      const { data, error } = await admin.storage.from("receipts").createSignedUploadUrl(path);
+      if (error || !data) return json({ ok: false, error: error?.message || "Failed to prepare AI scan upload" }, 500);
+      return json({
+        ok: true,
+        bucket: "receipts",
+        path,
+        token: data.token,
+        signedUrl: data.signedUrl,
+      });
+    }
+
+    let fileUrl = body.fileUrl;
+    if (body.storagePath) {
+      await ensureReceiptsBucket(admin);
+      const { data, error } = await admin.storage
+        .from("receipts")
+        .createSignedUrl(String(body.storagePath), 300);
+      if (error || !data?.signedUrl) return json({ ok: false, error: error?.message || "Failed to read AI scan upload" }, 500);
+      fileUrl = data.signedUrl;
+    }
+
     const analyzeResp = await fetch(`${SUPABASE_URL}/functions/v1/analyze-receipt`, {
       method: "POST",
       headers: {
@@ -127,7 +171,7 @@ serve(async (req: Request) => {
       },
       body: JSON.stringify({
         base64Data: body.base64Data,
-        fileUrl: body.fileUrl,
+        fileUrl,
         mimeType: body.mimeType,
         unit: body.unit || "",
       }),
