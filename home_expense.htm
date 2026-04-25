@@ -951,6 +951,56 @@ async function pdfToImageFile(file){
   });
 }
 
+function fileToDataUrl(file){
+  var reader=new FileReader();
+  return new Promise(function(resolve,reject){
+    reader.onload=function(){resolve(reader.result);};
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImageElement(src){
+  return new Promise(function(resolve,reject){
+    var img=new Image();
+    img.onload=function(){resolve(img);};
+    img.onerror=function(){reject(new Error('Image load failed'));};
+    img.src=src;
+  });
+}
+
+async function optimizeImageForAI(file){
+  var mimeType=(file.type||'').toLowerCase();
+  if(!mimeType||mimeType==='application/pdf'||mimeType==='image/gif')return file;
+  var src=URL.createObjectURL(file);
+  try{
+    var img=await loadImageElement(src);
+    var maxDim=Math.max(img.width||0,img.height||0);
+    if(file.size<=4*1024*1024&&maxDim<=1800)return file;
+    var scale=maxDim>1800?1800/maxDim:1;
+    var canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round((img.width||1)*scale));
+    canvas.height=Math.max(1,Math.round((img.height||1)*scale));
+    var ctx=canvas.getContext('2d');
+    if(!ctx)throw new Error('Canvas not available');
+    ctx.fillStyle='#ffffff';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    var qualities=[0.9,0.82,0.74,0.66];
+    var bestBlob=null;
+    for(var i=0;i<qualities.length;i++){
+      var blob=await new Promise(function(resolve){canvas.toBlob(resolve,'image/jpeg',qualities[i]);});
+      if(!blob)continue;
+      bestBlob=blob;
+      if(blob.size<=4*1024*1024)break;
+    }
+    if(!bestBlob)throw new Error('Image compression failed');
+    return new File([bestBlob],file.name.replace(/\.[^.]+$/,'')+'.jpg',{type:'image/jpeg'});
+  }finally{
+    URL.revokeObjectURL(src);
+  }
+}
+
 function pickReceiptForAI(){
   var inp=document.getElementById('receipt-input');
   if(!inp){inp=document.createElement('input');inp.type='file';inp.id='receipt-input';inp.accept='image/*,.pdf';inp.style.display='none';inp.setAttribute('capture','environment');document.body.appendChild(inp);}
@@ -972,12 +1022,22 @@ function pickReceiptForAI(){
 window.pickReceiptForAI=pickReceiptForAI;
 
 async function analyzeInvoiceFile(f,unit){
-  var ext=f.name.split('.').pop().toLowerCase();
+  var scanFile=await optimizeImageForAI(f);
+  if(scanFile.size>5*1024*1024)throw new Error('Receipt photo is too large. Please crop it or use a clearer photo under 5MB.');
+  var ext=scanFile.name.split('.').pop().toLowerCase();
   var mimeMap={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',pdf:'application/pdf'};
-  var mimeType=mimeMap[ext]||'image/jpeg';
-  var reader=new FileReader();
-  var base64=await new Promise(function(resolve,reject){reader.onload=function(){resolve(reader.result);};reader.onerror=reject;reader.readAsDataURL(f);});
-  var result=await callEdgeFunction('process-invoice',{base64Data:base64,mimeType:mimeType,unit:unit||''});
+  var mimeType=(scanFile.type||mimeMap[ext]||'image/jpeg').toLowerCase();
+  var base64=await fileToDataUrl(scanFile);
+  var result;
+  try{
+    result=await callEdgeFunction('process-invoice',{base64Data:base64,mimeType:mimeType,unit:unit||''});
+  }catch(e){
+    var msg=e&&e.message?e.message:String(e||'');
+    if(msg==='Failed to fetch'||msg.toLowerCase().indexOf('network request failed')>=0){
+      throw new Error('Network request failed while scanning receipt. Please retry with a clearer photo under 5MB.');
+    }
+    throw e;
+  }
   var ai=result.ai||result;
   ai.duplicate_claims=result.duplicate_claims||[];
   ai.suggested=result.suggested||{};
