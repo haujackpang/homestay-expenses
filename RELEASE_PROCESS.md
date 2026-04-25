@@ -44,6 +44,11 @@ This file defines how changes move through test and live environments for this p
 - Use `supabase-repair-hp-unit-pairing.sql` for idempotent repair in the target environment first.
 - After that repair, redeploy `sync-units` and `sync-reservations` in the same environment before promoting further.
 
+## Reservation Import Schedule
+- Live reservation imports are handled by the `Scheduled Reservation Import` GitHub Actions workflow in `haujackpang/homestay-expenses`.
+- The schedule is hourly and should stay live-only.
+- Test should not gain a copy of the live reservation schedule unless the user explicitly asks for it.
+
 ## Live Promotion Rule
 - Live deployment requires a clear user instruction in that turn.
 - Prefer promoting a tested change, not redoing the work separately for live.

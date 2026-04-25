@@ -31,6 +31,9 @@ Testing environment remains the default working target in `homestayERP-test`.
 Canonical live environment is `homestay-expenses`.
 
 Recent completed work:
+- Live reservation import now has a GitHub Actions schedule in the live repo:
+  - `Scheduled Reservation Import` runs hourly and calls the live `sync-reservations` Edge Function.
+  - It is guarded so it only runs in `haujackpang/homestay-expenses`, not the test repo.
 - HostPlatform unit pairing data was repaired in test:
   - `units.hp_unit_id` is now treated as nullable for internal units and protected by a unique non-null index for synced HP rows.
   - Legacy `auto_synced` rows are normalized into the canonical `source='hostplatform'` model.

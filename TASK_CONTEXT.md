@@ -9,6 +9,7 @@ Current focus:
 3. Pushing to live means code/workflow/functions/required idempotent DB structure only; do not copy or sync table data between environments.
 4. HostPlatform pairing now assumes only active canonical `source='hostplatform'` rows should be shown in the pairing list.
 5. Use `supabase-repair-hp-unit-pairing.sql` when a target environment has legacy HP rows, missing `hp_unit_id` uniqueness, or blank pairing after sync.
+6. Live reservation syncing now has a GitHub Actions cron workflow in `haujackpang/homestay-expenses`.
 
 Recent unit-pairing context:
 1. `Units` now acts as a landing page with separate entry points for `Internal Units`, `HostPlatform Pairing`, and `Unit Configuration`.
@@ -37,6 +38,7 @@ Recent unit-pairing context:
   - `units_hp_unit_id_idx` now protects non-null `hp_unit_id`
   - matched legacy HP duplicates were deactivated
   - two unmatched legacy HP rows (`KT 150A`, `SG 34F`) remain active until HP returns canonical replacements
+- Live reservation import was added as an hourly GitHub Actions schedule that calls `sync-reservations`.
 - OpenAI API usage requires an API key in Supabase secrets. Codex itself is not an app-callable OCR backend.
 - The current OCR implementation uses `gpt-4o-mini` by default when `OPENAI_API_KEY` is available.
 - Test Supabase currently has no `OPENAI_API_KEY` and no `OPENROUTER_API_KEY`, so OCR returns a clear configuration error until a provider key is added.

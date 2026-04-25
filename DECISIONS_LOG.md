@@ -1,5 +1,11 @@
 # Decisions Log
 
+## 2026-04-25: Schedule Live Reservation Imports In GitHub Actions
+Decision: Add a live-only GitHub Actions cron workflow that calls the live `sync-reservations` Edge Function on an hourly schedule.
+
+Reason:
+The live app already had a manual reservation sync button, but no automatic import cadence. A repo-level schedule keeps live imports in the canonical live repo without mixing test and live behavior.
+
 ## 2026-04-25: Canonicalize HostPlatform Unit Rows Before Pairing
 Decision: Repair `units` so active HostPlatform rows use the canonical `source='hostplatform'` plus real `hp_unit_id`, while internal/manual rows carry no HP identity fields and matched legacy HP duplicates are deactivated.
 
