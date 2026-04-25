@@ -1,11 +1,18 @@
 const https = require('https');
 
-const SUPABASE_URL = 'skwogboredsczcyhlqgn.supabase.co';
-const API_KEY = 'sb_publishable_92g8DBB_Zf5cv8fqaFBdEA_1fK6e0VL';
+const SUPABASE_HOST = (process.env.SUPABASE_HOST || process.env.SUPABASE_URL || '')
+  .replace(/^https?:\/\//, '')
+  .replace(/\/$/, '');
+const API_KEY = process.env.SUPABASE_KEY;
+
+if (!SUPABASE_HOST || !API_KEY) {
+  console.error('Set SUPABASE_URL or SUPABASE_HOST, plus SUPABASE_KEY.');
+  process.exit(1);
+}
 
 // 先查询总数和日期范围
 const options = {
-  hostname: SUPABASE_URL,
+  hostname: SUPABASE_HOST,
   path: '/rest/v1/reservations?select=count&count=exact',
   method: 'GET',
   headers: {
@@ -28,7 +35,7 @@ const req = https.request(options, (res) => {
       
       // 获取日期范围
       const options2 = {
-        hostname: SUPABASE_URL,
+        hostname: SUPABASE_HOST,
         path: '/rest/v1/reservations?select=start_date&order=start_date.asc&limit=1',
         method: 'GET',
         headers: {
@@ -48,7 +55,7 @@ const req = https.request(options, (res) => {
           
           // 获取最晚日期
           const options3 = {
-            hostname: SUPABASE_URL,
+            hostname: SUPABASE_HOST,
             path: '/rest/v1/reservations?select=end_date&order=end_date.desc&limit=1',
             method: 'GET',
             headers: {
@@ -68,7 +75,7 @@ const req = https.request(options, (res) => {
               
               // 查询 4 月 1 日之后的数据
               const options4 = {
-                hostname: SUPABASE_URL,
+                hostname: SUPABASE_HOST,
                 path: '/rest/v1/reservations?start_date=gte.2026-04-01&select=start_date,end_date,code,unit_name&order=start_date.asc&limit=10',
                 method: 'GET',
                 headers: {

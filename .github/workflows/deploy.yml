@@ -26,34 +26,45 @@ jobs:
         run: |
           python3 << 'EOF'
           import re
-          
+
           with open('home_expense.htm', 'r', encoding='utf-8') as f:
               content = f.read()
-          
-          # Replace placeholders with actual secrets
+
           supabase_url = '${{ secrets.SUPABASE_URL }}'
           supabase_key = '${{ secrets.SUPABASE_KEY }}'
-          
+
           content = content.replace('__SUPABASE_URL__', supabase_url)
           content = content.replace('__SUPABASE_KEY__', supabase_key)
-          
-          # Verify all placeholders are replaced
+
           remaining = re.findall(r'__[A-Z_]+__', content)
           if remaining:
               print(f"ERROR: Placeholders still exist: {remaining}")
               exit(1)
-          
-          # Debug: verify correct environment
+
+          repo = '${{ github.repository }}'.lower()
+          expected_env = 'UNKNOWN'
+          if repo.endswith('/homestayerp-test'):
+              expected_env = 'TEST'
+          elif repo.endswith('/homestay-expenses'):
+              expected_env = 'LIVE'
+
+          configured_env = 'UNKNOWN'
           if 'skwogboredsczcyhlqgn' in supabase_url:
-              print("✓ Configured for TEST environment")
+              configured_env = 'TEST'
           elif 'afcifzghlkxvnpulahub' in supabase_url:
-              print("✓ Configured for LIVE environment")
+              configured_env = 'LIVE'
           else:
-              print(f"⚠ WARNING: Unknown Supabase project: {supabase_url}")
-          
-          print(f"✓ Supabase URL configured: {supabase_url}")
-          print("✓ All placeholders replaced successfully")
-          
+              print(f"ERROR: Unknown Supabase project: {supabase_url}")
+              exit(1)
+
+          if expected_env != 'UNKNOWN' and configured_env != expected_env:
+              print(f"ERROR: {repo} expects {expected_env}, but SUPABASE_URL is {configured_env}")
+              exit(1)
+
+          print(f"Configured for {configured_env} environment")
+          print(f"Supabase URL configured: {supabase_url}")
+          print("All placeholders replaced successfully")
+
           with open('home_expense.htm', 'w', encoding='utf-8') as f:
               f.write(content)
           EOF
@@ -63,9 +74,7 @@ jobs:
           mkdir -p _site
           cp home_expense.htm _site/index.html
           cp home_expense.htm _site/home_expense.htm
-          # Disable Jekyll
           touch _site/.nojekyll
-          # Copy other static files if needed
           if [ -f user-manual.htm ]; then cp user-manual.htm _site/user-manual.htm; fi
           if [ -f README.md ]; then cp README.md _site/README.md; fi
           echo "Build output:"

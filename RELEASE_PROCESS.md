@@ -8,6 +8,7 @@ This file defines how changes move through test and live environments for this p
 - Live repo: `homestay-expenses`
 - Test Supabase project: `skwogboredsczcyhlqgn`
 - Live Supabase project: `afcifzghlkxvnpulahub`
+- Obsolete repo: `homestayERP-prod` must not be used as the live deployment target.
 
 ## Current Live Setup
 - Live repo `homestay-expenses` is the canonical production repo under `haujackpang`.
@@ -24,6 +25,7 @@ This file defines how changes move through test and live environments for this p
 ## Default Rule
 - All changes go to test first unless the user explicitly says otherwise.
 - Never assume a change should go to live just because test is working.
+- Code/DB structure changes and data movement are separate. A live promotion must not copy or sync business data between test and live.
 
 ## Test-First Flow
 1. Implement the change locally.
@@ -41,6 +43,12 @@ This file defines how changes move through test and live environments for this p
   - target Supabase environment is live
   - required secrets/config are correct for live
 - If the promoted feature depends on Supabase Functions or database schema, deploy the matching functions and run only idempotent live SQL upgrades that are required for the tested code to work.
+- Do not copy, mirror, or reconcile table data between live and test during a live promotion unless the user gives a separate explicit data-migration instruction.
+
+## Environment UI Rule
+- Test-only UI markers, including the `TESTING` watermark, must be tied to the test GitHub Pages repo path (`/homestayERP-test`).
+- Supabase project URL must not by itself enable test-only UI on the live repo.
+- The deploy workflow should fail if the active repo is paired with the wrong known Supabase project.
 
 ## Commit / Push Checklist
 Before every commit or push, confirm:

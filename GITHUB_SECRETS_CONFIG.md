@@ -1,108 +1,69 @@
-# 🔐 GitHub Secrets 配置 - 快速参考
+# GitHub Secrets Configuration
 
-**生成时间**: 2026-04-14  
-**状态**: 准备配置 ⏳
+This file is the current reference for GitHub Actions secrets.
 
----
+## Environment Names
 
-## 第一步：配置 Prod 仓库 Secrets
+| Environment | GitHub repo | Supabase project ref | Pages URL |
+| --- | --- | --- | --- |
+| Test | `haujackpang/homestayERP-test` | `skwogboredsczcyhlqgn` | `https://haujackpang.github.io/homestayERP-test` |
+| Live | `haujackpang/homestay-expenses` | `afcifzghlkxvnpulahub` | `https://haujackpang.github.io/homestay-expenses` |
 
-### 🔗 直接链接：
-[👉 打开 Prod Repository Secrets](https://github.com/haujackpang/homestayERP-prod/settings/secrets/actions)
+`haujackpang/homestayERP-prod` is obsolete and must not be used as the live deployment target.
 
-### 需要添加的 3 个 Secrets：
+## Required Secrets
 
-| 名称 | 值 |
-|------|-----|
-| `SUPABASE_URL` | `https://skwogboredsczcyhlqgn.supabase.co` |
-| `SUPABASE_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTM2OTksImV4cCI6MjA4OTgyOTY5OX0.Ph11MbcGO-Xx4a52V7eg8x_sKr4fDnhEgKE1PxJm-h0` |
-| `SUPABASE_SERVICE_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDI1MzY5OSwiZXhwIjoyMDg5ODI5Njk5fQ.VuxUoTz2SRMqRLaYhZtqfrjfNLVyEKMF3v4MU_mfVoY` |
+Each active repo needs these Action secrets:
 
-### 配置步骤：
-1. ✅ 打开上面的链接
-2. ✅ 点击 **"New repository secret"**
-3. ✅ 依次添加上表中的 3 个 Secret
-4. ✅ 每个 Secret 名称**必须完全匹配**（注意大小写）
+| Secret | Meaning |
+| --- | --- |
+| `SUPABASE_URL` | The environment-specific Supabase project URL. |
+| `SUPABASE_KEY` | The environment-specific anon or publishable key used by the browser app. |
+| `SUPABASE_SERVICE_KEY` | The environment-specific service-role key used only by backend/admin automation. |
 
----
+Do not commit secret values into this repo. Use GitHub Secrets only.
 
-## 第二步：配置 Test 仓库 Secrets
+## Correct URLs
 
-### 🔗 直接链接：
-[👉 打开 Test Repository Secrets](https://github.com/haujackpang/homestayERP-test/settings/secrets/actions)
+Test repo:
 
-### 需要添加的 3 个 Secrets：
+```text
+SUPABASE_URL=https://skwogboredsczcyhlqgn.supabase.co
+```
 
-| 名称 | 值 |
-|------|-----|
-| `SUPABASE_URL` | `https://afcifzghlkxvnpulahub.supabase.co` |
-| `SUPABASE_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTM2OTksImV4cCI6MjA4OTgyOTY5OX0.Ph11MbcGO-Xx4a52V7eg8x_sKr4fDnhEgKE1PxJm-h0` |
-| `SUPABASE_SERVICE_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmY2lmemdobGt4dm5wdWxhaHViIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjA5OTExMSwiZXhwIjoyMDkxNjc1MTExfQ.BQIAxXsdq5D5CtFeJ-AqYzQ-jJhzsZYz9hQOpEofg-Q` |
+Live repo:
 
-### 配置步骤：
-1. ✅ 打开上面的链接
-2. ✅ 点击 **"New repository secret"**
-3. ✅ 依次添加上表中的 3 个 Secret
-4. ✅ 每个 Secret 名称**必须完全匹配**（注意大小写）
+```text
+SUPABASE_URL=https://afcifzghlkxvnpulahub.supabase.co
+```
 
----
+## Recommended Setup
 
-## 第三步：启用 GitHub Pages
+Use the safe helper script:
 
-### Prod 仓库 Pages 配置：
+```powershell
+.\auto-configure-secrets.ps1 -Target test
+```
 
-[👉 打开 Prod Pages 设置](https://github.com/haujackpang/homestayERP-prod/settings/pages)
+Live must be explicit:
 
-**步骤**:
-1. 找到 **Source** 部分
-2. 从下拉菜单选择 **GitHub Actions**
-3. 点击 **Save**
+```powershell
+.\auto-configure-secrets.ps1 -Target live
+```
 
-### Test 仓库 Pages 配置：
+The script reads current Supabase API keys from the Supabase CLI and writes them to the selected GitHub repo. It does not copy database data between environments.
 
-[👉 打开 Test Pages 设置](https://github.com/haujackpang/homestayERP-test/settings/pages)
+## Pages Settings
 
-**步骤**:
-1. 找到 **Source** 部分
-2. 从下拉菜单选择 **GitHub Actions**
-3. 点击 **Save**
+Set Pages source to `GitHub Actions` for each active repo:
 
----
+- Test: `https://github.com/haujackpang/homestayERP-test/settings/pages`
+- Live: `https://github.com/haujackpang/homestay-expenses/settings/pages`
 
-## ✅ 完成后监控部署
+## Safety Rules
 
-### 查看部署日志：
-
-- 📱 **Prod 部署**: https://github.com/haujackpang/homestayERP-prod/actions
-- 🧪 **Test 部署**: https://github.com/haujackpang/homestayERP-test/actions
-
-**等待状态**: 应该在 2-3 分钟内显示 ✅ (绿色勾号)
-
----
-
-## 🌍 访问部署的应用
-
-部署完成后: 
-
-- 📱 **Prod App**: https://haujackpang.github.io/homestayERP-prod
-- 🧪 **Test App**: https://haujackpang.github.io/homestayERP-test
-
-如果看到 **"Home Expense Tracker"** 表单，说明部署成功！🎉
-
----
-
-## 🔍 故障排除
-
-### 部署失败？
-- 检查 Secrets 名称是否**完全正确**（包括大小写）
-- 检查 SUPABASE_URL 没有多余空格
-- 查看 Actions 日志寻找具体错误信息
-
-### 网页显示 404？
-- 确认 Pages Source 设置为 **GitHub Actions**
-- 等待 3-5 分钟后重新加载
-- 按 `Ctrl+Shift+Del` 清除浏览器缓存
-
----
-
-**所有配置完成后，请告诉我！** 我会帮助你验证部署状态。
+- Default target is test.
+- Push to live only after the user explicitly says to push to live in that turn.
+- A live push means code, workflow, Edge Functions, and required idempotent DB structure changes only.
+- A live push must not copy, mirror, import, or sync business data from test to live.
+- If a repo secret points to the wrong Supabase project, the deploy workflow should fail instead of publishing a mixed environment.

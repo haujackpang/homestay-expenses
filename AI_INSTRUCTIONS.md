@@ -16,7 +16,8 @@ Strict behavior rules:
 - Protect secrets. Never print secret values in chat, commits, or docs.
 - Keep test and live environments separate.
 - When working on test, push only to `homestayERP-test` unless instructed otherwise.
+- Live repo is `homestay-expenses`; `homestayERP-prod` is obsolete.
+- If the user says push to live, promote only the tested code/workflow/Edge Functions/required idempotent DB structure. Do not copy or sync table data between test and live.
 - After changes, run a syntax check or the closest practical verification.
 - Update the memory files whenever business rules, release flow, task scope, or important decisions change.
 - Do not rely on chat history alone for long-lived project rules.
-

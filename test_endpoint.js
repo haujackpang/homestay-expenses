@@ -8,13 +8,23 @@ const body = JSON.stringify({
   mimeType: 'image/png'
 });
 
+const SUPABASE_HOST = (process.env.SUPABASE_HOST || process.env.SUPABASE_URL || '')
+  .replace(/^https?:\/\//, '')
+  .replace(/\/$/, '');
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
+if (!SUPABASE_HOST || !SUPABASE_KEY) {
+  console.error('Set SUPABASE_URL or SUPABASE_HOST, plus SUPABASE_KEY.');
+  process.exit(1);
+}
+
 const options = {
-  hostname: 'skwogboredsczcyhlqgn.supabase.co',
+  hostname: SUPABASE_HOST,
   path: '/functions/v1/analyze-receipt',
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI2MjUxMzUsImV4cCI6MjA1ODIwMTEzNX0.sb_publishable_92g8DBB_Zf5cv8fqaFBdEA_1fK6e0VL',
+    'Authorization': `Bearer ${SUPABASE_KEY}`,
     'Content-Length': Buffer.byteLength(body)
   }
 };

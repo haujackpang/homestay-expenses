@@ -1,11 +1,18 @@
 const https = require('https');
 
-const SUPABASE_URL = 'skwogboredsczcyhlqgn.supabase.co';
-const API_KEY = 'sb_publishable_92g8DBB_Zf5cv8fqaFBdEA_1fK6e0VL';
+const SUPABASE_HOST = (process.env.SUPABASE_HOST || process.env.SUPABASE_URL || '')
+  .replace(/^https?:\/\//, '')
+  .replace(/\/$/, '');
+const API_KEY = process.env.SUPABASE_KEY;
+
+if (!SUPABASE_HOST || !API_KEY) {
+  console.error('Set SUPABASE_URL or SUPABASE_HOST, plus SUPABASE_KEY.');
+  process.exit(1);
+}
 
 // 简单查询，不带任何过滤条件
 const options = {
-  hostname: SUPABASE_URL,
+  hostname: SUPABASE_HOST,
   path: '/rest/v1/reservations?limit=5',
   method: 'GET',
   headers: {

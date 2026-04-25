@@ -1,12 +1,19 @@
 const https = require('https');
 
-const SUPABASE_URL = 'skwogboredsczcyhlqgn.supabase.co';
-const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDI1MzY5OSwiZXhwIjoyMDg5ODI5Njk5fQ.VuxUoTz2SRMqRLaYhZtqfrjfNLVyEKMF3v4MU_mfVoY';
+const SUPABASE_HOST = (process.env.SUPABASE_HOST || process.env.SUPABASE_URL || '')
+  .replace(/^https?:\/\//, '')
+  .replace(/\/$/, '');
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+
+if (!SUPABASE_HOST || !SERVICE_KEY) {
+  console.error('Set SUPABASE_URL or SUPABASE_HOST, plus SUPABASE_SERVICE_KEY.');
+  process.exit(1);
+}
 
 function query(path) {
   return new Promise((resolve, reject) => {
     const options = {
-      hostname: SUPABASE_URL,
+      hostname: SUPABASE_HOST,
       path: path,
       method: 'GET',
       headers: {

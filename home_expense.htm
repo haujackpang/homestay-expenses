@@ -139,8 +139,7 @@ body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;
 // ===== SUPABASE CONFIG =====
 var SUPABASE_URL='__SUPABASE_URL__';
 var SUPABASE_KEY='__SUPABASE_KEY__';
-var TEST_SUPABASE_REF='skwogboredsczcyhlqgn';
-var LIVE_SUPABASE_REF='afcifzghlkxvnpulahub';
+var TEST_REPO_PATH='/homestayerp-test';
 var SUPABASE_CONFIG_ERROR='';
 SUPABASE_URL=String(SUPABASE_URL||'').trim();
 SUPABASE_KEY=String(SUPABASE_KEY||'').trim();
@@ -1356,8 +1355,9 @@ function render(){
   var host=(location&&location.hostname?location.hostname:'').toLowerCase();
   var path=(location&&location.pathname?location.pathname:'').toLowerCase();
   // 改进测试环境检测：支持多种方式识别 Test 环境
-  var repoLooksTest=path.indexOf('/homestayerp-test')>=0;
-  var isTestEnv=(SUPABASE_URL.indexOf(TEST_SUPABASE_REF)>=0)||repoLooksTest;
+  // Do not key this off Supabase project ref; live/test data config is separate from UI banner.
+  var repoLooksTest=path.indexOf(TEST_REPO_PATH)>=0;
+  var isTestEnv=repoLooksTest;
   var watermarkEl=document.getElementById('watermark-test');
   if(isTestEnv){
     if(!watermarkEl){var wm=document.createElement('div');wm.id='watermark-test';wm.className='watermark';wm.textContent='TESTING';phoneEl.appendChild(wm);}

@@ -9,11 +9,14 @@
 ## Environment Rules
 - Testing app must use `homestayERP-test`.
 - Live app must use `homestay-expenses`.
+- `homestayERP-prod` is obsolete and must not be used as the live repo.
 - Test Supabase project ref: `skwogboredsczcyhlqgn`.
 - Live Supabase project ref: `afcifzghlkxvnpulahub`.
 - Missing deployment config must not silently fall back to the test Supabase project.
 - If Supabase config is missing, the app should fail clearly instead of showing mixed-environment data.
+- Test-only UI, including the `TESTING` watermark, must be based on the test Pages path and not on Supabase URL alone.
 - Do not push test changes to live unless explicitly requested.
+- A live push means code, workflow, Edge Functions, and required idempotent DB structure only; do not copy or sync table data between test and live.
 - Do not expose secret values in chat or committed files.
 - Default deployment target is test, not live.
 - Live deployment requires explicit user approval in that turn.

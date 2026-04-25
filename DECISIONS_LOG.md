@@ -1,5 +1,17 @@
 # Decisions Log
 
+## 2026-04-25: Separate Internal Units From HostPlatform Pairing
+Decision: Split the admin unit UX into distinct `Internal Units` and `HostPlatform Pairing` flows, while keeping the existing storage fields and pairing logic unchanged.
+
+Reason:
+Users were reading `Property short code` as if it were the pairing key. The real rule is `HostPlatform property + unit -> internal unit`, so the UI should present that pairing decision directly instead of mixing it with internal-unit maintenance.
+
+## 2026-04-25: Demote `property_short` To Display Helper In The UI
+Decision: Present `property_short` as `Display code (optional)` for internal units and show it as read-only in HostPlatform pairing/edit flows.
+
+Reason:
+`property_short` still matters for display/report compatibility, but it should not compete with the actual pairing choice or imply that short code creates the HostPlatform mapping.
+
 ## 2026-04-23: Fixed Short Code Dropdown
 Decision: Property short code should use a predefined dropdown list instead of free text.
 
@@ -162,6 +174,9 @@ Decision: Maintain `haujackpang/homestayERP-prod` as a compatibility URL for exi
 Reason:
 The user still opens the old `homestayERP-prod` GitHub Pages URL. Keeping it functional avoids access disruption while `haujackpang/homestay-expenses` remains the canonical live repo.
 
+Status:
+Superseded on 2026-04-25. Do not use `homestayERP-prod` as a live alias anymore.
+
 ## 2026-04-24: Placeholder Detection Must Not Use Replaceable Literals
 Decision: Detect missing Supabase deployment config by validating URL/key shape, not by comparing against placeholder literals that GitHub Actions also replaces.
 
@@ -185,3 +200,33 @@ Decision: Add an explicit admin password reset action in the user management flo
 
 Reason:
 Support staff need a direct way to help users who forget their passwords without manual database edits or exposing secrets. The admin list now offers a reset-password action, and the backend updates the auth user password through the service role.
+
+## 2026-04-24: Admin User List Fallback
+Decision: When `auth.admin.listUsers()` is incomplete or unavailable, fall back to `profiles` rows so system admin can still see users and reach password reset actions.
+
+Reason:
+The Manage Users screen was showing `0 login user(s)` even though valid users existed. In practice the browser session, auth listing, or function env could fail before the admin reset flow became usable. Using `profiles` as a fallback keeps user management available while still preserving auth-based data when it is present.
+
+## 2026-04-24: Admin Users Redeployed To Test And Live
+Decision: Promote the updated `admin-users` Edge Function to both test and live after the user verified the test flow.
+
+Reason:
+The fix was validated in test, then deployed to the canonical live repo and live Supabase project so both environments share the same user-management behavior.
+
+## 2026-04-25: `homestayERP-prod` Is Obsolete
+Decision: Stop treating `haujackpang/homestayERP-prod` as a live alias. The active environments are now test repo `haujackpang/homestayERP-test` with Supabase `skwogboredsczcyhlqgn`, and live repo `haujackpang/homestay-expenses` with Supabase `afcifzghlkxvnpulahub`.
+
+Reason:
+The user confirmed `homestayERP-prod` is no longer used. Keeping it in setup guides or automation risks pushing live work to the wrong repo.
+
+## 2026-04-25: Watermark Must Follow Repo Path
+Decision: Show the `TESTING` watermark only when the app is served from the test Pages path, not when a Supabase project ref appears in runtime config.
+
+Reason:
+Supabase URL controls data access, but it should not decide whether live UI shows test-only branding. This prevents a live deployment from displaying a testing watermark because of a misconfigured secret.
+
+## 2026-04-25: Live Promotion Does Not Move Data
+Decision: A live promotion may include code, workflow config, Edge Functions, and required idempotent DB structure changes, but must not copy, mirror, or sync table data between test and live unless the user gives a separate explicit data-migration instruction.
+
+Reason:
+The user wants test and live deployment separated. Promoting tested code must not imply data synchronization between environments.

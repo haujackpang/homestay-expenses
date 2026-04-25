@@ -1,134 +1,50 @@
-# 🚀 GitHub 配置完整清单
+# Quick Setup Checklist
 
-## 第一部分：配置 Prod 仓库 Secrets
+## Current Naming
 
-### 📍 打开此链接：
-```
-https://github.com/haujackpang/homestayERP-prod/settings/secrets/actions
-```
+- Test repo: `haujackpang/homestayERP-test`
+- Test Supabase: `skwogboredsczcyhlqgn`
+- Test app: `https://haujackpang.github.io/homestayERP-test`
+- Live repo: `haujackpang/homestay-expenses`
+- Live Supabase: `afcifzghlkxvnpulahub`
+- Live app: `https://haujackpang.github.io/homestay-expenses`
 
-### 📋 添加 3 个 Secrets：
+Do not use `haujackpang/homestayERP-prod`; it is obsolete.
 
-**第 1 个 Secret:**
-- **Name:** `SUPABASE_URL`
-- **Value:** `https://skwogboredsczcyhlqgn.supabase.co`
-- 点击 "Add secret" ✅
+## Secrets Checklist
 
-**第 2 个 Secret:**
-- **Name:** `SUPABASE_KEY`
-- **Value:** `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTM2OTksImV4cCI6MjA4OTgyOTY5OX0.Ph11MbcGO-Xx4a52V7eg8x_sKr4fDnhEgKE1PxJm-h0`
-- 点击 "Add secret" ✅
+For each active repo, confirm these secrets exist:
 
-**第 3 个 Secret:**
-- **Name:** `SUPABASE_SERVICE_KEY`
-- **Value:** `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDI1MzY5OSwiZXhwIjoyMDg5ODI5Njk5fQ.VuxUoTz2SRMqRLaYhZtqfrjfNLVyEKMF3v4MU_mfVoY`
-- 点击 "Add secret" ✅
+- `SUPABASE_URL`
+- `SUPABASE_KEY`
+- `SUPABASE_SERVICE_KEY`
 
----
+Expected `SUPABASE_URL` values:
 
-## 第二部分：配置 Test 仓库 Secrets
+- Test: `https://skwogboredsczcyhlqgn.supabase.co`
+- Live: `https://afcifzghlkxvnpulahub.supabase.co`
 
-### 📍 打开此链接：
-```
-https://github.com/haujackpang/homestayERP-test/settings/secrets/actions
+Use the helper script when possible:
+
+```powershell
+.\auto-configure-secrets.ps1 -Target test
+.\auto-configure-secrets.ps1 -Target live
 ```
 
-### 📋 添加相同的 3 个 Secrets（TEST 仓库）：
+Only run the live command after live approval.
 
-**第 1 个 Secret:**
-- **Name:** `SUPABASE_URL`
-- **Value:** `https://afcifzghlkxvnpulahub.supabase.co`
-- 点击 "Add secret" ✅
+## Pages Checklist
 
-**第 2 个 Secret:**
-- **Name:** `SUPABASE_KEY`
-- **Value:** `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTM2OTksImV4cCI6MjA4OTgyOTY5OX0.Ph11MbcGO-Xx4a52V7eg8x_sKr4fDnhEgKE1PxJm-h0`
-- 点击 "Add secret" ✅
+- Test Pages source is `GitHub Actions`.
+- Live Pages source is `GitHub Actions`.
+- Test Actions page: `https://github.com/haujackpang/homestayERP-test/actions`
+- Live Actions page: `https://github.com/haujackpang/homestay-expenses/actions`
 
-**第 3 个 Secret:**
-- **Name:** `SUPABASE_SERVICE_KEY`
-- **Value:** `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmY2lmemdobGt4dm5wdWxhaHViIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjA5OTExMSwiZXhwIjoyMDkxNjc1MTExfQ.BQIAxXsdq5D5CtFeJ-AqYzQ-jJhzsZYz9hQOpEofg-Q`
-- 点击 "Add secret" ✅
+## Release Checklist
 
----
-
-## 第三部分：启用 Prod Pages
-
-### 📍 打开此链接：
-```
-https://github.com/haujackpang/homestayERP-prod/settings/pages
-```
-
-### ⚙️ 步骤：
-1. 找到 **"Source"** 部分
-2. 从下拉菜单选择 **"GitHub Actions"**
-3. 点击 **"Save"** ✅
-
----
-
-## 第四部分：启用 Test Pages
-
-### 📍 打开此链接：
-```
-https://github.com/haujackpang/homestayERP-test/settings/pages
-```
-
-### ⚙️ 步骤：
-1. 找到 **"Source"** 部分
-2. 从下拉菜单选择 **"GitHub Actions"**
-3. 点击 **"Save"** ✅
-
----
-
-## 第五部分：验证部署
-
-### 📊 检查 GitHub Actions 状态
-
-**Prod 仓库：**
-```
-https://github.com/haujackpang/homestayERP-prod/actions
-```
-- 应该显示绿色 ✅ 或黄色 ⏳ 状态
-- 等待 2-3 分钟直到显示绿色 ✅
-
-**Test 仓库：**
-```
-https://github.com/haujackpang/homestayERP-test/actions
-```
-- 应该显示绿色 ✅ 或黄色 ⏳ 状态
-- 等待 2-3 分钟直到显示绿色 ✅
-
----
-
-## 第六部分：访问你的应用
-
-### 🎉 部署完成后，访问：
-
-**Prod 应用:**
-```
-https://haujackpang.github.io/homestayERP-prod
-```
-
-**Test 应用:**
-```
-https://haujackpang.github.io/homestayERP-test
-```
-
-如果看到 **"Home Expense Tracker"** 表单，说明部署成功！🎉
-
----
-
-## ✅ 完成检查
-
-- [ ] Prod 仓库：3 个 Secrets 已添加
-- [ ] Test 仓库：3 个 Secrets 已添加
-- [ ] Prod Pages：已启用
-- [ ] Test Pages：已启用
-- [ ] Prod Actions：已完成（绿色 ✅）
-- [ ] Test Actions：已完成（绿色 ✅）
-- [ ] Prod App：可访问
-- [ ] Test App：可访问
-
----
-
-**完成上述所有步骤后，告诉我！我会帮你验证一切是否正常运行。** ✅
+- Push normal changes to test first.
+- Do not push to live unless the user explicitly says to push to live.
+- For live, promote the tested commit instead of rebuilding a separate change.
+- Apply only required live DB structure changes.
+- Never copy or sync test data into live, or live data into test, as part of a push.
+- Confirm live has no `TESTING` watermark.

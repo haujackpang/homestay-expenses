@@ -1,7 +1,10 @@
 # Build outputs
+_site/
+node_modules/
 android-app/app/build/
 android-app/build/
 android-app/.gradle/
+supabase/.temp/
 
 # Signing keys
 *.jks
@@ -9,6 +12,7 @@ android-app/.gradle/
 
 # IDE
 .vscode/
+*.code-workspace
 *.iml
 .idea/
 

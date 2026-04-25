@@ -31,6 +31,21 @@ Testing environment remains the default working target in `homestayERP-test`.
 Canonical live environment is `homestay-expenses`.
 
 Recent completed work:
+- Environment separation was tightened:
+  - Test remains `homestayERP-test` with Supabase `skwogboredsczcyhlqgn`.
+  - Live remains `homestay-expenses` with Supabase `afcifzghlkxvnpulahub`.
+  - `homestayERP-prod` is obsolete and must not be used as the live repo.
+  - The `TESTING` watermark is tied to the test Pages path, not Supabase URL alone.
+  - Live promotion must not copy or sync database table data between test and live.
+- Unit pairing UX was clarified in the admin frontend:
+  - `Units` now separates `Internal Units` from `HostPlatform Pairing`.
+  - HostPlatform pairing uses pairing-first wording, search, and `All / Unmapped / Paired` filters.
+  - `Property short code` is presented as `Display code (optional)` for internal units and read-only in pairing flows.
+  - Editing a HostPlatform row now routes to a pairing-focused form instead of the generic internal-unit form.
+- Admin user management was fixed and promoted to both environments:
+  - `admin-users` now lists users with a `profiles` fallback when auth listing is incomplete.
+  - System admin password reset works again for test and live.
+  - The updated Edge Function was deployed to `skwogboredsczcyhlqgn` and `afcifzghlkxvnpulahub`.
 - Test Supabase Edge Functions `sync-units` and `sync-reservations` were deployed.
 - HostPlatform sync credentials were copied from live to test Supabase.
 - Test sync was verified successfully:

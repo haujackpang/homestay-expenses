@@ -1,20 +1,25 @@
 # Task Context
 
 ## Current Task
-Continue the cross-environment data audit using direct Supabase CLI SQL.
+Latest completed task: simplify the unit-pairing UX so admin users can understand the difference between internal units and HostPlatform pairing.
 
 Current focus:
-1. Compare the two Supabase projects by real data, not by memory alone.
-2. Confirm which tables are mirrored, which diverge, and which have environment-specific settings.
-3. Do not delete or rewrite rows until a source-of-truth decision is made.
-4. Support admin password resets for forgotten-password cases through the admin user flow.
+1. Environment separation has been re-tightened: test is `homestayERP-test` / `skwogboredsczcyhlqgn`, live is `homestay-expenses` / `afcifzghlkxvnpulahub`, and `homestayERP-prod` is obsolete.
+2. The `TESTING` watermark should be controlled by the test Pages path only, not by Supabase URL alone.
+3. Pushing to live means code/workflow/functions/required idempotent DB structure only; do not copy or sync table data between environments.
+
+Recent unit-pairing context:
+1. `Units` now acts as a landing page with separate entry points for `Internal Units`, `HostPlatform Pairing`, and `Unit Configuration`.
+2. HostPlatform pairing remains `HostPlatform property + unit -> internal unit`, with clearer wording, search, and `All / Unmapped / Paired` filtering.
+3. `property_short` is now presented in the UI as `Display code (optional)` and should be treated as a display/report helper, not the pairing key.
 
 ## Current Working Assumptions
 - User has already executed the test Supabase script that adds unit-level cleaning/laundry columns.
 - Test and live Supabase functions are deployed and direct function calls succeeded after secrets were copied/configured.
+- `admin-users` now supports user listing fallback and password reset updates for system admin accounts.
+- The same `admin-users` fix was deployed to both test project `skwogboredsczcyhlqgn` and live project `afcifzghlkxvnpulahub`.
 - Live repo and live Supabase remain separate from test; app code must not contain runtime fallback behavior that reconnects live pages to test data.
-- Previous `homestayERP-prod` repo should be treated as a non-canonical/legacy target unless the user explicitly says to use it.
-- The legacy `homestayERP-prod` Pages URL should stay accessible and point to live, not test.
+- Previous `homestayERP-prod` repo should be treated as obsolete and not used for deployment.
 - Runtime config validation must not compare against placeholder literals that the deploy workflow replaces globally.
 - Audit completed on 2026-04-24:
   - `profiles` are mirrored across test and live: 4 matching rows.
@@ -31,6 +36,7 @@ Current focus:
 - Live Supabase has `OPENROUTER_API_KEY`; OCR can use fallback there. Add `OPENAI_API_KEY` to live when switching specifically to OpenAI.
 - Direct call to test `sync-units` returned HTTP 200 and synced 16 units, so the screenshot 401 is likely caused by stale browser auth token, not missing function deployment.
 - Direct call to test `sync-reservations` returned HTTP 200 and upserted records, so browser 401 is likely caused by stale/rejected user-session JWT before the function runs.
+- Manage Users 401/Unauthorized issues were traced to the admin-users backend permission check and function secret/env mismatch, then fixed by updating the function and redeploying.
 - Report PDF cleaning fee uses `(cleaning_fee + laundry_fee) x reservation count`, displayed as `Cleaning fee` in the shared expenses/expense details area.
 - Report page should display the same wording as `Cleaning fee` and include it in the visible Expenses detail list.
 - Homestay profit = sales - sharing expenses charged to Both.
@@ -38,9 +44,17 @@ Current focus:
 - Owner Expenses = expenses charged to Owner, excluding Cleaning fee and Homestay Management Fee.
 - Owner Profit = homestay profit - Homestay Management Fee - Owner Expenses.
 - Report page Expenses section includes shared claims and Total Cleaning Fee.
+- The admin user-management flow now uses `profiles` fallback when auth user listing is incomplete, so the UI can still show users and allow password resets.
+- Internal units and HostPlatform rows should not share the same primary edit workflow in the admin UI.
+- Editing a `source='hostplatform'` row should open a pairing-focused form, while editing a non-HP row should open the internal-unit form.
+- The pairing screen should be the primary place where admins pair HostPlatform rows to internal units.
+- `Display code (optional)` is editable only for internal units and read-only when shown in HostPlatform pairing.
 
 ## Do Not Do
 - Do not move future changes to live unless explicitly requested again after this promotion is finished.
+- Do not copy, mirror, or sync business data between test and live as part of a code or DB-structure push.
+- Do not reintroduce `homestayERP-prod` as a live repo target.
+- Do not trigger the testing watermark from Supabase URL alone.
 - Do not remove unit configuration fields.
 - Do not reintroduce unit-type-based rate logic.
 - Do not expose secret values in final messages.

@@ -1,84 +1,104 @@
-# GitHub 自动配置脚本 - 配置所有 Secrets
-# 自动为 Prod 和 Test 仓库设置 Secrets
+# Safely configure GitHub Actions secrets for one environment.
+# Default target is test. Live must be requested explicitly.
+
+param(
+    [ValidateSet("test", "live", "both")]
+    [string]$Target = "test"
+)
 
 $ErrorActionPreference = "Stop"
 $env:Path += ";C:\Program Files\GitHub CLI"
 
-Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "🔧 GitHub 自动配置脚本" -ForegroundColor Green
-Write-Host "================================================" -ForegroundColor Cyan
-Write-Host ""
-
-# 检查登录状态
-Write-Host "📍 检查 GitHub 登录状态..." -ForegroundColor Yellow
-$authStatus = & gh auth status 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ GitHub CLI 未登录！" -ForegroundColor Red
-    Write-Host "请先运行: gh auth login" -ForegroundColor Yellow
-    exit 1
+$Environments = @{
+    test = @{
+        Label = "TEST"
+        Repo = "haujackpang/homestayERP-test"
+        ProjectRef = "skwogboredsczcyhlqgn"
+        Url = "https://skwogboredsczcyhlqgn.supabase.co"
+    }
+    live = @{
+        Label = "LIVE"
+        Repo = "haujackpang/homestay-expenses"
+        ProjectRef = "afcifzghlkxvnpulahub"
+        Url = "https://afcifzghlkxvnpulahub.supabase.co"
+    }
 }
-Write-Host "✅ GitHub 已登录" -ForegroundColor Green
-Write-Host ""
 
-# Prod 仓库 配置
-Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "📦 配置 Prod 仓库 (haujackpang/homestayERP-prod)" -ForegroundColor Green
-Write-Host "================================================" -ForegroundColor Cyan
+function Assert-Command {
+    param([string]$Name)
 
-$prodRepo = "haujackpang/homestayERP-prod"
-$prodUrl = "https://skwogboredsczcyhlqgn.supabase.co"
-$prodKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTM2OTksImV4cCI6MjA4OTgyOTY5OX0.Ph11MbcGO-Xx4a52V7eg8x_sKr4fDnhEgKE1PxJm-h0"
-$prodServiceKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDI1MzY5OSwiZXhwIjoyMDg5ODI5Njk5fQ.VuxUoTz2SRMqRLaYhZtqfrjfNLVyEKMF3v4MU_mfVoY"
+    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
+        throw "$Name is not available in PATH."
+    }
+}
 
-Write-Host "设置 SUPABASE_URL..." -ForegroundColor Gray
-$prodUrl | gh secret set SUPABASE_URL --repo $prodRepo
-Write-Host "✅ SUPABASE_URL 已设置" -ForegroundColor Green
+function Get-ProjectKeys {
+    param([string]$ProjectRef)
 
-Write-Host "设置 SUPABASE_KEY..." -ForegroundColor Gray
-$prodKey | gh secret set SUPABASE_KEY --repo $prodRepo
-Write-Host "✅ SUPABASE_KEY 已设置" -ForegroundColor Green
+    $json = & supabase projects api-keys --project-ref $ProjectRef --output json
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to read Supabase API keys for $ProjectRef."
+    }
 
-Write-Host "设置 SUPABASE_SERVICE_KEY..." -ForegroundColor Gray
-$prodServiceKey | gh secret set SUPABASE_SERVICE_KEY --repo $prodRepo
-Write-Host "✅ SUPABASE_SERVICE_KEY 已设置" -ForegroundColor Green
+    $keys = $json | ConvertFrom-Json
+    $anon = $keys | Where-Object { $_.id -eq "anon" -or $_.name -eq "anon" } | Select-Object -First 1
+    $service = $keys | Where-Object { $_.id -eq "service_role" -or $_.name -eq "service_role" } | Select-Object -First 1
 
-Write-Host ""
+    if (-not $anon -or -not $anon.api_key) {
+        throw "Anon key not found for $ProjectRef."
+    }
+    if (-not $service -or -not $service.api_key) {
+        throw "Service role key not found for $ProjectRef."
+    }
 
-# Test 仓库 配置
-Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "📦 配置 Test 仓库 (haujackpang/homestayERP-test)" -ForegroundColor Green
-Write-Host "================================================" -ForegroundColor Cyan
+    return @{
+        Anon = $anon.api_key
+        Service = $service.api_key
+    }
+}
 
-$testRepo = "haujackpang/homestayERP-test"
-$testUrl = "https://afcifzghlkxvnpulahub.supabase.co"
-$testKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrd29nYm9yZWRzY3pjeWhscWduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTM2OTksImV4cCI6MjA4OTgyOTY5OX0.Ph11MbcGO-Xx4a52V7eg8x_sKr4fDnhEgKE1PxJm-h0"
-$testServiceKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmY2lmemdobGt4dm5wdWxhaHViIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjA5OTExMSwiZXhwIjoyMDkxNjc1MTExfQ.BQIAxXsdq5D5CtFeJ-AqYzQ-jJhzsZYz9hQOpEofg-Q"
+function Set-RepoSecrets {
+    param(
+        [string]$Repo,
+        [string]$Label,
+        [string]$Url,
+        [string]$AnonKey,
+        [string]$ServiceKey
+    )
 
-Write-Host "设置 SUPABASE_URL..." -ForegroundColor Gray
-$testUrl | gh secret set SUPABASE_URL --repo $testRepo
-Write-Host "✅ SUPABASE_URL 已设置" -ForegroundColor Green
+    Write-Host "Configuring $Label repo: $Repo" -ForegroundColor Cyan
 
-Write-Host "设置 SUPABASE_KEY..." -ForegroundColor Gray
-$testKey | gh secret set SUPABASE_KEY --repo $testRepo
-Write-Host "✅ SUPABASE_KEY 已设置" -ForegroundColor Green
+    $Url | gh secret set SUPABASE_URL --repo $Repo | Out-Null
+    $AnonKey | gh secret set SUPABASE_KEY --repo $Repo | Out-Null
+    $ServiceKey | gh secret set SUPABASE_SERVICE_KEY --repo $Repo | Out-Null
 
-Write-Host "设置 SUPABASE_SERVICE_KEY..." -ForegroundColor Gray
-$testServiceKey | gh secret set SUPABASE_SERVICE_KEY --repo $testRepo
-Write-Host "✅ SUPABASE_SERVICE_KEY 已设置" -ForegroundColor Green
+    Write-Host "$Label secrets updated." -ForegroundColor Green
+}
 
-Write-Host ""
-Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "✅ 所有 Secrets 配置完成！" -ForegroundColor Green
-Write-Host "================================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "📝 现在需要手动启用 GitHub Pages：" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "1️⃣  Prod 仓库：" -ForegroundColor Cyan
-Write-Host "   https://github.com/haujackpang/homestayERP-prod/settings/pages" -ForegroundColor White
-Write-Host "   → 选择 Source = 'GitHub Actions'" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "2️⃣  Test 仓库：" -ForegroundColor Cyan
-Write-Host "   https://github.com/haujackpang/homestayERP-test/settings/pages" -ForegroundColor White
-Write-Host "   → 选择 Source = 'GitHub Actions'" -ForegroundColor Yellow
-Write-Host ""
-Write-Host "✨ Pages 启用后，2-3 分钟后部署将自动完成！" -ForegroundColor Green
+Assert-Command "gh"
+Assert-Command "supabase"
+
+& gh auth status | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "GitHub CLI is not logged in. Run: gh auth login"
+}
+
+$targets = @()
+if ($Target -eq "both") {
+    $targets = @("test", "live")
+} else {
+    $targets = @($Target)
+}
+
+foreach ($name in $targets) {
+    $envConfig = $Environments[$name]
+    $keys = Get-ProjectKeys -ProjectRef $envConfig.ProjectRef
+    Set-RepoSecrets `
+        -Repo $envConfig.Repo `
+        -Label $envConfig.Label `
+        -Url $envConfig.Url `
+        -AnonKey $keys.Anon `
+        -ServiceKey $keys.Service
+}
+
+Write-Host "Done. No database data was copied or synced." -ForegroundColor Green
