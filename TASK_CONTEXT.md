@@ -1,14 +1,16 @@
 # Task Context
 
 ## Current Task
-Latest completed task: simplify the unit-pairing UX so admin users can understand the difference between internal units and HostPlatform pairing.
-
 Current focus:
-1. Environment separation has been re-tightened: test is `homestayERP-test` / `afcifzghlkxvnpulahub`, live is `homestay-expenses` / `skwogboredsczcyhlqgn`, and `homestayERP-prod` is obsolete.
+1. Fix manager/admin claim visibility so pending `Submitted` claimable expenses appear in the `Claims` page.
+2. Keep claim-review queues claimable-only by excluding `Company-Paid` from `My Claims` and `All Claims`, while preserving company-paid totals in dashboard/report views.
+3. Add 5-row pagination with `Back` and `Next` to both employee and manager/admin claim lists.
+4. Keep the rollout test-first; use the focused script `supabase-claims-manager-access.sql` only in environments where manager claim access still follows admin-only policies.
+
+Environment guardrails that still apply:
+1. Test is `homestayERP-test` / `skwogboredsczcyhlqgn`, live is `homestay-expenses` / `afcifzghlkxvnpulahub`, and `homestayERP-prod` is obsolete.
 2. The `TESTING` watermark should be controlled by the test Pages path only, not by Supabase URL alone.
 3. Pushing to live means code/workflow/functions/required idempotent DB structure only; do not copy or sync table data between environments.
-4. HostPlatform pairing now assumes only active canonical `source='hostplatform'` rows should be shown in the pairing list.
-5. Use `supabase-repair-hp-unit-pairing.sql` when a target environment has legacy HP rows, missing `hp_unit_id` uniqueness, or blank pairing after sync.
 
 Recent unit-pairing context:
 1. `Units` now acts as a landing page with separate entry points for `Internal Units`, `HostPlatform Pairing`, and `Unit Configuration`.
@@ -16,10 +18,17 @@ Recent unit-pairing context:
 3. `property_short` is now presented in the UI as `Display code (optional)` and should be treated as a display/report helper, not the pairing key.
 
 ## Current Working Assumptions
+- Test `profiles.role` already accepts `manager`.
+- Direct CLI inspection of further test DB policies is currently blocked because temp-role login is circuit-breaking and `SUPABASE_DB_PASSWORD` is not available in this shell.
+- Follow-up verification on 2026-04-26 used the Supabase Management API instead of `supabase db query --linked`:
+  - test `claims_select_admin` and `claims_update_admin` already allow `get_my_role() in ('admin','manager')`
+  - test `bank_info_insert` and `bank_info_update` already allow `get_my_role() in ('admin','manager')`
+  - test still contains at least one pending claimable row: `HE-2026-04-00012` for `Azizul`, status `Submitted`, `pay_type='employee'`
+- `supabase-claims-manager-access.sql` is the focused remediation path if test or live still uses admin-only claim visibility policies.
 - User has already executed the test Supabase script that adds unit-level cleaning/laundry columns.
 - Test and live Supabase functions are deployed and direct function calls succeeded after secrets were copied/configured.
 - `admin-users` now supports user listing fallback and password reset updates for system admin accounts.
-- The same `admin-users` fix was deployed to both test project `afcifzghlkxvnpulahub` and live project `skwogboredsczcyhlqgn`.
+- The same `admin-users` fix was deployed to both test project `skwogboredsczcyhlqgn` and live project `afcifzghlkxvnpulahub`.
 - Live repo and live Supabase remain separate from test; app code must not contain runtime fallback behavior that reconnects live pages to test data.
 - Previous `homestayERP-prod` repo should be treated as obsolete and not used for deployment.
 - Runtime config validation must not compare against placeholder literals that the deploy workflow replaces globally.

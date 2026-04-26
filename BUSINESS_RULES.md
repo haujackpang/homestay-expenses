@@ -10,8 +10,8 @@
 - Testing app must use `homestayERP-test`.
 - Live app must use `homestay-expenses`.
 - `homestayERP-prod` is obsolete and must not be used as the live repo.
-- Test Supabase project ref: `afcifzghlkxvnpulahub`.
-- Live Supabase project ref: `skwogboredsczcyhlqgn`.
+- Test Supabase project ref: `skwogboredsczcyhlqgn`.
+- Live Supabase project ref: `afcifzghlkxvnpulahub`.
 - Missing deployment config must not silently fall back to the test Supabase project.
 - If Supabase config is missing, the app should fail clearly instead of showing mixed-environment data.
 - Test-only UI, including the `TESTING` watermark, must be based on the test Pages path and not on Supabase URL alone.
@@ -67,6 +67,11 @@
 - Logs page must show useful operational logs, not only error logs.
 - Sync success/failure should be visible in the app.
 - Admin changes such as unit mapping, unit activation, and unit configuration should be logged.
+
+## Claims List Rules
+- `My Claims` and `All Claims` are claim-review queues for claimable expenses and should not list `Company-Paid` rows.
+- `Company-Paid` expenses should still remain visible in dashboard and reporting totals where company spending is summarized.
+- Employee and manager/admin claim-list screens should paginate results at 5 rows per page with `Back` and `Next` controls.
 
 ## Sync Rules
 - `sync-units` imports HostPlatform unit records.

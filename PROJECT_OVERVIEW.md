@@ -30,6 +30,11 @@ Testing environment remains the default working target in `homestayERP-test`.
 
 Canonical live environment is `homestay-expenses`.
 
+Current in-progress/local implementation on 2026-04-26:
+- Claims list screens are being refined so `Company-Paid` does not appear in claim-review queues, while dashboard/report totals still include company-paid spending.
+- Employee and manager/admin claim lists now target 5-row pagination with `Back` and `Next`.
+- A focused remediation script `supabase-claims-manager-access.sql` is prepared for environments where manager claim visibility is still blocked by older policies.
+
 Recent completed work:
 - HostPlatform unit pairing data was repaired in test:
   - `units.hp_unit_id` is now treated as nullable for internal units and protected by a unique non-null index for synced HP rows.
@@ -38,8 +43,8 @@ Recent completed work:
   - The pairing screen now shows active HostPlatform rows only, while the Units summary still reports how many inactive HP rows are hidden.
   - `sync-units` and `sync-reservations` now fail closed when required env/config is missing instead of returning a misleading success.
 - Environment separation was tightened:
-  - Test remains `homestayERP-test` with Supabase `afcifzghlkxvnpulahub`.
-  - Live remains `homestay-expenses` with Supabase `skwogboredsczcyhlqgn`.
+  - Test remains `homestayERP-test` with Supabase `skwogboredsczcyhlqgn`.
+  - Live remains `homestay-expenses` with Supabase `afcifzghlkxvnpulahub`.
   - `homestayERP-prod` is obsolete and must not be used as the live repo.
   - The `TESTING` watermark is tied to the test Pages path, not Supabase URL alone.
   - Live promotion must not copy or sync database table data between test and live.
@@ -51,7 +56,7 @@ Recent completed work:
 - Admin user management was fixed and promoted to both environments:
   - `admin-users` now lists users with a `profiles` fallback when auth listing is incomplete.
   - System admin password reset works again for test and live.
-  - The updated Edge Function was deployed to `afcifzghlkxvnpulahub` and `skwogboredsczcyhlqgn`.
+  - The updated Edge Function was deployed to `skwogboredsczcyhlqgn` and `afcifzghlkxvnpulahub`.
 - Test Supabase Edge Functions `sync-units` and `sync-reservations` were deployed.
 - HostPlatform sync credentials were copied from live to test Supabase.
 - Test sync was verified successfully:
@@ -65,8 +70,8 @@ Recent completed work:
   - Non-utility OCR descriptions are normalized server-side to include invoice/reference details and key item names, while `Water Bill`, `Electricity Bill`, and `Internet Bill` remain standardized as `[WB]/[EB]/[INT] UNIT Mon YY`.
   - Test duplicate handling now blocks final submit when `find_possible_duplicate_claims` returns a match, while still allowing draft save.
 - Repo/environment mapping was corrected on 2026-04-24:
-  - Test repo `homestayERP-test` -> Supabase `afcifzghlkxvnpulahub`
-  - Live repo `homestay-expenses` -> Supabase `skwogboredsczcyhlqgn`
+  - Test repo `homestayERP-test` -> Supabase `skwogboredsczcyhlqgn`
+  - Live repo `homestay-expenses` -> Supabase `afcifzghlkxvnpulahub`
 - Follow-up CLI audit on 2026-04-24 found:
   - `profiles` and `claims` are mirrored on the audited business fields.
   - `reservations`, `units`, `unit_config`, `unit_types`, and log tables are not fully mirrored.

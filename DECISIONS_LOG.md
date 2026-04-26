@@ -1,5 +1,28 @@
 # Decisions Log
 
+## 2026-04-26: Keep `Company-Paid` Out Of Claim Queues
+Decision: Hide `Company-Paid` rows from the employee and manager/admin `Claims` lists while keeping company-paid totals in dashboard and report summaries.
+
+Reason:
+`Company-Paid` records are tracking-only and do not belong in the claim approval/rejection queue. Mixing them into the claim lists makes pending claimable expenses harder to review and led to confusion about which records should appear there.
+
+## 2026-04-26: Paginate Claim Lists At 5 Rows
+Decision: Paginate both `My Claims` and `All Claims` at 5 rows per page with `Back` and `Next` controls, resetting to page 1 when filters change.
+
+Reason:
+Long claim lists are hard to scan on the single-file mobile-style UI. A small fixed page size keeps the queue readable without changing the existing filter model.
+
+## 2026-04-26: Prepare Focused Manager Claims Policy SQL
+Decision: Add a narrow SQL remediation script for environments where manager claim visibility still depends on admin-only `claims` or `bank_info` policies.
+
+Reason:
+The repo already contains broad legacy SQL scripts, but this issue only needs manager role support and claim-queue visibility. A focused idempotent script is safer to run in test first and easier to promote to live if policy drift is confirmed.
+
+## 2026-04-25: Schedule Reservation Imports Per Environment
+Decision: Add repo-specific GitHub Actions cron workflows so live calls `sync-reservations` every 5 minutes and test calls it daily at 12:00 AM.
+
+Reason:
+The live app already had a manual reservation sync button, but no automatic import cadence. Separate repo-level schedules keep live and test behavior aligned with their own environments without mixing cadence or secrets.
 ## 2026-04-25: Canonicalize HostPlatform Unit Rows Before Pairing
 Decision: Repair `units` so active HostPlatform rows use the canonical `source='hostplatform'` plus real `hp_unit_id`, while internal/manual rows carry no HP identity fields and matched legacy HP duplicates are deactivated.
 
@@ -181,7 +204,7 @@ Reason:
 These changes correct live-visible behavior: live must stay on the live database without a hidden fallback to test, and the report page wording/details must match the approved business presentation.
 
 ## 2026-04-24: Correct Canonical Repo And Supabase Mapping
-Decision: Use `haujackpang/homestay-expenses` as the canonical live repo, `haujackpang/homestayERP-test` as the test repo, `afcifzghlkxvnpulahub` as the test Supabase project, and `skwogboredsczcyhlqgn` as the live Supabase project.
+Decision: Use `haujackpang/homestay-expenses` as the canonical live repo, `haujackpang/homestayERP-test` as the test repo, `skwogboredsczcyhlqgn` as the test Supabase project, and `afcifzghlkxvnpulahub` as the live Supabase project.
 
 Reason:
 The earlier repo/project mapping was wrong. Future deployments, Pages secrets, and verification must follow the user's corrected environment ownership so test and live stay properly separated.
@@ -232,10 +255,10 @@ Reason:
 The fix was validated in test, then deployed to the canonical live repo and live Supabase project so both environments share the same user-management behavior.
 
 ## 2026-04-25: `homestayERP-prod` Is Obsolete
-Decision: Stop treating `haujackpang/homestayERP-prod` as a live alias. The active environments are now test repo `haujackpang/homestayERP-test` with Supabase `afcifzghlkxvnpulahub`, and live repo `haujackpang/homestay-expenses` with Supabase `skwogboredsczcyhlqgn`.
+Decision: Stop treating `haujackpang/homestayERP-prod` as a live alias. The active environments are now test repo `haujackpang/homestayERP-test` with Supabase `skwogboredsczcyhlqgn`, and live repo `haujackpang/homestay-expenses` with Supabase `afcifzghlkxvnpulahub`.
 
-## 2026-04-26: Reverse Canonical Supabase Environment Mapping
-Decision: Treat `skwogboredsczcyhlqgn` as live and `afcifzghlkxvnpulahub` as test for all repo secrets, deploy guards, and setup documentation.
+## 2026-04-26: Keep Canonical Supabase Environment Mapping
+Decision: Treat `skwogboredsczcyhlqgn` as test and `afcifzghlkxvnpulahub` as live for repo secrets, deploy guards, and setup documentation.
 
 Reason:
 The previously documented mapping was backwards. Keeping repo secrets, workflow validation, and setup docs aligned with the corrected mapping prevents future deployments and smoke tests from targeting the wrong Supabase environment.
@@ -254,3 +277,9 @@ Decision: A live promotion may include code, workflow config, Edge Functions, an
 
 Reason:
 The user wants test and live deployment separated. Promoting tested code must not imply data synchronization between environments.
+
+## 2026-04-26: Verify Claims Visibility Through Supabase Management API
+Decision: When `supabase db query --linked` is blocked by temporary login-role authentication failures, use the Supabase Management API to verify policy state and pending claim data on the target project before changing rollout plans.
+
+Reason:
+On 2026-04-26, the linked test project still had the required manager-readable `claims` and `bank_info` policies, and it still contained a pending `Submitted` employee-paid claim. That means the visibility problem is not caused by missing pending data in test, and the local frontend queue changes remain the primary fix path.

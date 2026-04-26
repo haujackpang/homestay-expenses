@@ -139,21 +139,31 @@ body{background:#f0f2f5;display:flex;justify-content:center;padding:20px 0 40px;
 // ===== SUPABASE CONFIG =====
 var SUPABASE_URL='__SUPABASE_URL__';
 var SUPABASE_KEY='__SUPABASE_KEY__';
-var SUPABASE_SERVICE_KEY='__SUPABASE_SERVICE_KEY__';
-// 本地开发时的降级配置（占位符未被替换）
-if(SUPABASE_URL==='__SUPABASE_URL__'){
+var TEST_REPO_PATH='/homestayerp-test';
+var SUPABASE_CONFIG_ERROR='';
+SUPABASE_URL=String(SUPABASE_URL||'').trim();
+SUPABASE_KEY=String(SUPABASE_KEY||'').trim();
+function isSupabasePublicKey(v){
+  if(!v)return false;
+  return v.indexOf('sb_publishable_')===0||v.indexOf('.')>0;
+}
+var SUPABASE_PLACEHOLDERS=(!SUPABASE_URL||SUPABASE_URL.indexOf('https://')!==0||SUPABASE_URL.indexOf('.supabase.co')<0||!isSupabasePublicKey(SUPABASE_KEY));
+var sb=null;
+if(SUPABASE_PLACEHOLDERS){
   SUPABASE_URL='';
   SUPABASE_KEY='';
-  console.warn('Missing Supabase config');
+  SUPABASE_CONFIG_ERROR='Supabase configuration is missing for this deployment.';
+  console.error(SUPABASE_CONFIG_ERROR);
+}else{
+  try{sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);}catch(e){SUPABASE_CONFIG_ERROR='Supabase init error: '+e.message;console.error(SUPABASE_CONFIG_ERROR);}
 }
-var sb;
-try{sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);}catch(e){console.error('Supabase init error:',e.message);}'
 
 // ===== STATE =====
 var R=null,S='auth',PS=null,SEL=null,editingId=null,payTab='byEmp';
 var currentUser=null,currentProfile=null;
 var fltStatus='All',fltMonth='All',fltYear='All',fltEmp='All';
 var empFltStatus='All',empFltMonth='All',empFltYear='All';
+var CLAIMS_PAGE_SIZE=5,empListPage=1,adminListPage=1;
 var empDashMonth='All',empDashYear='All';
 var dashFltMonth='All',dashFltYear='All',dashFltUnit='All';
 var checkedClaims={},slipFiles=[],slipFileNames=[];
@@ -163,7 +173,8 @@ var fxCollapsed=true;
 var claims=[],BANK_INFO={},EMPS=[],ACTIVE_EMPS=[],UNITS_DATA=[];
 var editingUnit=null,unitFormError='';
 var authError='',authLoading=false;
-var isSystemAdmin=false,allUsers=[],editingUser=null,userFormError='';
+var isSystemAdmin=false,allUsers=[],editingUser=null,userFormError='',userListSource='auth';
+var resetPasswordUser=null,resetPasswordError='',resetPasswordDraft1='',resetPasswordDraft2='';
 var pendingFiles=[],pendingFileNames=[];
 var aiResult=null,aiAnalyzing=false,aiError='',newClaimStep='upload';
 var errorLogs=[],errorLogLoading=false;
@@ -172,6 +183,7 @@ var rptUnit='',rptMonth='',rptYear='';
 var editingUnitType=null,editingUnitCfg=null,utFormError='',ucFormError='';
 var syncLogs=[],syncLoading=false,syncRunning=false,unitSyncing=false;
 var showInactiveUnits=false;
+var unitPairingFilter='All',unitPairingSearch='';
 var reservations=[];
 
 // ===== FRONTEND ERROR LOGGER =====
@@ -179,6 +191,34 @@ async function logFrontendError(level,source,message,details){
   try{
     await sb.from('error_logs').insert({level:level,source:source,message:message,details:details||{},user_agent:navigator.userAgent});
   }catch(e){console.error('Failed to log error:',e);}
+}
+async function functionAuthHeaders(forceRefresh){
+  var{data:sessData}=await sb.auth.getSession();
+  var authToken=sessData&&sessData.session&&sessData.session.access_token?sessData.session.access_token:'';
+  var expiresAt=sessData&&sessData.session&&sessData.session.expires_at?sessData.session.expires_at:0;
+  var isExpiring=expiresAt&&expiresAt*1000<Date.now()+60000;
+  if(forceRefresh||!authToken||isExpiring){var{data:refData}=await sb.auth.refreshSession();authToken=refData&&refData.session?refData.session.access_token:authToken;}
+  if(!authToken)authToken=SUPABASE_KEY;
+  return {'Content-Type':'application/json','Authorization':'Bearer '+authToken,'apikey':SUPABASE_KEY};
+}
+async function callEdgeFunction(name,body){
+  var headers=await functionAuthHeaders();
+  var r=await fetch(SUPABASE_URL+'/functions/v1/'+name,{method:'POST',headers:headers,body:JSON.stringify(body||{})});
+  var d=await r.json().catch(function(){return{error:'Request failed'};});
+  if(r.status===401){
+    headers=await functionAuthHeaders(true);
+    r=await fetch(SUPABASE_URL+'/functions/v1/'+name,{method:'POST',headers:headers,body:JSON.stringify(body||{})});
+    d=await r.json().catch(function(){return{error:'Request failed'};});
+  }
+  if(!r.ok||d.ok===false)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));
+  return d;
+}
+async function callPublicEdgeFunction(name,body){
+  var headers={'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_KEY,'apikey':SUPABASE_KEY};
+  var r=await fetch(SUPABASE_URL+'/functions/v1/'+name,{method:'POST',headers:headers,body:JSON.stringify(body||{})});
+  var d=await r.json().catch(function(){return{error:'Request failed'};});
+  if(!r.ok||d.ok===false)throw new Error(d.error||('Request failed (HTTP '+r.status+')'));
+  return d;
 }
 async function loadErrorLogs(){
   errorLogLoading=true;render();
@@ -194,15 +234,156 @@ async function loadErrorLogs(){
 var MONTHS={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
 var YEARS=['2025','2026','2027'];
 var UNITS=['KT11','150A','14A','LC03','IR B1506','IR B1631','IR B1913B','IR A2109','CL B0207','BR B2305','AR C3706','AR D1503','SH P0403','AC 1025','ACc 1027','34F','MP Office'];
+var PROPERTY_SHORT_CODES=['AR','IR','AC','CL','BR','SH','KT','LC','MP','OF'];
 var CATS=['Water Bill','Electricity Bill','Internet Bill','Rental','MFSF','Maintenance & Repair','Housekeeping & Cleaning','Laundry','Daily Products','Hospitality Items','Electrical & Unit Setup','Office Expenses','Employee Welfare','Outsource Cleaning Staff','Unit Renovation','Other'];
 var CAT_COLORS={'Water Bill':'#185FA5','Electricity Bill':'#0E6E9E','Internet Bill':'#2D5FA5','Rental':'#7C3AED','MFSF':'#A45D2B','Maintenance & Repair':'#854F0B','Housekeeping & Cleaning':'#3B6D11','Laundry':'#534AB7','Daily Products':'#0F6E56','Hospitality Items':'#993556','Electrical & Unit Setup':'#993C1D','Office Expenses':'#5F5E5A','Employee Welfare':'#185FA5','Outsource Cleaning Staff':'#854F0B','Unit Renovation':'#A32D2D','Other':'#888780'};
+
+function hpPropertyKey(hpPropertyId,propertyName){
+  if(hpPropertyId)return 'id:'+hpPropertyId;
+  return 'name:'+String(propertyName||'').toLowerCase().trim();
+}
+function hpPropertyDomKey(k){return (k||'').replace(/[^a-zA-Z0-9_-]/g,'_');}
+function unitDisplayName(u){
+  if(!u)return'';
+  if(u.mapped_unit_name)return u.mapped_unit_name;
+  return u.property_short?u.property_short+' '+u.name:u.name;
+}
+function uniqueNames(arr){
+  var seen={},out=[];
+  arr.forEach(function(v){if(v&&!seen[v]){seen[v]=true;out.push(v);}});
+  return out;
+}
+function internalUnitRows(){
+  return UNITS_DATA
+    .filter(function(u){return u.source!=='hostplatform'&&u.active!==false;})
+    .map(function(u){
+      var display=unitDisplayName(u);
+      return{
+        value:display,
+        label:(u.name||display||'').trim()||display,
+        shortCode:(u.property_short||'').toUpperCase()
+      };
+    })
+    .sort(function(a,b){return a.value.localeCompare(b.value);});
+}
+function internalUnitOptions(selected){
+  var sel=selected||'';
+  var rows=internalUnitRows();
+  var opts=['<option value="">— Select internal unit —</option>'];
+  rows.forEach(function(r){opts.push('<option value="'+r.value+'" data-short="'+r.shortCode+'"'+(sel===r.value?' selected':'')+'>'+r.label+'</option>');});
+  if(sel&&!rows.some(function(r){return r.value===sel;}))opts.push('<option value="'+sel+'" selected>'+sel+' (legacy)</option>');
+  return opts.join('');
+}
+function mappedInternalUnitNames(exceptUnitId){
+  var used={};
+  UNITS_DATA
+    .filter(function(u){return u.source==='hostplatform'&&u.active!==false&&u.id!==exceptUnitId&&u.mapped_unit_name;})
+    .forEach(function(u){used[u.mapped_unit_name]=true;});
+  return used;
+}
+function internalUnitMappingOptions(selected,exceptUnitId){
+  var sel=selected||'';
+  var used=mappedInternalUnitNames(exceptUnitId||'');
+  var rows=internalUnitRows().filter(function(r){return !used[r.value]||r.value===sel;});
+  var opts=['<option value="">-- Unmapped --</option>'];
+  rows.forEach(function(r){opts.push('<option value="'+r.value+'" data-short="'+r.shortCode+'"'+(sel===r.value?' selected':'')+'>'+r.label+'</option>');});
+  if(sel&&!rows.some(function(r){return r.value===sel;}))opts.push('<option value="'+sel+'" selected>'+sel+' (legacy)</option>');
+  return opts.join('');
+}
+function internalUnitShortCode(unitName){
+  if(!unitName)return'';
+  var row=internalUnitRows().filter(function(r){return r.value===unitName;})[0];
+  return row?String(row.shortCode||'').toUpperCase():'';
+}
+function selectedOptionShortCode(selEl){
+  if(!selEl)return'';
+  var opt=selEl.options[selEl.selectedIndex];
+  return opt?String(opt.getAttribute('data-short')||'').toUpperCase():'';
+}
+function hpIdsForDisplayUnit(unitName){
+  return UNITS_DATA
+    .filter(function(u){return u.source==='hostplatform'&&u.active!==false&&unitDisplayName(u)===unitName&&u.hp_unit_id;})
+    .map(function(u){return u.hp_unit_id;});
+}
+function hpUnitRows(){
+  return UNITS_DATA
+    .filter(function(u){return u.source==='hostplatform'&&u.active!==false;})
+    .map(function(u){
+      var unitKey=u.id||u.hp_unit_id||hpPropertyKey(u.hp_property_id,u.property_name)+'::'+u.name;
+      return{
+        key:unitKey,
+        domKey:hpPropertyDomKey(unitKey),
+        unitId:u.id||'',
+        hpUnitId:u.hp_unit_id||'',
+        hpPropertyId:u.hp_property_id||'',
+        propertyName:u.property_name||'Unknown Property',
+        unitName:u.name||'',
+        mappedUnitName:u.mapped_unit_name||'',
+        propertyShort:u.property_short||'',
+        active:u.active!==false
+      };
+    })
+    .sort(function(a,b){
+      var pa=a.propertyName.localeCompare(b.propertyName);
+      if(pa!==0)return pa;
+      return a.unitName.localeCompare(b.unitName);
+    });
+}
+function pairingFilterRows(){
+  var term=String(unitPairingSearch||'').toLowerCase().trim();
+  return hpUnitRows().filter(function(u){
+    if(unitPairingFilter==='Paired'&&!u.mappedUnitName)return false;
+    if(unitPairingFilter==='Unmapped'&&u.mappedUnitName)return false;
+    if(!term)return true;
+    var hay=[u.propertyName,u.unitName,u.mappedUnitName,u.propertyShort].join(' ').toLowerCase();
+    return hay.indexOf(term)>=0;
+  });
+}
+function pairingCount(filter){
+  return hpUnitRows().filter(function(u){
+    if(filter==='Paired')return !!u.mappedUnitName;
+    if(filter==='Unmapped')return !u.mappedUnitName;
+    return true;
+  }).length;
+}
+function shortCodeOptions(selected){
+  var sel=(selected||'').toUpperCase();
+  var opts=['<option value="">-- None --</option>'];
+  PROPERTY_SHORT_CODES.forEach(function(code){
+    opts.push('<option value="'+code+'"'+(sel===code?' selected':'')+'>'+code+'</option>');
+  });
+  if(sel&&PROPERTY_SHORT_CODES.indexOf(sel)<0)opts.push('<option value="'+sel+'" selected>'+sel+' (legacy)</option>');
+  return opts.join('');
+}
+async function dbAssignUnitShort(unitId,shortCode){
+  var code=(shortCode||'').toUpperCase();
+  var setQ=sb.from('units').update({property_short:code}).eq('id',unitId).eq('source','hostplatform');
+  var setRes=await setQ;
+  if(setRes.error)throw setRes.error;
+}
+async function dbAssignUnitMapping(unitId,mappedUnitName,shortCode){
+  var payload={mapped_unit_name:mappedUnitName||'',property_short:(shortCode||'').toUpperCase()};
+  var res=await sb.from('units').update(payload).eq('id',unitId).eq('source','hostplatform');
+  if(res.error)throw res.error;
+}
+function mappingConflict(unitId,mappedUnitName){
+  if(!mappedUnitName)return null;
+  return UNITS_DATA.filter(function(u){return u.source==='hostplatform'&&u.active!==false&&u.id!==unitId&&u.mapped_unit_name===mappedUnitName;})[0]||null;
+}
+async function logAdminAction(action,details){
+  try{
+    var msg=action;
+    if(details&&details.unit_name)msg+=' · '+details.unit_name;
+    await sb.from('error_logs').insert({level:'info',source:'admin-action',message:msg,details:details||{}});
+  }catch(e){console.error('logAdminAction failed:',e);}
+}
 
 // ===== SUPABASE DATA FUNCTIONS =====
 async function loadClaims(){
   var q=sb.from('claims').select('*').order('created_at',{ascending:false});
   var{data,error}=await q;
   if(error){console.error('loadClaims:',error);return;}
-  claims=data.map(function(r){return{id:r.claim_id,uid:r.id,emp:r.emp||'',unit:r.unit||'',hpUnitId:r.hp_unit_id||null,category:r.category||'',desc:r.description,amount:parseFloat(r.amount),date:r.date,expMonth:r.expense_month||r.date.slice(0,7),status:r.status,rejectReason:r.reject_reason||'',slipRef:r.slip_ref||'',payType:r.pay_type,submittedBy:r.submitted_by,chargedTo:r.charged_to||''};});
+  claims=data.map(function(r){return{id:r.claim_id,uid:r.id,emp:r.emp||'',unit:r.unit||'',hpUnitId:r.hp_unit_id||null,category:r.category||'',desc:r.description,amount:parseFloat(r.amount),date:r.date,expMonth:r.expense_month||r.date.slice(0,7),status:r.status,rejectReason:r.reject_reason||'',slipRef:r.slip_ref||'',payType:r.pay_type,submittedBy:r.submitted_by,chargedTo:r.charged_to||'',invoiceNumber:r.invoice_number||'',merchantName:r.merchant_name||'',aiRaw:r.ai_raw||{},aiConfidence:parseFloat(r.ai_confidence||0),sourceType:r.source_type||'manual',externalId:r.external_id||'',externalSource:r.external_source||''};});
 }
 async function loadBankInfo(){
   var{data,error}=await sb.from('bank_info').select('*');
@@ -221,9 +402,7 @@ async function loadUnits(){
   if(error){console.error('loadUnits:',error);return;}
   if(data&&data.length){
     UNITS_DATA=data;
-    UNITS=UNITS_DATA.filter(function(u){return u.active!==false;}).map(function(u){
-      return u.property_short?u.property_short+' '+u.name:u.name;
-    });
+    UNITS=uniqueNames(UNITS_DATA.filter(function(u){return u.active!==false;}).map(unitDisplayName));
   }
 }
 async function dbInsertUnit(name,propertyShort){
@@ -242,16 +421,40 @@ async function loadUnitConfig(){var{data}=await sb.from('unit_config').select('*
 async function dbInsertUnitType(name,cf,lf){var{error}=await sb.from('unit_types').insert({name:name.trim(),cleaning_fee:cf,laundry_fee:lf});return !error;}
 async function dbUpdateUnitType(id,name,cf,lf){var{error}=await sb.from('unit_types').update({name:name.trim(),cleaning_fee:cf,laundry_fee:lf}).eq('id',id);return !error;}
 async function dbDeleteUnitType(id){var{error}=await sb.from('unit_types').delete().eq('id',id);return !error;}
-async function dbUpsertUnitConfig(unitName,unitType,ownerName,svcPct){var{error}=await sb.from('unit_config').upsert({unit_name:unitName,unit_type:unitType||null,owner_name:ownerName,service_fee_pct:svcPct},{onConflict:'unit_name'});return !error;}
+async function dbUpsertUnitConfig(unitName,ownerName,profitPct,cleaningFee,laundryFee){
+  var payload={unit_name:unitName,owner_name:ownerName||'',service_fee_pct:profitPct||0,cleaning_fee:cleaningFee||0,laundry_fee:laundryFee||0};
+  var{error}=await sb.from('unit_config').upsert(payload,{onConflict:'unit_name'});
+  if(error&&String(error.message||'').toLowerCase().indexOf('cleaning_fee')>=0){
+    // Backward compatible fallback when DB has not added new rate columns yet.
+    var retry=await sb.from('unit_config').upsert({unit_name:unitName,owner_name:ownerName||'',service_fee_pct:profitPct||0},{onConflict:'unit_name'});
+    return{ok:!retry.error,missingRateColumns:!retry.error,error:retry.error};
+  }
+  return{ok:!error,missingRateColumns:false,error:error};
+}
 async function loadSyncLogs(){var{data}=await sb.from('sync_logs').select('*').order('started_at',{ascending:false}).limit(20);if(data)syncLogs=data;}
 async function loadReservations(){var{data}=await sb.from('reservations').select('*').order('start_date',{ascending:false});if(data)reservations=data;}
 async function triggerSync(){
   syncRunning=true;render();
   try{
-    var r=await fetch(SUPABASE_URL+'/functions/v1/sync-reservations',{method:'POST',headers:{'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json'},body:JSON.stringify({type:'manual'})});
-    var d=await r.json();
-    if(d.ok){toast('Sync done: '+d.upserted+' records');}else{toast('Sync error: '+(d.error||'unknown'));}
-  }catch(e){toast('Sync failed: '+e.message);}
+    var d=await callPublicEdgeFunction('sync-reservations',{type:'manual'});
+    if(d.ok){
+      await logAdminAction('sync-reservations.success',{upserted:d.upserted||0,fetched:d.fetched||0});
+      toast('Sync done: '+d.upserted+' records');
+    }else{
+      toast('Sync error: '+(d.error||'unknown'));
+    }
+  }catch(e){
+    var msg=e&&e.message?e.message:'Unknown sync error';
+    var low=String(msg).toLowerCase();
+    if(low.indexOf('http 404')>=0||low.indexOf('404')>=0){
+      msg='Sync function not deployed in this environment (HTTP 404).';
+    }else
+    if(low.indexOf('failed to fetch')>=0||low.indexOf('network')>=0){
+      msg='Cannot reach sync-reservations endpoint. Check function deployment, network, and CORS.';
+    }
+    await logFrontendError('error','sync-reservations-ui',msg,{endpoint:SUPABASE_URL+'/functions/v1/sync-reservations'});
+    toast('Sync failed: '+msg);
+  }
   syncRunning=false;
   await loadSyncLogs();await loadReservations();render();
 }
@@ -272,7 +475,7 @@ async function getNextClaimId(prefix){
 }
 
 async function dbInsertClaim(c){
-  var{error}=await sb.from('claims').insert({claim_id:c.id,emp:c.emp,unit:c.unit,hp_unit_id:c.hpUnitId||null,category:c.category,description:c.desc,amount:c.amount,date:c.date,expense_month:c.expMonth||c.date.slice(0,7),status:c.status,reject_reason:c.rejectReason,slip_ref:c.slipRef,pay_type:c.payType,submitted_by:c.submittedBy,charged_to:c.chargedTo||'',created_by:currentUser.id});
+  var{error}=await sb.from('claims').insert({claim_id:c.id,emp:c.emp,unit:c.unit,hp_unit_id:c.hpUnitId||null,category:c.category,description:c.desc,amount:c.amount,date:c.date,expense_month:c.expMonth||c.date.slice(0,7),status:c.status,reject_reason:c.rejectReason,slip_ref:c.slipRef,pay_type:c.payType,submitted_by:c.submittedBy,charged_to:c.chargedTo||'',created_by:currentUser.id,invoice_number:c.invoiceNumber||'',merchant_name:c.merchantName||'',ai_raw:c.aiRaw||{},ai_confidence:c.aiConfidence||0,source_type:c.sourceType||'manual',external_id:c.externalId||null,external_source:c.externalSource||null});
   if(error)console.error('dbInsertClaim:',error);
   return !error;
 }
@@ -289,6 +492,11 @@ async function dbUpdateClaim(claimId,fields){
   if(fields.slipRef!==undefined)upd.slip_ref=fields.slipRef;
   if(fields.expMonth!==undefined)upd.expense_month=fields.expMonth;
   if(fields.chargedTo!==undefined)upd.charged_to=fields.chargedTo;
+  if(fields.invoiceNumber!==undefined)upd.invoice_number=fields.invoiceNumber;
+  if(fields.merchantName!==undefined)upd.merchant_name=fields.merchantName;
+  if(fields.aiRaw!==undefined)upd.ai_raw=fields.aiRaw;
+  if(fields.aiConfidence!==undefined)upd.ai_confidence=fields.aiConfidence;
+  if(fields.sourceType!==undefined)upd.source_type=fields.sourceType;
   var{error}=await sb.from('claims').update(upd).eq('claim_id',claimId);
   if(error)console.error('dbUpdateClaim:',error);
   return !error;
@@ -324,6 +532,7 @@ async function doLogout(){
   await sb.auth.signOut();
   currentUser=null;currentProfile=null;R=null;S='auth';PS=null;claims=[];BANK_INFO={};EMPS=[];ACTIVE_EMPS=[];UNITS_DATA=[];
   isSystemAdmin=false;allUsers=[];editingUser=null;userFormError='';editingUnit=null;unitFormError='';
+  resetPasswordUser=null;resetPasswordError='';resetPasswordDraft1='';resetPasswordDraft2='';
   showInactiveUnits=false;
   render();
 }
@@ -342,51 +551,34 @@ async function initSession(user){
   render();
 }
 
-// ===== USER MANAGEMENT (Admin only, uses Admin API) =====
-var adminHeaders={'apikey':SUPABASE_SERVICE_KEY,'Authorization':'Bearer '+SUPABASE_SERVICE_KEY,'Content-Type':'application/json'};
+// ===== USER MANAGEMENT (Admin only, via Edge Function) =====
 
 async function openUsersScreen(){
   await loadUsers();
-  ss('adminUsers','adminDash');
+  ss('adminUsers','adminUsers');
 }
 async function loadUsers(){
   if(!isSystemAdmin)return;
-  var r=await fetch(SUPABASE_URL+'/rest/v1/profiles?select=*&order=created_at',{headers:adminHeaders});
-  if(r.ok){allUsers=await r.json();}
-  else{console.error('loadUsers:',await r.text());}
+  try{
+    var d=await callEdgeFunction('admin-users',{action:'list'});
+    allUsers=d.users||[];
+    userListSource=allUsers.some(function(u){return u.source==='profile';})?'profile':'auth';
+  }catch(e){console.error('loadUsers:',e);toast('User list failed: '+e.message);}
 }
 async function createUserAccount(){
   var u=document.getElementById('uf-user'),p=document.getElementById('uf-pw'),n=document.getElementById('uf-name'),r=document.getElementById('uf-role');
   if(!u||!p||!n||!r||!u.value.trim()||!p.value||!n.value.trim()){userFormError='Please fill all fields';render();return;}
   if(p.value.length<6){userFormError='Password must be at least 6 characters';render();return;}
   var username=u.value.trim().toLowerCase();
-  var email=username+'@homestay.app';
   var fullName=n.value.trim();
   var role=r.value;
-  // 1. Create auth user via Admin API
-  var r1=await fetch(SUPABASE_URL+'/auth/v1/admin/users',{
-    method:'POST',headers:adminHeaders,
-    body:JSON.stringify({email:email,password:p.value,email_confirm:true,user_metadata:{full_name:fullName}})
-  });
-  var d1=await r1.json();
-  if(!r1.ok||!d1.id){userFormError=d1.msg||d1.message||'Failed to create user';render();return;}
-  // 2. Create profile
-  var r2=await fetch(SUPABASE_URL+'/rest/v1/profiles',{
-    method:'POST',headers:{...adminHeaders,'Prefer':'return=minimal'},
-    body:JSON.stringify({id:d1.id,email:email,full_name:fullName,role:role})
-  });
-  if(!r2.ok){userFormError='User created but profile failed';render();return;}
-  // 3. Create bank_info for employees
-  if(role==='employee'){
-    await fetch(SUPABASE_URL+'/rest/v1/bank_info',{
-      method:'POST',headers:{...adminHeaders,'Prefer':'return=minimal'},
-      body:JSON.stringify({employee_name:fullName})
-    }).catch(function(){});
-  }
+  try{
+    await callEdgeFunction('admin-users',{action:'create',username:username,password:p.value,full_name:fullName,role:role});
+  }catch(e){userFormError=e.message||'Failed to create user';render();return;}
   userFormError='';
   await loadUsers();await loadBankInfo();
   toast('Account created: @'+username);
-  ss('adminUsers','adminDash');
+  ss('adminUsers','adminUsers');
 }
 async function updateUserAccount(){
   if(!editingUser)return;
@@ -396,48 +588,63 @@ async function updateUserAccount(){
   var fullName=n.value.trim();
   var role=r?r.value:editingUser.role;
   var oldName=editingUser.full_name;
-  // 1. Update profile
-  await fetch(SUPABASE_URL+'/rest/v1/profiles?id=eq.'+editingUser.id,{
-    method:'PATCH',headers:{...adminHeaders,'Prefer':'return=minimal'},
-    body:JSON.stringify({full_name:fullName,role:role})
-  });
-  // 2. Update bank_info name if changed
-  if(fullName!==oldName){
-    await fetch(SUPABASE_URL+'/rest/v1/bank_info?employee_name=eq.'+encodeURIComponent(oldName),{
-      method:'PATCH',headers:{...adminHeaders,'Prefer':'return=minimal'},
-      body:JSON.stringify({employee_name:fullName})
-    });
-  }
-  // 3. Update password if provided
-  if(p&&p.value){
-    await fetch(SUPABASE_URL+'/auth/v1/admin/users/'+editingUser.id,{
-      method:'PUT',headers:adminHeaders,
-      body:JSON.stringify({password:p.value})
-    });
-  }
+  try{
+    await callEdgeFunction('admin-users',{action:'update',user_id:editingUser.id,full_name:fullName,old_name:oldName,role:role,password:p&&p.value?p.value:''});
+  }catch(e){userFormError=e.message||'Failed to update user';render();return;}
   userFormError='';editingUser=null;
   await loadUsers();await loadBankInfo();
   toast('Account updated');
-  ss('adminUsers','adminDash');
+  ss('adminUsers','adminUsers');
+}
+async function submitResetPassword(){
+  if(!resetPasswordUser)return;
+  var p1=document.getElementById('rp-pw'),p2=document.getElementById('rp-pw2');
+  if(!p1||!p2){resetPasswordError='Password fields are missing';render();return;}
+  var pw1=String(p1.value||'');
+  var pw2=String(p2.value||'');
+  resetPasswordDraft1=pw1;
+  resetPasswordDraft2=pw2;
+  if(!pw1||!pw2){resetPasswordError='Please fill both password fields';render();return;}
+  var t1=pw1.trim();
+  var t2=pw2.trim();
+  if(!t1||!t2){resetPasswordError='Please fill both password fields';render();return;}
+  if(t1.length<6){resetPasswordError='Password must be at least 6 characters';render();return;}
+  if(t1!==t2){resetPasswordError='Passwords do not match';render();return;}
+  try{
+    await callEdgeFunction('admin-users',{action:'reset-password',user_id:resetPasswordUser.id,password:t1});
+  }catch(e){
+    resetPasswordError=e.message||'Failed to reset password';
+    render();
+    return;
+  }
+  var name=resetPasswordUser.full_name;
+  resetPasswordUser=null;
+  resetPasswordError='';
+  resetPasswordDraft1='';
+  resetPasswordDraft2='';
+  await loadUsers();
+  toast('Password updated for '+name);
+  ss('adminUsers','adminUsers');
+}
+function resetUserPassword(userId,name){
+  resetPasswordUser=allUsers.filter(function(u){return u.id===userId;})[0]||null;
+  resetPasswordError='';
+  resetPasswordDraft1='';
+  resetPasswordDraft2='';
+  ss('resetPasswordForm','adminUsers');
 }
 async function deleteUserAccount(userId,name){
   if(!confirm('Deactivate account: '+name+'?\nUser will not be able to login.')){return;}
-  var r=await fetch(SUPABASE_URL+'/rest/v1/profiles?id=eq.'+userId,{
-    method:'PATCH',headers:{...adminHeaders,'Prefer':'return=minimal'},
-    body:JSON.stringify({active:false})
-  });
-  if(!r.ok){toast('Error: Deactivate failed');return;}
+  try{await callEdgeFunction('admin-users',{action:'set-active',user_id:userId,active:false});}
+  catch(e){toast('Error: '+e.message);return;}
   await loadUsers();
   toast('Account deactivated: '+name);
   render();
 }
 async function reactivateUser(userId,name){
   if(!confirm('Reactivate account: '+name+'?')){return;}
-  var r=await fetch(SUPABASE_URL+'/rest/v1/profiles?id=eq.'+userId,{
-    method:'PATCH',headers:{...adminHeaders,'Prefer':'return=minimal'},
-    body:JSON.stringify({active:true})
-  });
-  if(!r.ok){toast('Error: Reactivate failed');return;}
+  try{await callEdgeFunction('admin-users',{action:'set-active',user_id:userId,active:true});}
+  catch(e){toast('Error: '+e.message);return;}
   await loadUsers();
   toast('Account reactivated: '+name);
   render();
@@ -474,13 +681,31 @@ function ccCard(c,fn){
   return '<div class="cc" onclick="'+fn+'"><div style="flex:1;min-width:0"><div class="cc-id">'+c.id+'</div><div class="cc-desc">'+c.desc+'</div><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px">'+(c.category?'<span style="font-size:10px;color:#6b7280">'+c.category+'</span>':'<span style="font-size:10px;color:#9ca3af;font-style:italic">No category</span>')+(R==='admin'&&c.emp?'<span style="font-size:10px;color:#9ca3af">· '+c.emp.split(' ')[0]+'</span>'+byTag:'')+unitTag+emTag+'</div></div><div class="cc-r"><div class="cc-amt">RM '+c.amount.toFixed(2)+'</div>'+sbadge(dstat(c.status))+'</div></div>';
 }
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
+function esc(v){return String(v===undefined||v===null?'':v).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function fmtDateShort(v){if(!v)return'--';var d=String(v).slice(0,10);return d.length===10?d.slice(8,10)+' '+(MONTHS[d.slice(5,7)]||d.slice(5,7)):esc(v);}
 function expMonthSelect(selVal){
   var now=new Date();var opts=[];
   for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();opts.push('<option value="'+v+'"'+(selVal===v?' selected':'')+'>'+lbl+'</option>');}
   return'<div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="f-expmonth">'+opts.join('')+'</select></div>';
 }
-function ss(s,p){PS=p||S;S=s;pendingFiles=[];pendingFileNames=[];if(s!=='newClaim'){aiResult=null;aiError='';aiAnalyzing=false;newClaimStep='upload';}render();}
-function goBack(){ss(PS||(R==='admin'?'adminDash':'empHome'));}
+function normalizeAdminScreenName(screen){
+  if(isSystemAdmin&&screen==='adminDash')return'adminUsers';
+  return screen;
+}
+function ss(s,p){
+  var next=normalizeAdminScreenName(s);
+  var parent=normalizeAdminScreenName(p||S);
+  PS=parent;S=next;
+  pendingFiles=[];pendingFileNames=[];
+  if(next!=='newClaim'){aiResult=null;aiError='';aiAnalyzing=false;newClaimStep='upload';}
+  render();
+}
+function adminHomeScreen(){return isSystemAdmin?'adminUsers':'adminDash';}
+function goBack(){
+  var fallback=R==='admin'?adminHomeScreen():'empHome';
+  var target=normalizeAdminScreenName(PS||fallback);
+  ss(target);
+}
 
 // ===== RECEIPT UPLOAD =====
 function togglePayType(t){
@@ -747,32 +972,27 @@ function pickReceiptForAI(){
 }
 window.pickReceiptForAI=pickReceiptForAI;
 
+async function analyzeInvoiceFile(f,unit){
+  var ext=f.name.split('.').pop().toLowerCase();
+  var mimeMap={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',pdf:'application/pdf'};
+  var mimeType=mimeMap[ext]||'image/jpeg';
+  var reader=new FileReader();
+  var base64=await new Promise(function(resolve,reject){reader.onload=function(){resolve(reader.result);};reader.onerror=reject;reader.readAsDataURL(f);});
+  var result=await callEdgeFunction('process-invoice',{base64Data:base64,mimeType:mimeType,unit:unit||''});
+  var ai=result.ai||result;
+  ai.duplicate_claims=result.duplicate_claims||[];
+  ai.suggested=result.suggested||{};
+  return ai;
+}
+
 async function startAIAnalysis(){
   if(!pendingFiles.length){toast('Please select a file first');return;}
   aiAnalyzing=true;aiError='';aiResult=null;newClaimStep='analyzing';render();
   try{
     var f=pendingFiles[0];
-    var ext=f.name.split('.').pop().toLowerCase();
-    var mimeMap={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',pdf:'application/pdf'};
-    var mimeType=mimeMap[ext]||'image/jpeg';
-    // Convert file to base64 and send directly to AI (no TMP upload)
-    var reader=new FileReader();
-    var base64=await new Promise(function(resolve,reject){reader.onload=function(){resolve(reader.result);};reader.onerror=reject;reader.readAsDataURL(f);});
-    var{data:sessData}=await sb.auth.getSession();
-    var authToken=sessData?.session?.access_token||'';
-    if(!authToken){var{data:refData}=await sb.auth.refreshSession();authToken=refData?.session?.access_token||'';}
-    if(!authToken)authToken=SUPABASE_KEY;
-    var resp=await fetch(SUPABASE_URL+'/functions/v1/analyze-receipt',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken,'apikey':SUPABASE_KEY},
-      body:JSON.stringify({base64Data:base64,mimeType:mimeType})
-    });
-    if(!resp.ok){
-      var errBody=await resp.json().catch(function(){return{error:'Analysis failed'};});
-      throw new Error(errBody.error||'Analysis failed (HTTP '+resp.status+')');
-    }
-    aiResult=await resp.json();
+    aiResult=await analyzeInvoiceFile(f,'');
     newClaimStep='review';
+    if(aiResult&&aiResult.duplicate_claims&&aiResult.duplicate_claims.length)toast(duplicateClaimMessage(aiResult));
   }catch(e){
     console.error('AI analysis error:',e);
     aiError=e.message||'Analysis failed. Try a clearer photo.';
@@ -819,7 +1039,21 @@ function generateDescription(ai){
   return desc;
 }
 function formatAiDescription(ai){
-  return generateDescription(ai);
+  return (ai&&ai.description)||generateDescription(ai);
+}
+function duplicateReasonLabel(reason){
+  if(reason==='invoice_number')return'Invoice number already exists in another submitted claim.';
+  if(reason==='merchant_amount_month')return'Same merchant, amount, and expense month already exist in another submitted claim.';
+  if(reason==='amount_month_party')return'Same amount and month already exist for the same employee or unit.';
+  return'Possible duplicate found in another submitted claim.';
+}
+function primaryDuplicateClaim(ai){
+  return ai&&ai.duplicate_claims&&ai.duplicate_claims.length?ai.duplicate_claims[0]:null;
+}
+function duplicateClaimMessage(ai){
+  var dup=primaryDuplicateClaim(ai);
+  if(!dup)return'';
+  return 'Duplicate blocked: '+dup.claim_id+'. '+duplicateReasonLabel(dup.duplicate_reason)+' Save as Draft if you need to keep this receipt first.';
 }
 
 function goToManualEntry(){
@@ -841,6 +1075,33 @@ function filterClaims(list,st,mo,yr,em){
     if(em&&em!=='All'&&c.emp!==em)return false;
     return true;
   });
+}
+function claimListClaims(list){
+  return list.filter(function(c){return c.status!=='Company-Paid';});
+}
+function claimListPageCount(total){
+  return Math.max(1,Math.ceil((total||0)/CLAIMS_PAGE_SIZE));
+}
+function clampClaimListPage(page,total){
+  return Math.min(Math.max(page||1,1),claimListPageCount(total));
+}
+function claimListSlice(list,page){
+  var start=(page-1)*CLAIMS_PAGE_SIZE;
+  return list.slice(start,start+CLAIMS_PAGE_SIZE);
+}
+function setClaimListPage(listKey,page){
+  if(listKey==='admin')adminListPage=page;
+  else empListPage=page;
+  render();
+}
+window.setClaimListPage=setClaimListPage;
+function claimListPager(listKey,total,page){
+  var totalPages=claimListPageCount(total);
+  var prevDisabled=page<=1;
+  var nextDisabled=page>=totalPages;
+  var prevBtn='<button class="pbtn btn-o" style="width:auto;padding:7px 12px;'+(prevDisabled?'opacity:.45;cursor:not-allowed;':'')+'" onclick="'+(prevDisabled?'':'setClaimListPage(\\\''+listKey+'\\\','+(page-1)+')')+'"'+(prevDisabled?' disabled':'')+'>Back</button>';
+  var nextBtn='<button class="pbtn btn-o" style="width:auto;padding:7px 12px;'+(nextDisabled?'opacity:.45;cursor:not-allowed;':'')+'" onclick="'+(nextDisabled?'':'setClaimListPage(\\\''+listKey+'\\\','+(page+1)+')')+'"'+(nextDisabled?' disabled':'')+'>Next</button>';
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px"><span style="font-size:11px;color:#6b7280">Page '+page+' of '+totalPages+'</span><div style="display:flex;gap:8px">'+prevBtn+nextBtn+'</div></div>';
 }
 
 // ===== ASYNC ACTIONS =====
@@ -916,7 +1177,7 @@ async function saveBankInfo(){
   var b=document.getElementById('p-bank'),a=document.getElementById('p-acc'),n=document.getElementById('p-name');
   if(!b||!a||!n||!b.value||!a.value||!n.value){toast('Please fill all fields');return;}
   await dbUpdateBankInfo(editingBankEmp,b.value,a.value,n.value);
-  await loadBankInfo();toast('Bank info saved for '+editingBankEmp);editingBankEmp=null;ss('adminEmployees','adminDash');
+  await loadBankInfo();toast('Bank info saved for '+editingBankEmp);editingBankEmp=null;ss('adminEmployees','adminUsers');
 }
 async function saveEmpEdit(){
   var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date'),emv=document.getElementById('f-expmonth');
@@ -949,6 +1210,7 @@ async function submitNewClaim(asDraft){
   if(!desc||!amt||!dt)return;
   var dv=desc.value,av=parseFloat(amt.value),dtv=dt.value,cv=cat?cat.value:'';
   if(!asDraft&&(!dv||!av||!dtv)){toast('Please fill all required fields');return;}
+  if(!asDraft&&aiResult&&aiResult.duplicate_claims&&aiResult.duplicate_claims.length){toast(duplicateClaimMessage(aiResult));return;}
   // AI amount mismatch check (Feature 3)
   if(!asDraft&&aiResult&&aiResult.total>0&&av>0&&Math.abs(aiResult.total-av)>0.01){
     if(!confirm('⚠️ Amount mismatch: AI extracted RM '+aiResult.total.toFixed(2)+' but you entered RM '+av.toFixed(2)+'. Submit anyway?'))return;
@@ -957,19 +1219,19 @@ async function submitNewClaim(asDraft){
   if(!asDraft&&av&&dtv){
     var dupMonth=dtv.slice(0,7);
     var dups=claims.filter(function(c){return c.emp===myName()&&c.amount===av&&c.date.slice(0,7)===dupMonth&&c.status!=='Rejected'&&c.status!=='Draft';});
-    if(dups.length>0){if(!confirm('Warning: You already have a similar claim (RM '+av.toFixed(2)+') in '+dupMonth+'. Submit anyway?'))return;}
+    if(dups.length>0)toast('Heads up: You already have a similar claim (RM '+av.toFixed(2)+') in '+dupMonth+'.');
   }
   // Attachment duplicate check: same AI reference number (Feature 1)
   if(!asDraft&&aiResult&&aiResult.reference_number){
     var rfN=(aiResult.reference_number||'').trim();
     if(rfN){
       var refDups=claims.filter(function(c){return c.desc&&c.desc.indexOf(rfN)>=0&&c.status!=='Rejected'&&c.status!=='Draft';});
-      if(refDups.length>0){if(!confirm('⚠️ This receipt (ref: '+rfN+') was already submitted in '+refDups[0].id+'. Submit anyway?'))return;}
+      if(refDups.length>0)toast('Heads up: This receipt ref '+rfN+' already appears in '+refDups[0].id+'.');
     }
   }
   var cid=await getNextClaimId('HE');
   var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:(dtv||new Date().toISOString().slice(0,10)).slice(0,7);
-  var nc={id:cid,emp:myName(),unit:'',category:cv,desc:dv||'(untitled)',amount:av||0,date:dtv||new Date().toISOString().slice(0,10),expMonth:expM,status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self'};
+  var nc={id:cid,emp:myName(),unit:'',category:cv,desc:dv||'(untitled)',amount:av||0,date:dtv||new Date().toISOString().slice(0,10),expMonth:expM,status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self',invoiceNumber:aiResult?(aiResult.invoice_number||aiResult.reference_number||''):'',merchantName:aiResult?(aiResult.merchant_name||''):'',aiRaw:aiResult||{},aiConfidence:aiResult?(aiResult.confidence||0):0,sourceType:aiResult?'ai_scan':'manual'};
   // Upload pending files with claim ID naming
   if(pendingFiles.length){var urls=await uploadAllFiles(cid,{category:cv,unit:'',desc:dv||'',date:dtv||new Date().toISOString().slice(0,10),aiItems:aiResult?aiResult.items:null});if(urls)nc.slipRef=urls;}
   await dbInsertClaim(nc);
@@ -982,6 +1244,7 @@ async function submitMgrClaim(){
   if(!desc||!amt||!dt)return;
   var dv=desc.value,av=parseFloat(amt.value),dtv=dt.value,cv=cat?cat.value:'Other',uv=unit?unit.value:'';
   if(!dv||!av||!dtv){toast('Please fill all required fields');return;}
+  if(aiResult&&aiResult.duplicate_claims&&aiResult.duplicate_claims.length){toast(duplicateClaimMessage(aiResult));return;}
   var charged=document.getElementById('f-charged');
   var isMP=uv==='MP Office';
   if(!isMP&&(!charged||!charged.value)){toast('Please select who to charge');return;}
@@ -991,15 +1254,15 @@ async function submitMgrClaim(){
     var dupEmp=isCompany?'':mgrFormEmp;
     var dupMonth=dtv.slice(0,7);
     var dups=claims.filter(function(c){return c.emp===dupEmp&&c.amount===av&&c.date.slice(0,7)===dupMonth&&c.status!=='Rejected'&&c.status!=='Draft';});
-    if(dups.length>0){if(!confirm('Warning: A similar claim (RM '+av.toFixed(2)+') already exists for '+(dupEmp||'company')+' in '+dupMonth+'. Submit anyway?'))return;}
+    if(dups.length>0)toast('Heads up: A similar claim (RM '+av.toFixed(2)+') already exists for '+(dupEmp||'company')+' in '+dupMonth+'.');
   }
   var cid=await getNextClaimId(isCompany?'CO':'MGR');
   var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:dtv.slice(0,7);
-  var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,hpUnitId:unitHpId(uv),category:cv,desc:dv,amount:av,date:dtv,expMonth:expM,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager',chargedTo:isMP?'':charged.value};
+  var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,hpUnitId:unitHpId(uv),category:cv,desc:dv,amount:av,date:dtv,expMonth:expM,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager',chargedTo:isMP?'':charged.value,invoiceNumber:aiResult?(aiResult.invoice_number||aiResult.reference_number||''):'',merchantName:aiResult?(aiResult.merchant_name||''):'',aiRaw:aiResult||{},aiConfidence:aiResult?(aiResult.confidence||0):0,sourceType:aiResult?'ai_scan':'manual'};
   if(pendingFiles.length){var urls=await uploadAllFiles(cid,{category:cv,unit:uv,desc:dv,date:dtv});if(urls)nc.slipRef=urls;}
   await dbInsertClaim(nc);
   await loadClaims();toast(isCompany?'Recorded as Company-Paid':'Auto-approved for '+mgrFormEmp);
-  mgrFormPayType='employee';mgrFormEmp=myName();ss('adminDash');
+  aiResult=null;mgrFormPayType='employee';mgrFormEmp=myName();ss('adminDash');
 }
 
 // ===== REPORTING MODULE =====
@@ -1017,55 +1280,116 @@ async function exportReportPDF(){
   var monthLabel=MONTHS[rptMonth]+' '+rptYear;
   try{
     var doc=new jsPDFLib({orientation:'p',unit:'mm',format:'a4'});
-    var x=15,y=18,pw=180,rCol=x+pw;
-    doc.setFontSize(18);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
-    doc.text('Expense Report',x,y);y+=8;
-    doc.setFontSize(10);doc.setFont(undefined,'normal');doc.setTextColor(80,80,80);
-    doc.text('Unit: '+rptUnit,x,y);doc.text('Owner: '+ownerName,x+60,y);doc.text('Period: '+monthLabel,x+120,y);y+=5;
-    doc.setDrawColor(180,180,180);doc.setLineWidth(0.4);doc.line(x,y,x+pw,y);y+=7;
-    function drawSection(title,arr,rgb){
-      if(!arr.length)return;
-      var cats={};arr.forEach(function(c){if(!cats[c.category])cats[c.category]=0;cats[c.category]+=c.amount;});
-      doc.setFontSize(11);doc.setFont(undefined,'bold');doc.setTextColor(rgb[0],rgb[1],rgb[2]);
-      doc.text(title,x,y);y+=6;
-      doc.setFontSize(9);doc.setFont(undefined,'normal');doc.setTextColor(60,60,60);
-      Object.entries(cats).forEach(function(e){
-        doc.text(e[0],x+4,y);
-        var amtStr='RM '+e[1].toFixed(2);
-        doc.text(amtStr,rCol-doc.getTextWidth(amtStr),y);
-        y+=5;
-      });
-      var st=arr.reduce(function(s,c){return s+c.amount;},0);
-      doc.setFont(undefined,'bold');doc.setTextColor(rgb[0],rgb[1],rgb[2]);
-      var stStr='RM '+st.toFixed(2);
-      doc.text('Subtotal',x+4,y);doc.text(stStr,rCol-doc.getTextWidth(stStr),y);
-      y+=8;doc.setTextColor(0,0,0);
+    var x=12,y=16,pw=186,rCol=x+pw,pageBottom=282;
+    function money(v){return 'RM '+(Number(v)||0).toFixed(2);}
+    function dmy(v){if(!v)return'--';var d=String(v).slice(0,10);return d.length===10?d.slice(8,10)+' '+(MONTHS[d.slice(5,7)]||d.slice(5,7))+' '+d.slice(0,4):String(v);}
+    function addPageIfNeeded(h){if(y+h>pageBottom){doc.addPage();y=16;}}
+    function line(){doc.setDrawColor(210,210,210);doc.setLineWidth(0.3);doc.line(x,y,x+pw,y);y+=5;}
+    function right(text,xx,yy){doc.text(text,xx-doc.getTextWidth(text),yy);}
+    function section(title){
+      addPageIfNeeded(12);
+      doc.setFontSize(11);doc.setFont(undefined,'bold');doc.setTextColor(17,24,39);
+      doc.text(title,x,y);y+=4;
+      doc.setDrawColor(230,230,230);doc.line(x,y,x+pw,y);y+=5;
     }
-    drawSection('SHARED EXPENSES (Both)',shared,[6,95,70]);
-    drawSection('OWNER EXPENSES',ownerCl,[29,78,216]);
-    // Operator expenses excluded from PDF
-    // Booking summary
-    var pdfRes=reservations.filter(function(r){if(!r.start_date||!r.unit_name)return false;if(r.booking_type===6)return false;if(r.booking_status&&r.booking_status.indexOf('Cancel')>=0)return false;return r.unit_name===rptUnit&&r.start_date.slice(0,7)===ym;});
+    function row(label,value,bold){
+      addPageIfNeeded(6);
+      doc.setFontSize(9);doc.setFont(undefined,bold?'bold':'normal');doc.setTextColor(55,65,81);
+      doc.text(label,x,y);right(value,rCol,y);y+=5;
+    }
+    function tableHeader(cols){
+      addPageIfNeeded(10);
+      doc.setFillColor(243,244,246);doc.rect(x,y-4,pw,7,'F');
+      doc.setFontSize(7.4);doc.setFont(undefined,'bold');doc.setTextColor(55,65,81);
+      cols.forEach(function(c){doc.text(c.t,x+c.x,y);});
+      y+=5;
+    }
+    function reportTitle(){
+      var hp=UNITS_DATA.filter(function(u){return u.source==='hostplatform'&&unitDisplayName(u)===rptUnit;})[0]||null;
+      if(hp)return ((hp.property_name||'').trim()+' '+(hp.name||rptUnit)).trim();
+      return rptUnit;
+    }
+    var title=reportTitle();
+    var pdfHpIds=hpIdsForDisplayUnit(rptUnit);
+    var pdfRes=reservations.filter(function(r){if(!r.start_date||!r.unit_name)return false;if(r.booking_type===6)return false;if(r.booking_status&&r.booking_status.indexOf('Cancel')>=0)return false;var unitMatch=r.unit_name===rptUnit||(r.hp_unit_id&&pdfHpIds.indexOf(r.hp_unit_id)>=0);return unitMatch&&r.start_date.slice(0,7)===ym;});
+    pdfRes.sort(function(a,b){return String(a.start_date||'').localeCompare(String(b.start_date||''));});
     var bkCount=pdfRes.length;
     var bkRev=pdfRes.reduce(function(s,r){return s+parseFloat(r.rental||0)+parseFloat(r.extra_guest||0);},0);
-    if(bkCount>0){
-      doc.setFontSize(11);doc.setFont(undefined,'bold');doc.setTextColor(146,64,14);
-      doc.text('BOOKINGS',x,y);y+=5;
-      doc.setFontSize(9);doc.setFont(undefined,'normal');doc.setTextColor(60,60,60);
-      doc.text('Reservations: '+bkCount,x+4,y);var revStr='RM '+bkRev.toFixed(2);doc.text('Revenue: '+revStr,x+80,y);y+=8;
-    }
-    doc.setDrawColor(0);doc.setLineWidth(0.6);doc.line(x,y,x+pw,y);y+=6;
+    var cleaningRate=(parseFloat(cfg.cleaning_fee||0)+parseFloat(cfg.laundry_fee||0));
+    var cleaningTotal=bkCount*cleaningRate;
+    var profitPct=parseFloat(cfg.service_fee_pct||0)||0;
+    var sharedTotal=shared.reduce(function(s,c){return s+c.amount;},0);
+    var homestayProfit=bkRev-sharedTotal;
+    var managementFee=homestayProfit*profitPct/100;
+    var ownerExpenseTotal=ownerCl.reduce(function(s,c){return s+c.amount;},0);
+    var ownerExpensesTotal=ownerExpenseTotal;
+    var ownerProfit=homestayProfit-managementFee-ownerExpensesTotal;
+
+    doc.setFontSize(17);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
+    doc.text(title,x,y);y+=7;
+    doc.setFontSize(9);doc.setFont(undefined,'normal');doc.setTextColor(80,80,80);
+    doc.text('Owner: '+ownerName,x,y);doc.text('Period: '+monthLabel,x+82,y);y+=6;
+    line();
+
+    section('Booking Details');
+    tableHeader([{t:'Guest',x:2},{t:'Check-in',x:70},{t:'Check-out',x:102},{t:'Nights',x:134},{t:'Total',x:172}]);
+    doc.setFont(undefined,'normal');doc.setFontSize(7.4);doc.setTextColor(45,45,45);
+    if(!pdfRes.length){doc.text('No booking records for this unit/month',x+2,y);y+=6;}
+    pdfRes.forEach(function(r){
+      addPageIfNeeded(8);
+      var rental=parseFloat(r.rental||0),extra=parseFloat(r.extra_guest||0),total=rental+extra;
+      var guest=doc.splitTextToSize(String(r.guest_name||'Guest'),48)[0]||'Guest';
+      doc.text(guest,x+2,y);
+      doc.text(dmy(r.start_date),x+70,y);
+      doc.text(dmy(r.end_date),x+102,y);
+      doc.text(String(r.nights||0),x+138,y);
+      right(money(total),rCol,y);
+      y+=5;
+    });
+    row('Sales',money(bkRev),true);y+=2;
+
+    section('Expenses Details');
+    var expenseRows=ownerCl.concat(shared);
+    if(cleaningTotal>0)expenseRows.push({category:'Cleaning fee',amount:cleaningTotal});
+    expenseRows.sort(function(a,b){return String(a.category||'').localeCompare(String(b.category||''));});
+    var expenseCats={};expenseRows.forEach(function(c){if(!expenseCats[c.category])expenseCats[c.category]=0;expenseCats[c.category]+=c.amount;});
+    tableHeader([{t:'Category',x:2},{t:'Amount',x:168}]);
+    doc.setFont(undefined,'normal');doc.setFontSize(7.4);doc.setTextColor(45,45,45);
+    if(!expenseRows.length){doc.text('No owner/shared expenses for this unit/month',x+2,y);y+=6;}
+    Object.entries(expenseCats).forEach(function(e){
+      addPageIfNeeded(8);
+      doc.text(doc.splitTextToSize(e[0]||'',130)[0]||'',x+2,y);
+      right(money(e[1]),rCol,y);
+      y+=5;
+    });
+    row('Expenses',money(sharedTotal+cleaningTotal),true);
+    row('Homestay Profit',money(homestayProfit),true);y+=2;
+
+    section('Homestay Management Fee');
+    row('Homestay Management Fee',money(managementFee),true);y+=2;
+
+    section('Owner Expenses');
+    var ownerCats={};ownerCl.forEach(function(c){if(!ownerCats[c.category])ownerCats[c.category]=0;ownerCats[c.category]+=c.amount;});
+    Object.entries(ownerCats).forEach(function(e){row(e[0],money(e[1]),false);});
+    row('Total Owner Expenses',money(ownerExpensesTotal),true);
+    y+=2;
+
+    section('Owner');
+    row('Owner',ownerName,false);
+    row('Homestay Profit',money(homestayProfit),false);
+    row('Less: Homestay Management Fee',money(managementFee),false);
+    row('Less: Owner Expenses',money(ownerExpensesTotal),false);
+    doc.setDrawColor(0);doc.setLineWidth(0.5);doc.line(x,y,x+pw,y);y+=6;
     doc.setFontSize(12);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
-    var grand=shared.reduce(function(s,c){return s+c.amount;},0)+ownerCl.reduce(function(s,c){return s+c.amount;},0);
-    var grandStr='RM '+grand.toFixed(2);
-    doc.text('TOTAL EXPENSES',x,y);doc.text(grandStr,rCol-doc.getTextWidth(grandStr),y);y+=10;
+    doc.text('Owner Profit',x,y);right(money(ownerProfit),rCol,y);y+=10;
+
+    if(y>pageBottom-8){doc.addPage();y=16;}
     doc.setFontSize(8);doc.setFont(undefined,'normal');doc.setTextColor(150,150,150);
-    doc.text('Generated: '+new Date().toLocaleDateString('en-MY')+' · Homestay Expense System',x,y);
-    doc.save('Expense_Report_'+rptUnit.replace(/\s+/g,'_')+'_'+MONTHS[rptMonth]+rptYear+'.pdf');
+    doc.text('Generated: '+new Date().toLocaleDateString('en-MY')+' - Homestay Expense System',x,y);
+    doc.save(title.replace(/[^\w]+/g,'_')+'_'+MONTHS[rptMonth]+rptYear+'.pdf');
     toast('PDF exported');
   }catch(e){console.error('PDF export error:',e);toast('Failed to export PDF');}
 }
-
 // ===== RENDER =====
 function render(){
   var ms=document.getElementById('ms'),tbt_el=document.getElementById('tbt'),bb_el=document.getElementById('bb'),tbr_el=document.getElementById('tbr'),nav=document.getElementById('nav'),lo=document.getElementById('lob');
@@ -1073,7 +1397,9 @@ function render(){
   var host=(location&&location.hostname?location.hostname:'').toLowerCase();
   var path=(location&&location.pathname?location.pathname:'').toLowerCase();
   // 改进测试环境检测：支持多种方式识别 Test 环境
-  var isTestEnv=(path.match(/\/homestayerp-test/i)!==null);
+  // Do not key this off Supabase project ref; live/test data config is separate from UI banner.
+  var repoLooksTest=path.indexOf(TEST_REPO_PATH)>=0;
+  var isTestEnv=repoLooksTest;
   var watermarkEl=document.getElementById('watermark-test');
   if(isTestEnv){
     if(!watermarkEl){var wm=document.createElement('div');wm.id='watermark-test';wm.className='watermark';wm.textContent='TESTING';phoneEl.appendChild(wm);}
@@ -1094,7 +1420,7 @@ function render(){
   function adminNav(a){
     nav.style.display='flex';
     if(isSystemAdmin){
-      var its=[['users','👥','Users',"openUsers()"],['emps','👥','Staff',"ss('adminEmployees','adminDash')"],['units','🏘','Units',"ss('adminUnits','adminDash')"],['logs','🪵','Logs',"openErrorLogs()"]];
+      var its=[['users','👥','Users',"openUsers()"],['emps','👥','Staff',"ss('adminEmployees','adminUsers')"],['units','🏘','Units',"ss('adminUnits','adminUsers')"],['logs','🪵','Logs',"openErrorLogs()"]];
     } else {
       var its=[['dash','⊞','Dash',"ss('adminDash')"],['list','☰','Claims',"ss('adminList','adminDash')"],['pay','💳','Pay',"ss('adminPay','adminDash')"],['sub','＋','Submit',"ss('mgrNewClaim','adminDash')"],['report','📊','Report',"ss('reportHome','adminDash')"]];
     }
@@ -1127,15 +1453,17 @@ function render(){
   }
   else if(S==='empList'){
     tbt_el.textContent='My Claims';bb_el.style.display='block';empNav('claims');
-    var my=claims.filter(function(c){return c.emp===myName()&&c.payType==='employee';});
+    var my=claimListClaims(claims).filter(function(c){return c.emp===myName()&&c.payType==='employee';});
     var months=['All'].concat(Object.keys(MONTHS));var years=['All'].concat(YEARS);
     var statuses=['All','Submitted','Approved','Rejected','Draft','Claimed'];
-    function ec(v){empFltStatus=v;render();}function em(v){empFltMonth=v;render();}function ey(v){empFltYear=v;render();}
+    function ec(v){empFltStatus=v;empListPage=1;render();}function em(v){empFltMonth=v;empListPage=1;render();}function ey(v){empFltYear=v;empListPage=1;render();}
     window.ec=ec;window.em=em;window.ey=ey;
     var fc=filterClaims(my,empFltStatus,empFltMonth,empFltYear,'All');
+    empListPage=clampClaimListPage(empListPage,fc.length);
+    var pageClaims=claimListSlice(fc,empListPage);
     var total=fc.reduce(function(s,c){return s+c.amount;},0);
-    var cards=fc.map(function(c){var i=claims.indexOf(c);return ccCard(c,'viewClaim('+i+',\'empList\')');}).join('');
-    ms.innerHTML='<div class="scr"><div style="background:#f9fafb;border-radius:12px;padding:10px;border:1px solid #e5e7eb;display:flex;flex-direction:column;gap:6px"><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Status</div><div class="flt-row">'+statuses.map(function(s){return'<span class="chip'+(empFltStatus===s?' on':'')+'" onclick="ec(\''+s+'\')">'+s+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Month</div><div class="flt-row">'+months.map(function(m){return'<span class="chip'+(empFltMonth===m?' on':'')+'" onclick="em(\''+m+'\')">'+(m==='All'?'All':MONTHS[m])+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Year</div><div class="flt-row">'+years.map(function(y){return'<span class="chip'+(empFltYear===y?' on':'')+'" onclick="ey(\''+y+'\')">'+y+'</span>';}).join('')+'</div></div></div><div style="background:#f9fafb;border-radius:8px;padding:8px 10px;display:flex;justify-content:space-between"><span style="font-size:12px;color:#6b7280">'+fc.length+' claim(s)</span><span style="font-size:13px;font-weight:600;color:#111">RM '+total.toFixed(2)+'</span></div>'+(cards||'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No claims match</div>')+'</div>';
+    var cards=pageClaims.map(function(c){var i=claims.indexOf(c);return ccCard(c,'viewClaim('+i+',\'empList\')');}).join('');
+    ms.innerHTML='<div class="scr"><div style="background:#f9fafb;border-radius:12px;padding:10px;border:1px solid #e5e7eb;display:flex;flex-direction:column;gap:6px"><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Status</div><div class="flt-row">'+statuses.map(function(s){return'<span class="chip'+(empFltStatus===s?' on':'')+'" onclick="ec(\''+s+'\')">'+s+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Month</div><div class="flt-row">'+months.map(function(m){return'<span class="chip'+(empFltMonth===m?' on':'')+'" onclick="em(\''+m+'\')">'+(m==='All'?'All':MONTHS[m])+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Year</div><div class="flt-row">'+years.map(function(y){return'<span class="chip'+(empFltYear===y?' on':'')+'" onclick="ey(\''+y+'\')">'+y+'</span>';}).join('')+'</div></div></div><div style="background:#f9fafb;border-radius:8px;padding:8px 10px;display:flex;justify-content:space-between"><span style="font-size:12px;color:#6b7280">'+fc.length+' claim(s)</span><span style="font-size:13px;font-weight:600;color:#111">RM '+total.toFixed(2)+'</span></div>'+(cards||'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No claims match</div>')+(fc.length?claimListPager('emp',fc.length,empListPage):'')+'</div>';
   }
   else if(S==='claimDetail'){
     var c=SEL;tbt_el.textContent='Claim Detail';bb_el.style.display='block';empNav('claims');
@@ -1167,14 +1495,17 @@ function render(){
       // Step 3: Review AI results
       var ai=aiResult||{};
       var descVal=formatAiDescription(ai);
+      var aiMonth=(ai.suggested&&ai.suggested.expense_month)||ai.expense_month||((ai.date||today).slice(0,7));
+      var aiCatOpts=CATS.map(function(c){return'<option value="'+c+'"'+(ai.category===c?' selected':'')+'>'+c+'</option>';}).join('');
       var notReceiptWarn=ai.is_receipt===false?'<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:#92400e">⚠️ May not be a receipt</div><div style="font-size:11px;color:#92400e;margin-top:3px">AI could not confirm this is a valid receipt or invoice. Please verify the details or re-scan with the correct file.</div><button class="pbtn btn-o" style="margin-top:8px;width:100%" onclick="restartAIScan()">↻ Re-scan different file</button></div>':'';
-      ms.innerHTML='<div class="scr">'+notReceiptWarn+'<div class="ai-result-card"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="font-size:14px">🤖</span><span style="font-size:12px;font-weight:600;color:#065f46">AI Analysis Complete</span><span class="ai-tag">Auto-filled</span></div>'+aiItemsHtml(ai.items)+'<div style="display:flex;justify-content:space-between;padding:6px;margin-top:4px;background:#d1fae5;border-radius:8px"><span style="font-size:12px;font-weight:600;color:#065f46">Total</span><span style="font-size:13px;font-weight:700;color:#065f46">RM '+(ai.total||0).toFixed(2)+'</span></div></div><div class="fg"><label class="fl">Description *</label><textarea class="fi" id="f-desc" rows="4" style="resize:vertical;font-size:12px;line-height:1.4">'+descVal+'</textarea></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" value="'+(ai.total||'')+'"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+(ai.date||today)+'"/></div></div>'+'<div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="restartAIScan()">↻ Re-scan</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div><button class="pbtn btn-o" style="margin-top:4px" onclick="submitNewClaim(true)">Save as Draft</button></div>';
+      ms.innerHTML='<div class="scr">'+notReceiptWarn+'<div class="ai-result-card"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="font-size:14px">🤖</span><span style="font-size:12px;font-weight:600;color:#065f46">AI Analysis Complete</span><span class="ai-tag">Auto-filled</span></div>'+aiItemsHtml(ai.items)+'<div style="display:flex;justify-content:space-between;padding:6px;margin-top:4px;background:#d1fae5;border-radius:8px"><span style="font-size:12px;font-weight:600;color:#065f46">Total</span><span style="font-size:13px;font-weight:700;color:#065f46">RM '+(ai.total||0).toFixed(2)+'</span></div></div><div class="fg"><label class="fl">Description *</label><textarea class="fi" id="f-desc" rows="4" style="resize:vertical;font-size:12px;line-height:1.4">'+descVal+'</textarea></div><div class="fg"><label class="fl">Category *</label><select class="fi" id="f-cat">'+aiCatOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" value="'+(ai.total||'')+'"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+(ai.date||today)+'"/></div></div>'+expMonthSelect(aiMonth)+'<div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="restartAIScan()">↻ Re-scan</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div><button class="pbtn btn-o" style="margin-top:4px" onclick="submitNewClaim(true)">Save as Draft</button></div>';
     } else {
       // Manual entry fallback
       ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Manual entry</span> — fill in details below.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. Electricity Bill - INV12345"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div><div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="submitNewClaim(true)">Save Draft</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div><div class="ai-manual-link" onclick="restartAIScan()">← Back to receipt upload</div></div>';
     }
   }
   else if(S==='adminDash'){
+    if(isSystemAdmin){ss('adminUsers','adminUsers');return;}
     tbt_el.textContent='Manager Dashboard';adminNav('dash');
     var months=['All'].concat(Object.keys(MONTHS));var years=['All'].concat(YEARS);var unitOpts=['All Units'].concat(UNITS);
     function dm(v){dashFltMonth=v;render();}function dy(v){dashFltYear=v;render();}function du(v){dashFltUnit=v;render();}
@@ -1207,14 +1538,16 @@ function render(){
   }
   else if(S==='adminList'){
     tbt_el.textContent='All Claims';bb_el.style.display='block';adminNav('list');
-    var statuses=['All','Submitted','Approved','Rejected','Draft','Claimed','Auto-Approved','Company-Paid'];
-    var months=['All'].concat(Object.keys(MONTHS));var years=['All'].concat(YEARS);var empList=['All'].concat(EMPS).concat(['Manager']);
-    function as(v){fltStatus=v;render();}function am(v){fltMonth=v;render();}function ay(v){fltYear=v;render();}function ae(v){fltEmp=v;render();}
+    var statuses=['All','Submitted','Approved','Rejected','Draft','Claimed','Auto-Approved'];
+    var months=['All'].concat(Object.keys(MONTHS));var years=['All'].concat(YEARS);var empList=['All'].concat(EMPS);
+    function as(v){fltStatus=v;adminListPage=1;render();}function am(v){fltMonth=v;adminListPage=1;render();}function ay(v){fltYear=v;adminListPage=1;render();}function ae(v){fltEmp=v;adminListPage=1;render();}
     window.as=as;window.am=am;window.ay=ay;window.ae=ae;
-    var fc=filterClaims(claims,fltStatus,fltMonth,fltYear,fltEmp);
+    var fc=filterClaims(claimListClaims(claims),fltStatus,fltMonth,fltYear,fltEmp);
+    adminListPage=clampClaimListPage(adminListPage,fc.length);
+    var pageClaims=claimListSlice(fc,adminListPage);
     var total=fc.reduce(function(s,c){return s+c.amount;},0);
-    var cards=fc.map(function(c){var i=claims.indexOf(c);return ccCard(c,'adminView('+i+',\'adminList\')');}).join('');
-    ms.innerHTML='<div class="scr"><div style="background:#f9fafb;border-radius:12px;padding:9px;border:1px solid #e5e7eb;display:flex;flex-direction:column;gap:5px"><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Status</div><div class="flt-row">'+statuses.map(function(s){return'<span class="chip'+(fltStatus===s?' on':'')+'" onclick="as(\''+s+'\')">'+s+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Month</div><div class="flt-row">'+months.map(function(m){return'<span class="chip'+(fltMonth===m?' on':'')+'" onclick="am(\''+m+'\')">'+(m==='All'?'All':MONTHS[m])+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Year</div><div class="flt-row">'+years.map(function(y){return'<span class="chip'+(fltYear===y?' on':'')+'" onclick="ay(\''+y+'\')">'+y+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Employee</div><div class="flt-row">'+empList.map(function(e){return'<span class="chip'+(fltEmp===e?' on':'')+'" onclick="ae(\''+e+'\')">'+(e==='All'?'All':e.split(' ')[0])+'</span>';}).join('')+'</div></div></div><div style="background:#f9fafb;border-radius:8px;padding:8px 10px;display:flex;justify-content:space-between"><span style="font-size:12px;color:#6b7280">'+fc.length+' claim(s)</span><span style="font-size:13px;font-weight:600;color:#111">RM '+total.toFixed(2)+'</span></div>'+(cards||'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No claims match</div>')+'</div>';
+    var cards=pageClaims.map(function(c){var i=claims.indexOf(c);return ccCard(c,'adminView('+i+',\'adminList\')');}).join('');
+    ms.innerHTML='<div class="scr"><div style="background:#f9fafb;border-radius:12px;padding:9px;border:1px solid #e5e7eb;display:flex;flex-direction:column;gap:5px"><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Status</div><div class="flt-row">'+statuses.map(function(s){return'<span class="chip'+(fltStatus===s?' on':'')+'" onclick="as(\''+s+'\')">'+s+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Month</div><div class="flt-row">'+months.map(function(m){return'<span class="chip'+(fltMonth===m?' on':'')+'" onclick="am(\''+m+'\')">'+(m==='All'?'All':MONTHS[m])+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Year</div><div class="flt-row">'+years.map(function(y){return'<span class="chip'+(fltYear===y?' on':'')+'" onclick="ay(\''+y+'\')">'+y+'</span>';}).join('')+'</div></div><div><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Employee</div><div class="flt-row">'+empList.map(function(e){return'<span class="chip'+(fltEmp===e?' on':'')+'" onclick="ae(\''+e+'\')">'+(e==='All'?'All':e.split(' ')[0])+'</span>';}).join('')+'</div></div></div><div style="background:#f9fafb;border-radius:8px;padding:8px 10px;display:flex;justify-content:space-between"><span style="font-size:12px;color:#6b7280">'+fc.length+' claim(s)</span><span style="font-size:13px;font-weight:600;color:#111">RM '+total.toFixed(2)+'</span></div>'+(cards||'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No claims match</div>')+(fc.length?claimListPager('admin',fc.length,adminListPage):'')+'</div>';
   }
   else if(S==='adminReview'){
     var c=SEL;tbt_el.textContent='Review Claim';bb_el.style.display='block';adminNav('list');
@@ -1255,34 +1588,68 @@ function render(){
     var emp=editingBankEmp;if(!emp){ss('adminEmployees');return;}
     var bi=BANK_INFO[emp]||{};var ini=initials(emp);
     tbt_el.textContent='Bank Info';bb_el.style.display='block';adminNav('emps');
-    ms.innerHTML='<div class="scr"><div style="display:flex;align-items:center;gap:12px;background:#f9fafb;border-radius:12px;padding:12px;border:1px solid #e5e7eb"><div class="avatar" style="width:44px;height:44px;font-size:16px">'+ini+'</div><div><div style="font-size:15px;font-weight:600;color:#111">'+emp+'</div><div style="font-size:12px;color:#6b7280">Employee</div></div></div><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">This bank info will be shown during pay out for accurate transfer.</div></div><div class="fg"><label class="fl">Bank name *</label><input class="fi" id="p-bank" value="'+(bi.bank||'')+'" placeholder="e.g. Maybank, CIMB, Public Bank"/></div><div class="fg"><label class="fl">Account number *</label><input class="fi" id="p-acc" value="'+(bi.acc||'')+'" placeholder="e.g. 1234 5678 9012"/></div><div class="fg"><label class="fl">Full name (as per bank) *</label><input class="fi" id="p-name" value="'+(bi.fullName||'')+'" placeholder="Full legal name"/></div><button class="pbtn btn-p" onclick="saveBankInfo()">Save Bank Info</button>'+(bi.bank?'<button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminEmployees\',\'adminDash\')">Cancel</button>':'')+'</div>';
+    ms.innerHTML='<div class="scr"><div style="display:flex;align-items:center;gap:12px;background:#f9fafb;border-radius:12px;padding:12px;border:1px solid #e5e7eb"><div class="avatar" style="width:44px;height:44px;font-size:16px">'+ini+'</div><div><div style="font-size:15px;font-weight:600;color:#111">'+emp+'</div><div style="font-size:12px;color:#6b7280">Employee</div></div></div><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">This bank info will be shown during pay out for accurate transfer.</div></div><div class="fg"><label class="fl">Bank name *</label><input class="fi" id="p-bank" value="'+(bi.bank||'')+'" placeholder="e.g. Maybank, CIMB, Public Bank"/></div><div class="fg"><label class="fl">Account number *</label><input class="fi" id="p-acc" value="'+(bi.acc||'')+'" placeholder="e.g. 1234 5678 9012"/></div><div class="fg"><label class="fl">Full name (as per bank) *</label><input class="fi" id="p-name" value="'+(bi.fullName||'')+'" placeholder="Full legal name"/></div><button class="pbtn btn-p" onclick="saveBankInfo()">Save Bank Info</button>'+(bi.bank?'<button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminEmployees\',adminHomeScreen())">Cancel</button>':'')+'</div>';
   }
   else if(S==='adminUnits'){
     if(!isSystemAdmin){toast('Only admin can access units');ss(R==='admin'?'adminDash':'empHome');return;}
     tbt_el.textContent='Units';bb_el.style.display='block';adminNav('units');
-    var activeUnits=UNITS_DATA.filter(function(u){return u.active!==false;});
-    var inactiveUnits=UNITS_DATA.filter(function(u){return u.active===false;});
+    var internalActive=UNITS_DATA.filter(function(u){return u.source!=='hostplatform'&&u.active!==false;}).length;
+    var internalInactive=UNITS_DATA.filter(function(u){return u.source!=='hostplatform'&&u.active===false;}).length;
+    var hpCount=UNITS_DATA.filter(function(u){return u.source==='hostplatform'&&u.active!==false;}).length;
+    var hpInactive=UNITS_DATA.filter(function(u){return u.source==='hostplatform'&&u.active===false;}).length;
+    var hpMapped=pairingCount('Paired');
+    var hpUnmapped=pairingCount('Unmapped');
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+UNITS_DATA.length+' total unit row(s)</span><br/>Internal units: '+internalActive+' active'+(internalInactive?' + '+internalInactive+' inactive':'')+'<br/>HostPlatform rows: '+hpCount+' active / '+hpMapped+' paired / '+hpUnmapped+' unmapped'+(hpInactive?' / '+hpInactive+' inactive hidden from pairing':'')+'</div></div><button class="pbtn btn-p" style="width:100%;margin-bottom:8px" onclick="triggerUnitSync()"'+(unitSyncing?' disabled':'')+'>'+(unitSyncing?'Syncing...':'Sync from HP')+'</button><div style="display:flex;flex-direction:column;gap:8px"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'internalUnits\',\'adminUnits\')"><div><div style="font-size:13px;font-weight:600;color:#111">Internal Units</div><div style="font-size:11px;color:#6b7280">Create and edit the system unit names your team uses.</div><div style="font-size:10px;color:#2563eb;margin-top:4px">'+internalActive+' active'+(internalInactive?' / '+internalInactive+' inactive':'')+'</div></div><span style="font-size:16px;color:#6b7280">&rsaquo;</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="openPropertyMapping()"><div><div style="font-size:13px;font-weight:600;color:#111">HostPlatform Pairing</div><div style="font-size:11px;color:#6b7280">Pair each HostPlatform property + unit to one internal unit.</div><div style="font-size:10px;color:#2563eb;margin-top:4px">'+hpMapped+' paired / '+hpUnmapped+' unmapped</div></div><span style="font-size:16px;color:#6b7280">&rsaquo;</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitConfigList\',\'adminUnits\')"><div><div style="font-size:13px;font-weight:600;color:#111">Unit Configuration</div><div style="font-size:11px;color:#6b7280">Owner, rates, profit sharing</div></div><span style="font-size:16px;color:#6b7280">&rsaquo;</span></div></div></div>';
+  }
+  else if(S==='internalUnits'){
+    if(!isSystemAdmin){toast('Only admin can access units');ss(R==='admin'?'adminDash':'empHome');return;}
+    tbt_el.textContent='Internal Units';bb_el.style.display='block';adminNav('units');
+    var activeUnits=UNITS_DATA.filter(function(u){return u.source!=='hostplatform'&&u.active!==false;}).sort(function(a,b){return (a.name||'').localeCompare(b.name||'');});
+    var inactiveUnits=UNITS_DATA.filter(function(u){return u.source!=='hostplatform'&&u.active===false;}).sort(function(a,b){return (a.name||'').localeCompare(b.name||'');});
     var activeCount=activeUnits.length;
     var inactiveCount=inactiveUnits.length;
-    var hpCount=UNITS_DATA.filter(function(u){return u.source==='hostplatform';}).length;
     var visibleUnits=showInactiveUnits?activeUnits.concat(inactiveUnits):activeUnits;
     var rows=visibleUnits.length?visibleUnits.map(function(u){
       var isActive=u.active!==false;
-      var isHP=u.source==='hostplatform';
-      var displayName=u.property_short?u.property_short+' '+u.name:u.name;
-      var sourceBadge=isHP?'<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px;margin-left:5px">HP</span>':'<span style="font-size:10px;background:#f3f4f6;color:#6b7280;padding:1px 5px;border-radius:4px;margin-left:5px">Manual</span>';
-      var subtitle=u.property_name?'<div style="font-size:10px;color:#6b7280">'+u.property_name+(u.property_short?' - Short: '+u.property_short:'')+'</div>':'';
-      var syncedInfo=u.synced_at?'<div style="font-size:10px;color:#9ca3af">Synced: '+new Date(u.synced_at).toLocaleString('en-MY',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})+'</div>':'';
-      return'<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#111">'+displayName+sourceBadge+'</div>'+(isActive?'<div style="font-size:11px;color:#065f46">Active</div>':'<div style="font-size:11px;color:#991b1b">Deactivated</div>')+subtitle+syncedInfo+'</div><div style="display:flex;gap:10px;align-items:center"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnit(\''+u.id+'\')">Edit</span>'+(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',false)">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',true)">Activate</span>')+'</div></div>';
-    }).join(''):(inactiveCount?'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No active units. Tap "Show Deactivated" to view hidden units.</div>':'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">Click "Sync from HP" to import units, or add manually.</div>');
+      var displayCode=(u.property_short||'').toUpperCase();
+      var detail=displayCode?'<div style="font-size:10px;color:#6b7280">Display code: '+displayCode+' (display/report only)</div>':'<div style="font-size:10px;color:#9ca3af">No display code</div>';
+      return'<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#111">'+(u.name||'')+'<span style="font-size:10px;background:#f3f4f6;color:#6b7280;padding:1px 5px;border-radius:4px;margin-left:5px">Internal</span></div>'+(isActive?'<div style="font-size:11px;color:#065f46">Active</div>':'<div style="font-size:11px;color:#991b1b">Deactivated</div>')+detail+'</div><div style="display:flex;gap:10px;align-items:center"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnit(\''+u.id+'\')">Edit</span>'+(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',false)">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="toggleUnitActive(\''+u.id+'\',true)">Activate</span>')+'</div></div>';
+    }).join(''):(inactiveCount?'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No active internal units. Tap "Show Deactivated" to view hidden units.</div>':'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">Add your first internal unit to start pairing.</div>');
     var toggleInactiveBtn=inactiveCount?'<button class="pbtn btn-o" style="width:100%;margin-bottom:8px" onclick="toggleInactiveUnits()">'+(showInactiveUnits?'Hide Deactivated':'Show Deactivated')+' ('+inactiveCount+')</button>':'';
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+UNITS_DATA.length+' unit(s) | '+activeCount+' active | '+inactiveCount+' deactivated | '+hpCount+' from HP</span> - manager view defaults to active units only.</div></div><div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-p" style="flex:1" onclick="triggerUnitSync()"'+(unitSyncing?' disabled':'')+'>'+(unitSyncing?'Syncing...':'Sync from HP')+'</button><button class="pbtn btn-o" style="flex:1" onclick="editingUnit=null;unitFormError='\''\'';ss('\''unitForm'\'','\''adminUnits'\'')">+ Add Manual</button></div>'+toggleInactiveBtn+rows+'</div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Internal units are your system names.</span> Display code is optional and is used for display/reporting only.</div></div><div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-p" style="flex:1" onclick="openNewUnitForm()">+ Add Internal Unit</button><button class="pbtn btn-o" style="flex:1" onclick="openPropertyMapping()">Open Pairing</button></div>'+toggleInactiveBtn+rows+'</div>';
+  }
+  else if(S==='propertyMapping'){
+    if(!isSystemAdmin){toast('Only admin can access mapping');ss(R==='admin'?'adminDash':'empHome');return;}
+    tbt_el.textContent='HostPlatform Pairing';bb_el.style.display='block';adminNav('units');
+    var units=pairingFilterRows();
+    var totalHp=pairingCount('All');
+    var totalPaired=pairingCount('Paired');
+    var totalUnmapped=pairingCount('Unmapped');
+    var legacyHp=UNITS_DATA.filter(function(u){return u.source==='auto_synced';}).length;
+    var searchVal=String(unitPairingSearch||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+    function filterBtn(label){
+      var active=unitPairingFilter===label;
+      return'<button class="pbtn '+(active?'btn-p':'btn-o')+'" style="flex:1;padding:10px 8px" onclick="unitPairingFilter=\''+label+'\';render()">'+label+' ('+pairingCount(label)+')</button>';
+    }
+    var rows=units.length?units.map(function(u){
+      var unitOpts=internalUnitMappingOptions(u.mappedUnitName,u.unitId);
+      var actionLabel=u.mappedUnitName?'Update Pairing':'Save Pairing';
+      var clearBtn=u.mappedUnitName?'<button class="pbtn btn-o" style="min-width:84px" onclick="clearPropertyMapping(\''+String(u.unitId||'').replace(/'/g,"\\'")+'\',\''+u.domKey+'\')">Clear</button>':'';
+      var derivedShort=u.mappedUnitName?internalUnitShortCode(u.mappedUnitName):'';
+      var displayShort=derivedShort||(u.mappedUnitName?(u.propertyShort||''):'');
+      return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="min-width:0;flex:1"><div style="font-size:10px;color:#6b7280">HostPlatform property</div><div style="font-size:12px;font-weight:600;color:#111">'+u.propertyName+'</div><div style="font-size:10px;color:#6b7280;margin-top:6px">HostPlatform unit</div><div style="font-size:12px;font-weight:600;color:#111">'+u.unitName+'</div></div><div style="text-align:right"><div style="font-size:10px;color:'+(u.mappedUnitName?'#065f46':'#92400e')+'">'+(u.mappedUnitName?'Paired':'Unmapped')+'</div><div style="font-size:10px;color:'+(u.active?'#065f46':'#991b1b')+'">'+(u.active?'Active':'Inactive')+'</div><div style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline;margin-top:6px" onclick="editUnit(\''+String(u.unitId||'').replace(/'/g,"\\'")+'\')">Open</div></div></div><div style="font-size:10px;color:#6b7280;margin-top:8px">'+(u.mappedUnitName?'Paired to internal unit: '+u.mappedUnitName:'Choose one internal unit to pair.')+'</div><div class="fg" style="margin-top:8px"><label class="fl">Pair to internal unit</label><select class="fi" id="pm-unit-'+u.domKey+'" onchange="syncMappingShort(\''+u.domKey+'\')">'+unitOpts+'</select></div><div class="fg" style="margin-top:8px"><label class="fl">Display code</label><input class="fi" id="pm-short-'+u.domKey+'" value="'+displayShort+'" readonly style="background:#f3f4f6"/></div><div style="display:flex;gap:6px;align-items:center;margin-top:8px"><button class="pbtn btn-s" style="flex:1" onclick="savePropertyMapping(\''+String(u.unitId||'').replace(/'/g,"\\'")+'\',\''+u.domKey+'\')">'+actionLabel+'</button>'+clearBtn+'</div></div>';
+    }).join(''):(totalHp?'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No HostPlatform rows match the current filter.</div>':'<div style="text-align:center;padding:16px;font-size:12px;color:#6b7280">No HostPlatform unit found yet. Sync units first.</div>');
+    var legacyWarning=!totalHp&&legacyHp?'<div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Legacy HP unit rows detected.</span> Run the HP unit repair/migration before pairing.</div></div>':'';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Pair each HostPlatform property + unit to one internal unit.</span> Display code is filled from the selected internal unit and stays read-only here.</div></div>'+legacyWarning+'<div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-o" style="flex:1" onclick="ss(\'internalUnits\',\'adminUnits\')">Internal Units</button><button class="pbtn btn-p" style="flex:1" onclick="triggerUnitSync()"'+(unitSyncing?' disabled':'')+'>'+(unitSyncing?'Syncing...':'Sync from HP')+'</button></div><div class="fg"><label class="fl">Search property or unit</label><input class="fi" value="'+searchVal+'" placeholder="e.g. KT or 150A" oninput="unitPairingSearch=this.value;render()"/></div><div style="display:flex;gap:6px;margin-bottom:8px">'+filterBtn('All')+filterBtn('Unmapped')+filterBtn('Paired')+'</div><div style="font-size:10px;color:#6b7280;margin-bottom:8px">'+totalHp+' HostPlatform row(s) / '+totalPaired+' paired / '+totalUnmapped+' unmapped</div>'+rows+'</div>';
   }
   else if(S==='unitForm'){
     if(!isSystemAdmin){toast('Only admin can access units');ss(R==='admin'?'adminDash':'empHome');return;}
-    tbt_el.textContent=editingUnit?'Edit Unit':'New Unit';bb_el.style.display='block';adminNav('units');
     var isHP=editingUnit&&editingUnit.source==='hostplatform';
-    ms.innerHTML='<div class="scr">'+(unitFormError?'<div class="info-box" style="background:#fee2e2"><div style="font-size:11px;color:#991b1b">'+unitFormError+'</div></div>':'')+(isHP?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">HP unit — name is synced from HostPlatform. Edit property short code below.</div></div><div class="fg"><label class="fl">Unit name (HP)</label><input class="fi" value="'+editingUnit.name+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">Property</label><input class="fi" value="'+(editingUnit.property_name||'')+'" readonly style="background:#f3f4f6"/></div>':'<div class="fg"><label class="fl">Unit name *</label><input class="fi" id="unit-name" value="'+(editingUnit?editingUnit.name:'')+'" placeholder="e.g. MP Office"/></div>')+'<div class="fg"><label class="fl">Property short code</label><input class="fi" id="unit-short" value="'+(editingUnit?editingUnit.property_short||'':'')+'" placeholder="e.g. AR, IR, AC"/></div><button class="pbtn btn-p" onclick="saveUnit()">'+(editingUnit?'Save Changes':'Add Unit')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'adminUnits\',\'adminDash\')">Cancel</button></div>';
+    tbt_el.textContent=isHP?'Pair HostPlatform Unit':(editingUnit?'Edit Internal Unit':'New Internal Unit');bb_el.style.display='block';adminNav('units');
+    var shortOpts=isHP?'':shortCodeOptions(editingUnit?editingUnit.property_short||'':'');
+    var mappedOpts=isHP?internalUnitMappingOptions(editingUnit.mapped_unit_name||'',editingUnit.id):'';
+    var hpDisplayCode=isHP?(internalUnitShortCode(editingUnit.mapped_unit_name||'')||((editingUnit.mapped_unit_name||'')?(editingUnit.property_short||''):'')):'';
+    ms.innerHTML='<div class="scr">'+(unitFormError?'<div class="info-box" style="background:#fee2e2"><div style="font-size:11px;color:#991b1b">'+unitFormError+'</div></div>':'')+(isHP?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">Pair this HostPlatform property + unit to one internal unit.</div></div><div class="fg"><label class="fl">HostPlatform property</label><input class="fi" value="'+(editingUnit.property_name||'')+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">HostPlatform unit</label><input class="fi" value="'+editingUnit.name+'" readonly style="background:#f3f4f6"/></div><div class="fg"><label class="fl">Pair to internal unit</label><select class="fi" id="unit-mapped" onchange="syncEditUnitShort()">'+mappedOpts+'</select></div><div class="fg"><label class="fl">Display code</label><input class="fi" id="unit-short" value="'+hpDisplayCode+'" readonly style="background:#f3f4f6"/></div><div class="ai-manual-link" style="margin-top:2px" onclick="openPropertyMapping()">Manage all HostPlatform pairing -></div>':'<div class="fg"><label class="fl">Unit name *</label><input class="fi" id="unit-name" value="'+(editingUnit?editingUnit.name:'')+'" placeholder="e.g. MP Office"/></div><div class="fg"><label class="fl">Display code (optional)</label><select class="fi" id="unit-short">'+shortOpts+'</select><div style="font-size:10px;color:#6b7280;margin-top:4px">Used for display/reporting only. Not used for HostPlatform pairing.</div></div>')+'<button class="pbtn btn-p" onclick="saveUnit()">'+(isHP?(editingUnit&&editingUnit.mapped_unit_name?'Update Pairing':'Save Pairing'):(editingUnit?'Save Changes':'Add Internal Unit'))+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\''+(isHP?'propertyMapping':'internalUnits')+'\',\'adminUnits\')">Cancel</button></div>';
   }
   else if(S==='adminPay'){
     tbt_el.textContent='Pay Out';bb_el.style.display='block';adminNav('pay');
@@ -1312,20 +1679,35 @@ function render(){
   else if(S==='adminUsers'){
     tbt_el.textContent='Manage Users';bb_el.style.display='block';adminNav('dash');
     var userCards=allUsers.map(function(u){
-      var ini=initials(u.full_name);
+      var displayName=(u.full_name||'').trim()||((u.email||'').split('@')[0]||'User');
+      var ini=initials(displayName);
       var roleTag=u.role==='admin'?'<span style="font-size:10px;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:99px">Admin</span>':u.role==='manager'?'<span style="font-size:10px;color:#065f46;background:#d1fae5;padding:1px 6px;border-radius:99px">Manager</span>':'<span style="font-size:10px;color:#6b7280;background:#f3f4f6;padding:1px 6px;border-radius:99px">Employee</span>';
-      var username=u.email.replace('@homestay.app','');
+      var username=(u.email||'').replace('@homestay.app','');
       var isActive=u.active!==false;
-      var actions=u.role!=='admin'?'<div style="display:flex;gap:8px;margin-top:3px"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();editUser(\''+u.id+'\')">Edit</span>'+(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();deleteUserAccount(\''+u.id+'\',\''+u.full_name.replace(/'/g,"\\'")+'\')">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();reactivateUser(\''+u.id+'\',\''+u.full_name.replace(/'/g,"\\'")+'\')">Reactivate</span>')+'</div>':'';
+      var hasProfile=u.has_profile!==false;
+      var safeName=displayName.replace(/'/g,"\\'");
+      var profileTag=hasProfile?'':'<span style="font-size:9px;color:#92400e;background:#fef3c7;padding:1px 5px;border-radius:99px;margin-left:4px">No Profile</span>';
+      var resetAction='<span style="font-size:11px;color:#92400e;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();resetUserPassword(\''+u.id+'\',\''+safeName+'\')">Reset password</span>';
+      var lifecycleActions=(u.role!=='admin'&&hasProfile)?(isActive?'<span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();deleteUserAccount(\''+u.id+'\',\''+safeName+'\')">Deactivate</span>':'<span style="font-size:11px;color:#059669;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();reactivateUser(\''+u.id+'\',\''+safeName+'\')">Reactivate</span>'):'';
+      var editAction=(u.role!=='admin'&&hasProfile)?'<span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="event.stopPropagation();editUser(\''+u.id+'\')">Edit</span>':'';
+      var actions='<div style="display:flex;gap:8px;margin-top:3px">'+editAction+resetAction+lifecycleActions+'</div>';
       var statusTag=!isActive?'<span style="font-size:9px;color:#991b1b;background:#fee2e2;padding:1px 5px;border-radius:99px;margin-left:4px">Inactive</span>':'';
-      return '<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div class="avatar">'+ini+'</div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="font-size:13px;font-weight:600;color:#111">'+u.full_name+'</div>'+roleTag+statusTag+'</div><div style="font-size:11px;color:#9ca3af;font-family:monospace">@'+username+'</div>'+actions+'</div></div>';
+      return '<div class="emp-list-row"'+(isActive?'':' style="opacity:0.5"')+'><div class="avatar">'+ini+'</div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><div style="font-size:13px;font-weight:600;color:#111">'+displayName+'</div>'+roleTag+statusTag+profileTag+'</div><div style="font-size:11px;color:#9ca3af;font-family:monospace">@'+username+'</div>'+actions+'</div></div>';
     }).join('');
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+allUsers.length+' user(s)</span> in the system. Only admin can manage accounts.</div></div>'+userCards+'<button class="pbtn btn-p" onclick="editingUser=null;userFormError=\'\';ss(\'userForm\',\'adminUsers\')">+ Add New User</button></div>';
+    var userSourceText=userListSource==='profile'?'from profiles/auth fallback':'from authentication';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">'+allUsers.length+' login user(s)</span> '+userSourceText+'. Only admin can manage accounts.</div></div>'+userCards+'<button class="pbtn btn-p" onclick="editingUser=null;userFormError=\'\';ss(\'userForm\',\'adminUsers\')">+ Add New User</button></div>';
   }
   else if(S==='userForm'){
     tbt_el.textContent=editingUser?'Edit User':'Add User';bb_el.style.display='block';adminNav('dash');
     var isEditing=!!editingUser;
-    ms.innerHTML='<div class="scr">'+(userFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px 12px;border-radius:8px;text-align:center">'+userFormError+'</div>':'')+(isEditing?'<div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Editing:</span> '+editingUser.full_name+' (@'+editingUser.email.replace('@homestay.app','')+')</div></div>':'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">The username will be used for login. Example: username <b>ahmad</b> → login as <b>ahmad</b>.</div></div>')+(isEditing?'':'<div class="fg"><label class="fl">Username *</label><input class="fi" id="uf-user" placeholder="e.g. ahmad" autocapitalize="off"/></div>')+'<div class="fg"><label class="fl">Full name *</label><input class="fi" id="uf-name" value="'+(isEditing?editingUser.full_name:'')+'"/></div><div class="fg"><label class="fl">Role *</label><select class="fi" id="uf-role"><option value="employee"'+(isEditing&&editingUser.role==='employee'?' selected':'')+'>Employee</option><option value="manager"'+(isEditing&&editingUser.role==='manager'?' selected':'')+'>Manager</option></select></div><div class="fg"><label class="fl">Password '+(isEditing?'(leave blank to keep current)':'*')+'</label><input class="fi" id="uf-pw" type="password" placeholder="Min 6 characters"/></div><button class="pbtn btn-s" onclick="'+(isEditing?'updateUserAccount()':'createUserAccount()')+'">'+(isEditing?'Save Changes':'Create Account')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="editingUser=null;userFormError=\'\';ss(\'adminUsers\',\'adminDash\')">Cancel</button></div>';
+    ms.innerHTML='<div class="scr">'+(userFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px 12px;border-radius:8px;text-align:center">'+userFormError+'</div>':'')+(isEditing?'<div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Editing:</span> '+editingUser.full_name+' (@'+editingUser.email.replace('@homestay.app','')+')</div></div>':'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">The username will be used for login. Example: username <b>ahmad</b> → login as <b>ahmad</b>.</div></div>')+(isEditing?'':'<div class="fg"><label class="fl">Username *</label><input class="fi" id="uf-user" placeholder="e.g. ahmad" autocapitalize="off"/></div>')+'<div class="fg"><label class="fl">Full name *</label><input class="fi" id="uf-name" value="'+(isEditing?editingUser.full_name:'')+'"/></div><div class="fg"><label class="fl">Role *</label><select class="fi" id="uf-role"><option value="employee"'+(isEditing&&editingUser.role==='employee'?' selected':'')+'>Employee</option><option value="manager"'+(isEditing&&editingUser.role==='manager'?' selected':'')+'>Manager</option></select></div><div class="fg"><label class="fl">Password '+(isEditing?'(leave blank to keep current)':'*')+'</label><input class="fi" id="uf-pw" type="password" placeholder="Min 6 characters"/></div><button class="pbtn btn-s" onclick="'+(isEditing?'updateUserAccount()':'createUserAccount()')+'">'+(isEditing?'Save Changes':'Create Account')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="editingUser=null;userFormError=\'\';ss(\'adminUsers\',adminHomeScreen())">Cancel</button></div>';
+  }
+  else if(S==='resetPasswordForm'){
+    tbt_el.textContent='Reset Password';bb_el.style.display='block';adminNav('dash');
+    var rp=resetPasswordUser;
+    if(!rp){ss('adminUsers','adminUsers');return;}
+    var rpUsername=rp.email.replace('@homestay.app','');
+    ms.innerHTML='<div class="scr">'+(resetPasswordError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px 12px;border-radius:8px;text-align:center">'+resetPasswordError+'</div>':'')+'<div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Resetting:</span> '+rp.full_name+' (@'+rpUsername+')</div><div style="font-size:11px;color:#92400e;margin-top:3px">This updates the login password only.</div></div><div class="fg"><label class="fl">New password *</label><input class="fi" id="rp-pw" type="password" placeholder="Min 6 characters" autocomplete="new-password" value="'+esc(resetPasswordDraft1)+'" oninput="resetPasswordDraft1=this.value"/></div><div class="fg"><label class="fl">Confirm password *</label><input class="fi" id="rp-pw2" type="password" placeholder="Re-enter the new password" autocomplete="new-password" value="'+esc(resetPasswordDraft2)+'" oninput="resetPasswordDraft2=this.value"/></div><button class="pbtn btn-s" onclick="submitResetPassword()">Update Password</button><button class="pbtn btn-o" style="margin-top:6px" onclick="resetPasswordUser=null;resetPasswordError=\'\';resetPasswordDraft1=\'\';resetPasswordDraft2=\'\';ss(\'adminUsers\',adminHomeScreen())">Cancel</button></div>';
   }
   else if(S==='mgrNewClaim'){
     tbt_el.textContent='Submit Expense';bb_el.style.display='block';adminNav('sub');
@@ -1342,14 +1724,14 @@ function render(){
   }
   else if(S==='errorLogs'){
     if(!isSystemAdmin){toast('Only admin can access logs');ss(R==='admin'?'adminDash':'empHome');return;}
-    tbt_el.textContent='Error Logs';bb_el.style.display='block';adminNav('logs');
+    tbt_el.textContent='System Logs';bb_el.style.display='block';adminNav('logs');
     if(errorLogLoading){
       ms.innerHTML='<div class="scr"><div style="text-align:center;padding:40px;font-size:12px;color:#6b7280">Loading logs...</div></div>';
       return;
     }
     var logCards='';
     if(errorLogs.length===0){
-      logCards='<div style="text-align:center;padding:30px;font-size:12px;color:#6b7280">No error logs found</div>';
+      logCards='<div style="text-align:center;padding:18px;font-size:12px;color:#6b7280">No error/admin logs found</div>';
     }else{
       logCards=errorLogs.map(function(log,idx){
         var lvlColor=log.level==='error'?'#991b1b':log.level==='warn'?'#92400e':'#1d4ed8';
@@ -1365,9 +1747,21 @@ function render(){
         return'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:6px'+(log.resolved?';opacity:0.6':'')+'"><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:9px;color:'+lvlColor+';background:'+lvlBg+';padding:1px 6px;border-radius:99px;font-weight:600;text-transform:uppercase">'+log.level+'</span><span style="font-size:10px;color:#6b7280;font-family:monospace">'+log.source+'</span>'+resolvedTag+'<span style="font-size:10px;color:#9ca3af;margin-left:auto">'+timeStr+'</span></div><div style="font-size:12px;color:#111;font-weight:500;margin-bottom:3px;word-break:break-word">'+log.message+'</div>'+detailStr+(!log.resolved?'<div style="margin-top:5px"><span style="font-size:10px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="resolveErrorLog('+log.id+')">Mark resolved</span></div>':'')+'</div>';
       }).join('');
     }
+    var syncCards='';
+    if(syncLogs.length===0){
+      syncCards='<div style="text-align:center;padding:18px;font-size:12px;color:#6b7280">No reservation sync logs found</div>';
+    }else{
+      syncCards=syncLogs.map(function(l){
+        var ts=new Date(l.started_at);
+        var tStr=ts.toLocaleDateString('en-MY',{day:'2-digit',month:'short',year:'numeric'})+' '+ts.toLocaleTimeString('en-MY',{hour:'2-digit',minute:'2-digit',hour12:false});
+        var sc=l.status==='success'?'#065f46':l.status==='error'?'#991b1b':'#92400e';
+        var bg=l.status==='success'?'#d1fae5':l.status==='error'?'#fee2e2':'#fef3c7';
+        return'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:6px"><span style="font-size:9px;color:'+sc+';background:'+bg+';padding:1px 6px;border-radius:99px;font-weight:600;text-transform:uppercase">'+l.status+'</span><span style="font-size:10px;color:#6b7280">'+(l.sync_type||'manual')+'</span><span style="font-size:10px;color:#9ca3af;margin-left:auto">'+tStr+'</span></div><div style="font-size:11px;color:#374151;margin-top:4px">Fetched: '+(l.records_fetched||0)+' · Upserted: '+(l.records_upserted||0)+'</div>'+(l.error_msg?'<div style="font-size:10px;color:#991b1b;margin-top:2px">'+l.error_msg+'</div>':'')+'</div>';
+      }).join('');
+    }
     var errCount=errorLogs.filter(function(l){return l.level==='error'&&!l.resolved;}).length;
     var warnCount=errorLogs.filter(function(l){return l.level==='warn'&&!l.resolved;}).length;
-    ms.innerHTML='<div class="scr"><div style="display:flex;gap:6px;margin-bottom:8px"><div style="flex:1;background:#fee2e2;border-radius:8px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#991b1b">'+errCount+'</div><div style="font-size:10px;color:#991b1b">Errors</div></div><div style="flex:1;background:#fef3c7;border-radius:8px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#92400e">'+warnCount+'</div><div style="font-size:10px;color:#92400e">Warnings</div></div><div style="flex:1;background:#d1fae5;border-radius:8px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#065f46">'+errorLogs.length+'</div><div style="font-size:10px;color:#065f46">Total</div></div></div><div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-o" style="flex:1;font-size:11px;padding:6px" onclick="loadErrorLogs()">↻ Refresh</button><button class="pbtn btn-o" style="flex:1;font-size:11px;padding:6px;color:#991b1b" onclick="clearResolvedLogs()">Clear Resolved</button></div>'+logCards+'</div>';
+    ms.innerHTML='<div class="scr"><div style="display:flex;gap:6px;margin-bottom:8px"><div style="flex:1;background:#fee2e2;border-radius:8px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#991b1b">'+errCount+'</div><div style="font-size:10px;color:#991b1b">Errors</div></div><div style="flex:1;background:#fef3c7;border-radius:8px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#92400e">'+warnCount+'</div><div style="font-size:10px;color:#92400e">Warnings</div></div><div style="flex:1;background:#d1fae5;border-radius:8px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:#065f46">'+syncLogs.length+'</div><div style="font-size:10px;color:#065f46">Sync Runs</div></div></div><div style="display:flex;gap:6px;margin-bottom:8px"><button class="pbtn btn-o" style="flex:1;font-size:11px;padding:6px" onclick="openErrorLogs()">↻ Refresh</button><button class="pbtn btn-o" style="flex:1;font-size:11px;padding:6px;color:#991b1b" onclick="clearResolvedLogs()">Clear Resolved</button></div><div style="font-size:12px;font-weight:600;color:#374151;margin:2px 0 6px">Reservation Sync Logs</div>'+syncCards+'<div style="font-size:12px;font-weight:600;color:#374151;margin:10px 0 6px">Error & Admin Logs</div>'+logCards+'</div>';
   }
   else if(S==='reportHome'){
     tbt_el.textContent='Reporting';bb_el.style.display='block';adminNav('report');
@@ -1377,7 +1771,7 @@ function render(){
     var rUnitOpts=UNITS.map(function(u){return'<option value="'+u+'"'+(rptUnit===u?' selected':'')+'>'+u+'</option>';}).join('');
     var rMonthOpts=Object.entries(MONTHS).map(function(e){return'<option value="'+e[0]+'"'+(rptMonth===e[0]?' selected':'')+'>'+e[1]+'</option>';}).join('');
     var rYearOpts=YEARS.map(function(y){return'<option value="'+y+'"'+(rptYear===y?' selected':'')+'>'+y+'</option>';}).join('');
-    ms.innerHTML='<div class="scr"><div style="font-size:15px;font-weight:700;color:#111;margin-bottom:2px">Generate Report</div><div style="font-size:11px;color:#6b7280;margin-bottom:12px">Select unit and period</div><div class="fg"><label class="fl">Unit *</label><select class="fi" id="rpt-unit" onchange="rptUnit=this.value"><option value="">— Select unit —</option>'+rUnitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Month</label><select class="fi" id="rpt-month" onchange="rptMonth=this.value">'+rMonthOpts+'</select></div><div class="fg"><label class="fl">Year</label><select class="fi" id="rpt-year" onchange="rptYear=this.value">'+rYearOpts+'</select></div></div><button class="pbtn btn-p" onclick="openReportView()">📊 View Report</button><div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:14px"><div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">Settings</div><div style="display:flex;flex-direction:column;gap:6px"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitConfigList\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Unit Configuration</div><div style="font-size:10px;color:#6b7280">Owner name, unit type, service fee</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'cleaningFees\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Cleaning Fee Rates</div><div style="font-size:10px;color:#6b7280">Fee per unit type</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="openSyncScreen()"><div><div style="font-size:12px;font-weight:600;color:#111">Reservation Sync</div><div style="font-size:10px;color:#6b7280">Auto-import booking data</div></div><span style="font-size:16px;color:#6b7280">›</span></div></div></div></div>';
+    ms.innerHTML='<div class="scr"><div style="font-size:15px;font-weight:700;color:#111;margin-bottom:2px">Generate Report</div><div style="font-size:11px;color:#6b7280;margin-bottom:12px">Select unit and period</div><div class="fg"><label class="fl">Unit *</label><select class="fi" id="rpt-unit" onchange="rptUnit=this.value"><option value="">— Select unit —</option>'+rUnitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Month</label><select class="fi" id="rpt-month" onchange="rptMonth=this.value">'+rMonthOpts+'</select></div><div class="fg"><label class="fl">Year</label><select class="fi" id="rpt-year" onchange="rptYear=this.value">'+rYearOpts+'</select></div></div><button class="pbtn btn-p" onclick="openReportView()">📊 View Report</button><div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:14px"><div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">Settings</div><div style="display:flex;flex-direction:column;gap:6px"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitConfigList\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Unit Configuration</div><div style="font-size:10px;color:#6b7280">Owner, rates, profit sharing</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="openSyncScreen()"><div><div style="font-size:12px;font-weight:600;color:#111">Reservation Sync</div><div style="font-size:10px;color:#6b7280">Auto-import booking data</div></div><span style="font-size:16px;color:#6b7280">›</span></div></div></div></div>';
   }
   else if(S==='reportView'){
     tbt_el.textContent='Expense Report';bb_el.style.display='block';adminNav('report');
@@ -1401,44 +1795,61 @@ function render(){
     var rhtml='<div class="scr">';
     rhtml+='<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">Owner</span><span style="font-size:12px;font-weight:600">'+ownerLabel+'</span></div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">Unit</span><span style="font-size:12px;font-weight:600">'+rptUnit+'</span></div><div style="display:flex;justify-content:space-between"><span style="font-size:11px;color:#6b7280">Period</span><span style="font-size:12px;font-weight:600">'+monthLabel+'</span></div></div>';
     // Booking summary from reservations
-    var rptRes=reservations.filter(function(r){if(!r.start_date||!r.unit_name)return false;if(r.booking_type===6)return false;if(r.booking_status&&r.booking_status.indexOf('Cancel')>=0)return false;var resYm=r.start_date.slice(0,7);return r.unit_name===rptUnit&&resYm===ym;});
+    var rptHpIds=hpIdsForDisplayUnit(rptUnit);
+    var rptRes=reservations.filter(function(r){if(!r.start_date||!r.unit_name)return false;if(r.booking_type===6)return false;if(r.booking_status&&r.booking_status.indexOf('Cancel')>=0)return false;var resYm=r.start_date.slice(0,7);var unitMatch=r.unit_name===rptUnit||(r.hp_unit_id&&rptHpIds.indexOf(r.hp_unit_id)>=0);return unitMatch&&resYm===ym;});
     var bookingCount=rptRes.length;
     var bookingRevenue=rptRes.reduce(function(s,r){return s+parseFloat(r.rental||0)+parseFloat(r.extra_guest||0);},0);
     var utCfg=unitConfig.filter(function(x){return x.unit_name===rptUnit;})[0]||{};
-    var utType=utCfg.unit_type||'';
-    var utFee=unitTypes.filter(function(t){return t.name===utType;})[0]||{};
-    var cfRate=parseFloat(utFee.cleaning_fee||0),lfRate=parseFloat(utFee.laundry_fee||0);
+    var cfRate=parseFloat(utCfg.cleaning_fee||0),lfRate=parseFloat(utCfg.laundry_fee||0);
     var calcClean=bookingCount*cfRate,calcLaundry=bookingCount*lfRate;
-    rhtml+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">📅 Bookings This Month</div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Reservations</span><span style="font-size:12px;font-weight:600">'+bookingCount+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Revenue (Rental+Extra)</span><span style="font-size:12px;font-weight:600">RM '+bookingRevenue.toFixed(2)+'</span></div>'+(utType?'<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px dashed #fde68a;margin-top:4px"><span style="font-size:11px;color:#6b7280">Est. Cleaning ('+bookingCount+'×RM'+cfRate.toFixed(2)+')</span><span style="font-size:11px;font-weight:600">RM '+calcClean.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Est. Laundry ('+bookingCount+'×RM'+lfRate.toFixed(2)+')</span><span style="font-size:11px;font-weight:600">RM '+calcLaundry.toFixed(2)+'</span></div>':'')+'</div>';
-    rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#065f46;background:#d1fae5;padding:6px 10px;border-radius:8px;margin-bottom:6px">Shared Expenses (Both)</div>'+rptRows(sharedCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#065f46;border-top:2px solid #d1fae5;margin-top:4px"><span>Subtotal Shared</span><span>RM '+stS.toFixed(2)+'</span></div></div>';
-    rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:6px 10px;border-radius:8px;margin-bottom:6px">Owner Expenses</div>'+rptRows(ownerCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#1d4ed8;border-top:2px solid #dbeafe;margin-top:4px"><span>Subtotal Owner</span><span>RM '+stO.toFixed(2)+'</span></div></div>';
+    var totalCleaning=calcClean+calcLaundry;
+    var sharedExpenseRows=sharedCl.slice();
+    if(totalCleaning>0)sharedExpenseRows.push({category:'Cleaning fee',amount:totalCleaning});
+    var rptProfitPct=parseFloat(utCfg.service_fee_pct||0)||0;
+    var homestayProfit=bookingRevenue-stS;
+    var managementFee=homestayProfit*rptProfitPct/100;
+    var ownerExpensesTotal=stO;
+    var ownerProfit=homestayProfit-managementFee-ownerExpensesTotal;
+    rptRes.sort(function(a,b){return String(a.start_date||'').localeCompare(String(b.start_date||''));});
+    var resDetailHtml=rptRes.length?rptRes.map(function(r){
+      var rental=parseFloat(r.rental||0),extra=parseFloat(r.extra_guest||0);
+      var total=rental+extra;
+      var guest=esc(r.guest_name||'Guest');
+      return '<div style="background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 9px;margin-top:6px"><div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:5px"><div style="font-size:11px;font-weight:700;color:#111;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+guest+'</div><div style="font-size:11px;font-weight:700;color:#92400e;white-space:nowrap">RM '+total.toFixed(2)+'</div></div><div style="display:grid;grid-template-columns:1fr 1fr 48px;gap:5px"><div><div style="font-size:9px;color:#9ca3af">Check in</div><div style="font-size:10px;color:#374151;font-weight:600">'+fmtDateShort(r.start_date)+'</div></div><div><div style="font-size:9px;color:#9ca3af">Check out</div><div style="font-size:10px;color:#374151;font-weight:600">'+fmtDateShort(r.end_date)+'</div></div><div><div style="font-size:9px;color:#9ca3af">Nights</div><div style="font-size:10px;color:#374151;font-weight:600">'+(r.nights||0)+'</div></div></div></div>';
+    }).join(''):'<div style="font-size:11px;color:#9ca3af;padding-top:6px">No reservation details for this unit/month</div>';
+    rhtml+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">📅 Bookings This Month</div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Reservations</span><span style="font-size:12px;font-weight:600">'+bookingCount+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Sales</span><span style="font-size:12px;font-weight:600">RM '+bookingRevenue.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px dashed #fde68a;margin-top:4px"><span style="font-size:11px;color:#6b7280">Cleaning fee</span><span style="font-size:11px;font-weight:600">RM '+totalCleaning.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Homestay Profit</span><span style="font-size:11px;font-weight:600">RM '+homestayProfit.toFixed(2)+'</span></div><div style="font-size:11px;font-weight:700;color:#92400e;border-top:1px dashed #fde68a;margin-top:7px;padding-top:7px">Reservation Details</div>'+resDetailHtml+'</div>';
+    rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#065f46;background:#d1fae5;padding:6px 10px;border-radius:8px;margin-bottom:6px">Expenses</div>'+rptRows(sharedExpenseRows)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#065f46;border-top:2px solid #d1fae5;margin-top:4px"><span>Subtotal Expenses</span><span>RM '+(stS+totalCleaning).toFixed(2)+'</span></div></div>';
+    rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:6px 10px;border-radius:8px;margin-bottom:6px">Owner Expenses</div>'+rptRows(ownerCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#1d4ed8;border-top:2px solid #dbeafe;margin-top:4px"><span>Total Owner Expenses</span><span>RM '+ownerExpensesTotal.toFixed(2)+'</span></div></div>';
     if(operatorCl.length>0){rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;background:#fef3c7;padding:6px 10px;border-radius:8px;margin-bottom:6px">Operator Expenses <span style="font-size:9px;font-weight:400;opacity:.7">(not in PDF)</span></div>'+rptRows(operatorCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#92400e;border-top:2px solid #fef3c7;margin-top:4px"><span>Subtotal Operator</span><span>RM '+stOp.toFixed(2)+'</span></div></div>';}
-    rhtml+='<div style="background:#111;border-radius:10px;padding:12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><span style="font-size:13px;font-weight:700;color:#fff">TOTAL EXPENSES</span><span style="font-size:16px;font-weight:800;color:#fff">RM '+grand.toFixed(2)+'</span></div>';
+    rhtml+='<div style="background:#111;border-radius:10px;padding:12px;margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:#d1fae5">HOMESTAY MANAGEMENT FEE</span><span style="font-size:14px;font-weight:800;color:#d1fae5">RM '+managementFee.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid rgba(255,255,255,.18);padding-top:7px"><span style="font-size:13px;font-weight:700;color:#fff">OWNER PROFIT</span><span style="font-size:16px;font-weight:800;color:#fff">RM '+ownerProfit.toFixed(2)+'</span></div></div>';
     rhtml+='<button class="pbtn btn-s" onclick="exportReportPDF()">⬇ Export PDF</button></div>';
     ms.innerHTML=rhtml;
   }
   else if(S==='cleaningFees'){
-    tbt_el.textContent='Cleaning Fee Rates';bb_el.style.display='block';adminNav('report');
-    var cfRows=unitTypes.length===0?'<div style="text-align:center;padding:20px;font-size:12px;color:#6b7280">No unit types defined yet</div>':unitTypes.map(function(t){return'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:13px;font-weight:600;color:#111">'+t.name+'</div><div style="font-size:10px;color:#6b7280">Cleaning: RM '+parseFloat(t.cleaning_fee||0).toFixed(2)+' · Laundry: RM '+parseFloat(t.laundry_fee||0).toFixed(2)+'</div></div><div style="display:flex;gap:10px"><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnitType(\''+t.id+'\')">Edit</span><span style="font-size:11px;color:#991b1b;cursor:pointer;text-decoration:underline" onclick="delUnitType(\''+t.id+'\',\''+t.name.replace(/'/g,"\\'")+'\')">Delete</span></div></div></div>';}).join('');
-    ms.innerHTML='<div class="scr">'+cfRows+'<button class="pbtn btn-p" style="margin-top:8px" onclick="editingUnitType=null;utFormError=\'\';ss(\'cleaningFeeForm\',\'cleaningFees\')">+ Add Unit Type</button></div>';
+    ss('unitConfigList',isSystemAdmin?'adminUnits':'reportHome');
+    return;
   }
   else if(S==='cleaningFeeForm'){
-    tbt_el.textContent=editingUnitType?'Edit Unit Type':'Add Unit Type';bb_el.style.display='block';adminNav('report');
-    ms.innerHTML='<div class="scr">'+(utFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px;border-radius:8px;margin-bottom:8px">'+utFormError+'</div>':'')+'<div class="fg"><label class="fl">Type Name *</label><input class="fi" id="utf-name" value="'+(editingUnitType?editingUnitType.name:'')+'" placeholder="e.g. Studio, Suite"/></div><div class="tcol"><div class="fg"><label class="fl">Cleaning Fee (RM)</label><input class="fi" id="utf-cf" type="number" step="0.01" value="'+(editingUnitType?parseFloat(editingUnitType.cleaning_fee||0).toFixed(2):'0')+'"/></div><div class="fg"><label class="fl">Laundry Fee (RM)</label><input class="fi" id="utf-lf" type="number" step="0.01" value="'+(editingUnitType?parseFloat(editingUnitType.laundry_fee||0).toFixed(2):'0')+'"/></div></div><button class="pbtn btn-s" onclick="saveUnitType()">'+(editingUnitType?'Save Changes':'Add Unit Type')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'cleaningFees\',\'reportHome\')">Cancel</button></div>';
+    ss('unitConfigList',isSystemAdmin?'adminUnits':'reportHome');
+    return;
   }
   else if(S==='unitConfigList'){
-    tbt_el.textContent='Unit Configuration';bb_el.style.display='block';adminNav('report');
-    var ucRows=UNITS.map(function(u){var cfg2=unitConfig.filter(function(x){return x.unit_name===u;})[0]||{};return'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:13px;font-weight:600;color:#111">'+u+'</div><div style="font-size:10px;color:#6b7280">'+(cfg2.owner_name||'No owner')+' · '+(cfg2.unit_type||'No type')+' · '+(cfg2.service_fee_pct||0)+'%</div></div><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnitCfg(\''+u+'\')">Edit</span></div>';}).join('');
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">Assign owner, type and service fee % for each unit</div></div>'+ucRows+'</div>';
+    tbt_el.textContent='Unit Configuration';bb_el.style.display='block';adminNav(isSystemAdmin?'units':'report');
+    var ucRows=UNITS.map(function(u){
+      var cfg2=unitConfig.filter(function(x){return x.unit_name===u;})[0]||{};
+      var cFee=parseFloat(cfg2.cleaning_fee||0).toFixed(2);
+      var lFee=parseFloat(cfg2.laundry_fee||0).toFixed(2);
+      return'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:13px;font-weight:600;color:#111">'+u+'</div><div style="font-size:10px;color:#6b7280">'+(cfg2.owner_name||'No owner')+' · Cleaning RM '+cFee+' · Laundry RM '+lFee+' · Profit Sharing '+(cfg2.service_fee_pct||0)+'%</div></div><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnitCfg(\''+u+'\')">Edit</span></div>';
+    }).join('');
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">Assign owner, cleaning/laundry rates, and profit sharing % for each unit.</div></div>'+ucRows+'</div>';
   }
   else if(S==='unitConfigForm'){
-    tbt_el.textContent='Edit Unit Config';bb_el.style.display='block';adminNav('report');
+    tbt_el.textContent='Edit Unit Config';bb_el.style.display='block';adminNav(isSystemAdmin?'units':'report');
     var ucfg=editingUnitCfg||{};
-    var typeOpts='<option value="">— None —</option>'+unitTypes.map(function(t){return'<option value="'+t.name+'"'+(ucfg.unit_type===t.name?' selected':'')+'>'+t.name+'</option>';}).join('');
-    ms.innerHTML='<div class="scr">'+(ucFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px;border-radius:8px;margin-bottom:8px">'+ucFormError+'</div>':'')+'<div class="info-box" style="background:#f3f4f6"><div style="font-size:12px;font-weight:600;color:#374151">Unit: '+(ucfg.unit_name||'')+'</div></div><div class="fg"><label class="fl">Owner Name</label><input class="fi" id="ucf-owner" value="'+(ucfg.owner_name||'')+'" placeholder="e.g. Ahmad"/></div><div class="fg"><label class="fl">Unit Type</label><select class="fi" id="ucf-type">'+typeOpts+'</select></div><div class="fg"><label class="fl">Service Fee %</label><input class="fi" id="ucf-svc" type="number" step="0.01" value="'+(ucfg.service_fee_pct||0)+'"/></div><button class="pbtn btn-s" onclick="saveUnitCfg()">Save Changes</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'unitConfigList\',\'reportHome\')">Cancel</button></div>';
+    ms.innerHTML='<div class="scr">'+(ucFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px;border-radius:8px;margin-bottom:8px">'+ucFormError+'</div>':'')+'<div class="info-box" style="background:#f3f4f6"><div style="font-size:12px;font-weight:600;color:#374151">Unit: '+(ucfg.unit_name||'')+'</div></div><div class="fg"><label class="fl">Owner Name</label><input class="fi" id="ucf-owner" value="'+(ucfg.owner_name||'')+'" placeholder="e.g. Ahmad"/></div><div class="tcol"><div class="fg"><label class="fl">Cleaning Fee (RM)</label><input class="fi" id="ucf-cf" type="number" step="0.01" value="'+parseFloat(ucfg.cleaning_fee||0).toFixed(2)+'"/></div><div class="fg"><label class="fl">Laundry Fee (RM)</label><input class="fi" id="ucf-lf" type="number" step="0.01" value="'+parseFloat(ucfg.laundry_fee||0).toFixed(2)+'"/></div></div><div class="fg"><label class="fl">Profit Sharing %</label><input class="fi" id="ucf-svc" type="number" step="0.01" value="'+(ucfg.service_fee_pct||0)+'"/></div><button class="pbtn btn-s" onclick="saveUnitCfg()">Save Changes</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'unitConfigList\',\''+(isSystemAdmin?'adminUnits':'reportHome')+'\')">Cancel</button></div>';
   }
   else if(S==='reservationSync'){
-    tbt_el.textContent='Reservation Sync';bb_el.style.display='block';adminNav('report');
+    tbt_el.textContent='Reservation Sync';bb_el.style.display='block';adminNav(isSystemAdmin?'units':'report');
     var lastLog=syncLogs.length?syncLogs[0]:null;
     var lastTime=lastLog?new Date(lastLog.started_at).toLocaleString('en-MY',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'Never';
     var lastStatus=lastLog?lastLog.status:'—';
@@ -1481,16 +1892,30 @@ window.saveUnitType=async function(){
   if(!n||!n.value.trim()){utFormError='Type name is required';render();return;}
   var isEdit=!!editingUnitType;
   var ok=isEdit?await dbUpdateUnitType(editingUnitType.id,n.value,parseFloat(cf.value)||0,parseFloat(lf.value)||0):await dbInsertUnitType(n.value,parseFloat(cf.value)||0,parseFloat(lf.value)||0);
-  if(ok){await loadUnitTypes();editingUnitType=null;toast(isEdit?'Updated':'Added');ss('cleaningFees','reportHome');}
+  if(ok){await loadUnitTypes();editingUnitType=null;toast(isEdit?'Updated':'Added');ss('cleaningFees',isSystemAdmin?'adminUnits':'reportHome');}
   else{utFormError='Save failed. Name may already exist.';render();}
 };
 window.editUnitCfg=function(unitName){editingUnitCfg=unitConfig.filter(function(x){return x.unit_name===unitName;})[0]||{unit_name:unitName};ucFormError='';ss('unitConfigForm','unitConfigList');};
 window.saveUnitCfg=async function(){
-  var owner=document.getElementById('ucf-owner'),tp=document.getElementById('ucf-type'),svc=document.getElementById('ucf-svc');
+  var owner=document.getElementById('ucf-owner'),svc=document.getElementById('ucf-svc'),cf=document.getElementById('ucf-cf'),lf=document.getElementById('ucf-lf');
   if(!editingUnitCfg||!editingUnitCfg.unit_name){toast('No unit selected');return;}
-  var ok=await dbUpsertUnitConfig(editingUnitCfg.unit_name,tp?tp.value:'',owner?owner.value.trim():'',parseFloat(svc?svc.value:0)||0);
-  if(ok){await loadUnitConfig();editingUnitCfg=null;toast('Saved');ss('unitConfigList','reportHome');}
-  else{ucFormError='Save failed';render();}
+  var saved=await dbUpsertUnitConfig(
+    editingUnitCfg.unit_name,
+    owner?owner.value.trim():'',
+    parseFloat(svc?svc.value:0)||0,
+    parseFloat(cf?cf.value:0)||0,
+    parseFloat(lf?lf.value:0)||0
+  );
+  if(saved&&saved.ok){
+    await loadUnitConfig();
+    await logAdminAction('unit-config.saved',{unit_name:editingUnitCfg.unit_name,owner_name:owner?owner.value.trim():'',cleaning_fee:parseFloat(cf?cf.value:0)||0,laundry_fee:parseFloat(lf?lf.value:0)||0,profit_sharing_pct:parseFloat(svc?svc.value:0)||0});
+    editingUnitCfg=null;
+    toast(saved.missingRateColumns?'Saved (DB migration needed for fee fields)':'Saved');
+    ss('unitConfigList',isSystemAdmin?'adminUnits':'reportHome');
+  }else{
+    ucFormError='Save failed';
+    render();
+  }
 };
 window.exportReportPDF=exportReportPDF;
 window.triggerSync=triggerSync;
@@ -1498,14 +1923,29 @@ window.triggerUnitSync=async function(){
   if(!isSystemAdmin){toast('Only admin can sync units');return;}
   unitSyncing=true;render();
   try{
-    var r=await fetch(SUPABASE_URL+'/functions/v1/sync-units',{method:'POST',headers:{'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json'}});
-    var d=await r.json();
-    if(d.ok){await loadUnits();toast('Unit sync done: '+d.synced+' units'+(d.nameChanges?' · '+d.nameChanges+' name change(s)':''));}
-    else{toast('Sync error: '+(d.error||'unknown'));}
-  }catch(e){toast('Sync failed: '+e.message);}
+    var d=await callPublicEdgeFunction('sync-units',{type:'manual'});
+    if(d.ok){
+      await loadUnits();
+      await logAdminAction('sync-units.success',{synced:d.synced||0,name_changes:d.nameChanges||0});
+      toast('Unit sync done: '+d.synced+' units'+(d.nameChanges?' · '+d.nameChanges+' name change(s)':''));
+    }else{
+      toast('Sync error: '+(d.error||'unknown'));
+    }
+  }catch(e){
+    var msg=e&&e.message?e.message:'Unknown sync error';
+    var low=String(msg).toLowerCase();
+    if(low.indexOf('http 404')>=0||low.indexOf('404')>=0){
+      msg='Sync function not deployed in this environment (HTTP 404).';
+    }else
+    if(low.indexOf('failed to fetch')>=0||low.indexOf('network')>=0){
+      msg='Cannot reach sync-units endpoint. Check function deployment, network, and CORS.';
+    }
+    await logFrontendError('error','sync-units-ui',msg,{endpoint:SUPABASE_URL+'/functions/v1/sync-units'});
+    toast('Sync failed: '+msg);
+  }
   unitSyncing=false;render();
 };
-window.openSyncScreen=async function(){await loadSyncLogs();ss('reservationSync','reportHome');};
+window.openSyncScreen=async function(){await loadSyncLogs();ss('reservationSync',isSystemAdmin?'adminUnits':'reportHome');};
 window.refreshSyncScreen=async function(){await loadSyncLogs();await loadReservations();render();};
 window.goBack=goBack;
 window.doLogout=doLogout;
@@ -1513,8 +1953,13 @@ window.doLogin=doLogin;
 window.openUsers=openUsersScreen;
 window.createUserAccount=createUserAccount;
 window.updateUserAccount=updateUserAccount;
+window.submitResetPassword=submitResetPassword;
 window.deleteUserAccount=deleteUserAccount;window.reactivateUser=reactivateUser;
-window.editUser=function(uid){editingUser=allUsers.filter(function(u){return u.id===uid;})[0];userFormError='';ss('userForm','adminUsers');};
+window.editUser=function(uid){
+  editingUser=allUsers.filter(function(u){return u.id===uid;})[0];
+  if(editingUser&&editingUser.has_profile===false){toast('Profile row missing for this login user');editingUser=null;return;}
+  userFormError='';ss('userForm','adminUsers');
+};
 window.doApprove=async function(){
   var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),emv=document.getElementById('rv-expmonth'),chg=document.getElementById('rv-charged');
   if(!cat||!cat.value){toast('Please assign a category');return;}
@@ -1527,33 +1972,91 @@ window.doReject=async function(){var r=document.getElementById('rv-reason');awai
 window.saveMgrEdit=saveMgrEdit;window.saveEmpEdit=saveEmpEdit;window.submitEmpEdit=submitEmpEdit;
 window.submitNewClaim=submitNewClaim;window.submitMgrClaim=submitMgrClaim;
 window.markClaimed=markClaimed;window.saveBankInfo=saveBankInfo;
-window.editUnit=function(id){editingUnit=UNITS_DATA.filter(function(u){return u.id===id;})[0];unitFormError='';ss('unitForm','adminUnits');};
+window.openPropertyMapping=function(){
+  unitFormError='';
+  unitPairingFilter='All';
+  unitPairingSearch='';
+  ss('propertyMapping','adminUnits');
+};
+window.clearPropertyMapping=function(unitId,domKey){
+  var unitSel=document.getElementById('pm-unit-'+domKey);
+  if(unitSel)unitSel.value='';
+  syncMappingShort(domKey);
+  savePropertyMapping(unitId,domKey);
+};
+window.syncMappingShort=function(domKey){
+  var unitSel=document.getElementById('pm-unit-'+domKey),shortSel=document.getElementById('pm-short-'+domKey);
+  if(!unitSel||!shortSel)return;
+  var opt=unitSel.options[unitSel.selectedIndex];
+  var code=opt?opt.getAttribute('data-short'):'';
+  shortSel.value=code||'';
+};
+window.syncEditUnitShort=function(){
+  var unitSel=document.getElementById('unit-mapped'),shortSel=document.getElementById('unit-short');
+  if(!unitSel||!shortSel)return;
+  var opt=unitSel.options[unitSel.selectedIndex];
+  var code=opt?opt.getAttribute('data-short'):'';
+  shortSel.value=code||'';
+};
+window.savePropertyMapping=async function(unitId,domKey){
+  if(!isSystemAdmin){toast('Only admin can manage mapping');return;}
+  var unitSel=document.getElementById('pm-unit-'+domKey);
+  var sel=document.getElementById('pm-short-'+domKey);
+  var mappedUnit=unitSel&&unitSel.value?unitSel.value:'';
+  var code=mappedUnit?selectedOptionShortCode(unitSel):'';
+  if(sel)sel.value=code;
+  var conflict=mappingConflict(unitId,mappedUnit);
+  if(conflict){toast('This internal unit is already paired to another active HostPlatform unit');return;}
+  try{
+    await dbAssignUnitMapping(unitId,mappedUnit,code);
+    await loadUnits();
+    await logAdminAction('unit-mapping.saved',{unit_id:unitId,mapped_unit_name:mappedUnit,property_short:code});
+    toast(mappedUnit?'Paired to internal unit '+mappedUnit:'Pairing cleared');
+    ss('propertyMapping','adminUnits');
+  }catch(e){
+    toast('Save failed: '+(e.message||'unknown'));
+  }
+};
+window.openNewUnitForm=function(){editingUnit=null;unitFormError='';ss('unitForm','internalUnits');};
+window.editUnit=function(id){editingUnit=UNITS_DATA.filter(function(u){return u.id===id;})[0];unitFormError='';ss('unitForm',editingUnit&&editingUnit.source==='hostplatform'?'propertyMapping':'internalUnits');};
 window.toggleUnitActive=async function(id,active){
   if(!isSystemAdmin){toast('Only admin can manage units');return;}
   var ok=await dbUpdateUnit(id,{active:active});
-  if(ok){await loadUnits();render();toast(active?'Unit activated':'Unit deactivated');}
+  if(ok){await loadUnits();await logAdminAction('unit.active-changed',{unit_id:id,active:active});render();toast(active?'Unit activated':'Unit deactivated');}
   else toast('Failed to update unit');
 };
 window.saveUnit=async function(){
   if(!isSystemAdmin){toast('Only admin can save units');return;}
-  var shortEl=document.getElementById('unit-short');
-  var propertyShort=shortEl?shortEl.value.trim():'';
   if(editingUnit&&editingUnit.source==='hostplatform'){
-    // HP unit — only allow editing property_short
-    var ok=await dbUpdateUnit(editingUnit.id,{property_short:propertyShort});
-    if(ok){await loadUnits();toast('Unit updated');editingUnit=null;ss('adminUnits','adminDash');}
-    else{unitFormError='Failed to update unit';render();}
+    var mappedEl=document.getElementById('unit-mapped');
+    var mappedUnit=mappedEl&&mappedEl.value?mappedEl.value:'';
+    var propertyShort=mappedUnit?selectedOptionShortCode(mappedEl):'';
+    var conflict=mappingConflict(editingUnit.id,mappedUnit);
+    if(conflict){unitFormError='This internal unit is already paired to another active HostPlatform unit';render();return;}
+    try{
+      await dbAssignUnitMapping(editingUnit.id,mappedUnit,propertyShort);
+      await loadUnits();
+      await logAdminAction('unit-mapping.saved',{unit_id:editingUnit.id,mapped_unit_name:mappedUnit,property_short:propertyShort});
+      toast(mappedUnit?'Paired to internal unit '+mappedUnit:'Pairing cleared');
+      editingUnit=null;
+      ss('propertyMapping','adminUnits');
+    }catch(e){
+      unitFormError='Failed to update pairing';
+      render();
+    }
   }else{
+    var shortEl=document.getElementById('unit-short');
+    var propertyShort=shortEl&&shortEl.value?shortEl.value.toUpperCase():'';
     var nameEl=document.getElementById('unit-name');
     if(!nameEl||!nameEl.value.trim()){unitFormError='Unit name is required';render();return;}
     var name=nameEl.value.trim();
     if(editingUnit){
       var ok=await dbUpdateUnit(editingUnit.id,{name:name,property_short:propertyShort});
-      if(ok){await loadUnits();toast('Unit updated');editingUnit=null;ss('adminUnits','adminDash');}
+      if(ok){await loadUnits();await logAdminAction('unit.saved',{unit_id:editingUnit.id,unit_name:name,property_short:propertyShort});toast('Internal unit updated');editingUnit=null;ss('internalUnits','adminUnits');}
       else{unitFormError='Failed to update. Name may already exist.';render();}
     }else{
       var ok=await dbInsertUnit(name,propertyShort);
-      if(ok){await loadUnits();toast('Unit "'+name+'" added');ss('adminUnits','adminDash');}
+      if(ok){await loadUnits();await logAdminAction('unit.saved',{unit_name:name,property_short:propertyShort});toast('Internal unit "'+name+'" added');editingUnit=null;ss('internalUnits','adminUnits');}
       else{unitFormError='Failed to add. Name may already exist.';render();}
     }
   }
@@ -1572,32 +2075,25 @@ window.mgrScanReceipt=function(){
     pendingFiles=[f];pendingFileNames=[f.name];
     aiAnalyzing=true;render();
     try{
-      var ext=f.name.split('.').pop().toLowerCase();
-      var mimeMap={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',pdf:'application/pdf'};
-      var reader2=new FileReader();
-      var base64_2=await new Promise(function(resolve,reject){reader2.onload=function(){resolve(reader2.result);};reader2.onerror=reject;reader2.readAsDataURL(f);});
-      var{data:sessData2}=await sb.auth.getSession();
-      var authToken2=sessData2?.session?.access_token||'';
-      if(!authToken2){var{data:refData2}=await sb.auth.refreshSession();authToken2=refData2?.session?.access_token||'';}
-      if(!authToken2)authToken2=SUPABASE_KEY;
-      var resp=await fetch(SUPABASE_URL+'/functions/v1/analyze-receipt',{
-        method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken2,'apikey':SUPABASE_KEY},
-        body:JSON.stringify({base64Data:base64_2,mimeType:mimeMap[ext]||'image/jpeg'})
-      });
-      if(!resp.ok){
-        var errBody=await resp.json().catch(function(){return{error:'HTTP '+resp.status};});
-        throw new Error(errBody.error||'HTTP '+resp.status);
-      }
-      var ai=await resp.json();
+      var currentUnit=document.getElementById('f-unit');
+      var selectedUnit=currentUnit?currentUnit.value:'';
+      var ai=await analyzeInvoiceFile(f,selectedUnit);
+      aiResult=ai;
       aiAnalyzing=false;render();
       // Pre-fill the form fields after render
       setTimeout(function(){
-        var d=document.getElementById('f-desc'),a=document.getElementById('f-amount'),dt=document.getElementById('f-date'),c=document.getElementById('f-cat');
+        var d=document.getElementById('f-desc'),a=document.getElementById('f-amount'),dt=document.getElementById('f-date'),c=document.getElementById('f-cat'),u=document.getElementById('f-unit'),em=document.getElementById('f-expmonth');
         if(d)d.value=formatAiDescription(ai);
         if(a)a.value=ai.total||'';
         if(dt&&ai.date)dt.value=ai.date;
         if(c&&ai.category){for(var i=0;i<c.options.length;i++){if(c.options[i].value===ai.category){c.selectedIndex=i;break;}}}
-        toast('AI filled: '+ai.summary);
+        var unitVal=selectedUnit||(ai.suggested&&ai.suggested.unit)||ai.unit_hint||'';
+        if(u&&unitVal){for(var j=0;j<u.options.length;j++){if(u.options[j].value===unitVal){u.selectedIndex=j;break;}}toggleChargeTo(u.value,'f-charge-wrap');}
+        var expVal=(ai.suggested&&ai.suggested.expense_month)||ai.expense_month||'';
+        if(em&&expVal){for(var k=0;k<em.options.length;k++){if(em.options[k].value===expVal){em.selectedIndex=k;break;}}}
+        if(ai.suggested&&ai.suggested.unit_warning)toast(ai.suggested.unit_warning);
+        if(ai.duplicate_claims&&ai.duplicate_claims.length){toast(duplicateClaimMessage(ai));}
+        else{toast('AI filled: '+ai.summary);}
       },50);
     }catch(e){
       aiAnalyzing=false;render();
@@ -1623,7 +2119,9 @@ window.mgrChangeToApprove=async function(){
 };
 window.openErrorLogs=function(){
   if(!isSystemAdmin){toast('Only admin can access logs');return;}
-  loadErrorLogs();ss('errorLogs','adminDash');
+  ss('errorLogs',adminHomeScreen());
+  loadErrorLogs();
+  loadSyncLogs().then(function(){if(S==='errorLogs')render();});
 };
 window.toggleInactiveUnits=function(){showInactiveUnits=!showInactiveUnits;render();};
 window.resolveErrorLog=async function(id){
@@ -1641,6 +2139,9 @@ function startInit(){
       console.log('Initializing app...');
       console.log('Supabase loaded:', typeof supabase !== 'undefined');
       console.log('sb client:', typeof sb !== 'undefined');
+      if(SUPABASE_CONFIG_ERROR){
+        throw new Error(SUPABASE_CONFIG_ERROR);
+      }
       if(!sb || !sb.auth){
         throw new Error('Supabase client not ready');
       }
@@ -1675,3 +2176,5 @@ if(document.readyState==='loading'){
 </script>
 </body>
 </html>
+
+
