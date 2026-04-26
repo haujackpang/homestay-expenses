@@ -36,6 +36,9 @@ Current in-progress/local implementation on 2026-04-26:
 - A focused remediation script `supabase-claims-manager-access.sql` is prepared for environments where manager claim visibility is still blocked by older policies.
 
 Recent completed work:
+- Reservation import now has repo-specific GitHub Actions schedules:
+  - Live `Scheduled Reservation Import` runs every 5 minutes in `haujackpang/homestay-expenses` and calls the live `sync-reservations` Edge Function.
+  - Test `Scheduled Reservation Import (Test)` runs daily at 12:00 AM in `haujackpang/homestayERP-test` and calls the test `sync-reservations` Edge Function.
 - HostPlatform unit pairing data was repaired in test:
   - `units.hp_unit_id` is now treated as nullable for internal units and protected by a unique non-null index for synced HP rows.
   - Legacy `auto_synced` rows are normalized into the canonical `source='hostplatform'` model.

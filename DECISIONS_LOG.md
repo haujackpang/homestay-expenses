@@ -41,7 +41,6 @@ Decision: Add a narrow SQL remediation script for environments where manager cla
 
 Reason:
 The repo already contains broad legacy SQL scripts, but this issue only needs manager role support and claim-queue visibility. A focused idempotent script is safer to run in test first and easier to promote to live if policy drift is confirmed.
-
 ## 2026-04-25: Schedule Reservation Imports Per Environment
 Decision: Add repo-specific GitHub Actions cron workflows so live calls `sync-reservations` every 5 minutes and test calls it daily at 12:00 AM.
 
@@ -228,7 +227,7 @@ Reason:
 These changes correct live-visible behavior: live must stay on the live database without a hidden fallback to test, and the report page wording/details must match the approved business presentation.
 
 ## 2026-04-24: Correct Canonical Repo And Supabase Mapping
-Decision: Use `haujackpang/homestay-expenses` as the canonical live repo, `haujackpang/homestayERP-test` as the test repo, `skwogboredsczcyhlqgn` as the test Supabase project, and `afcifzghlkxvnpulahub` as the live Supabase project.
+Decision: Use `haujackpang/homestay-expenses` as the canonical live repo, `haujackpang/homestayERP-test` as the test repo, `afcifzghlkxvnpulahub` as the test Supabase project, and `skwogboredsczcyhlqgn` as the live Supabase project.
 
 Reason:
 The earlier repo/project mapping was wrong. Future deployments, Pages secrets, and verification must follow the user's corrected environment ownership so test and live stay properly separated.
@@ -279,16 +278,13 @@ Reason:
 The fix was validated in test, then deployed to the canonical live repo and live Supabase project so both environments share the same user-management behavior.
 
 ## 2026-04-25: `homestayERP-prod` Is Obsolete
-Decision: Stop treating `haujackpang/homestayERP-prod` as a live alias. The active environments are now test repo `haujackpang/homestayERP-test` with Supabase `skwogboredsczcyhlqgn`, and live repo `haujackpang/homestay-expenses` with Supabase `afcifzghlkxvnpulahub`.
+Decision: Stop treating `haujackpang/homestayERP-prod` as a live alias. The active environments are now test repo `haujackpang/homestayERP-test` with Supabase `afcifzghlkxvnpulahub`, and live repo `haujackpang/homestay-expenses` with Supabase `skwogboredsczcyhlqgn`.
 
-## 2026-04-26: Keep Canonical Supabase Environment Mapping
-Decision: Treat `skwogboredsczcyhlqgn` as test and `afcifzghlkxvnpulahub` as live for repo secrets, deploy guards, and setup documentation.
-
-Reason:
-The previously documented mapping was backwards. Keeping repo secrets, workflow validation, and setup docs aligned with the corrected mapping prevents future deployments and smoke tests from targeting the wrong Supabase environment.
+## 2026-04-26: Reconfirm Test And Live Supabase Mapping
+Decision: Treat `afcifzghlkxvnpulahub` as the test Supabase project for `homestayERP-test`, and `skwogboredsczcyhlqgn` as the live Supabase project for `homestay-expenses`.
 
 Reason:
-The user confirmed `homestayERP-prod` is no longer used. Keeping it in setup guides or automation risks pushing live work to the wrong repo.
+The user explicitly re-confirmed this mapping during the claims attachment and pagination work. Repo docs, release notes, and deployment checks must follow the same ownership so Pages secrets and smoke tests do not drift again.
 
 ## 2026-04-25: Watermark Must Follow Repo Path
 Decision: Show the `TESTING` watermark only when the app is served from the test Pages path, not when a Supabase project ref appears in runtime config.

@@ -1,26 +1,26 @@
-name: Scheduled Reservation Import (Test)
+name: Scheduled Reservation Import
 
 on:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: sync-reservations-test
+  group: sync-reservations-live
   cancel-in-progress: false
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-    if: github.repository == 'haujackpang/homestayERP-test'
+    if: github.repository == 'haujackpang/homestay-expenses'
     steps:
-      - name: Verify test repository
+      - name: Verify live repository
         run: |
-          if [ "${{ github.repository }}" != "haujackpang/homestayERP-test" ]; then
-            echo "This workflow is only allowed in the test repository."
+          if [ "${{ github.repository }}" != "haujackpang/homestay-expenses" ]; then
+            echo "This workflow is only allowed in the live repository."
             exit 1
           fi
 

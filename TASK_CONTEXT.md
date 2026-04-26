@@ -57,6 +57,7 @@ Recent unit-pairing context:
   - `units_hp_unit_id_idx` now protects non-null `hp_unit_id`
   - matched legacy HP duplicates were deactivated
   - two unmatched legacy HP rows (`KT 150A`, `SG 34F`) remain active until HP returns canonical replacements
+- Live reservation import now runs every 5 minutes in `haujackpang/homestay-expenses`, while test runs daily at 12:00 AM in `haujackpang/homestayERP-test`.
 - OpenAI API usage requires an API key in Supabase secrets. Codex itself is not an app-callable OCR backend.
 - Test Supabase now has `OPENROUTER_API_KEY`, and the current test experiment should prefer OpenRouter receipt OCR rather than OpenAI.
 - Test OCR should use `OPENROUTER_OCR_PRIMARY_MODEL` first, with optional `OPENROUTER_OCR_FALLBACK_MODELS` as a vision-only fallback chain.
