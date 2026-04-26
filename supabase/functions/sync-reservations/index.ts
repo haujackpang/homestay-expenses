@@ -56,6 +56,35 @@ function calcNights(start: string, end: string): number {
   return Math.max(0, Math.round(ms / 86400000));
 }
 
+function previewText(value: string, maxLen = 500): string {
+  const text = (value || "").trim();
+  if (!text) return "";
+  return text.length > maxLen ? `${text.slice(0, maxLen)}…` : text;
+}
+
+function safeBaseUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return value;
+  }
+}
+
+function logStep(requestId: string, step: string, details: Record<string, unknown>) {
+  console.log(`[${requestId}] ${step}`, JSON.stringify(details));
+}
+
+function safeJsonParse(value: string): Record<string, any> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed as Record<string, any> : {};
+  } catch {
+    return {};
+  }
+}
+
 
 
 // ── Main ──────────────────────────────────────────────────────
@@ -67,25 +96,47 @@ serve(async (req: Request) => {
 
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
   let logId: number | null = null;
+  const requestId = crypto.randomUUID();
+  const requestBodyText = await req.text();
+  let currentStep = "start";
 
   try {
     requireSyncEnv();
 
+    logStep(requestId, "started", {
+      method: req.method,
+      reservationApiBase: safeBaseUrl(RESERVATION_API_BASE),
+      supabaseHost: safeBaseUrl(SUPABASE_URL),
+    });
+
     // Determine sync type from body (manual vs auto)
+    currentStep = "parse_body";
     let syncType = "auto";
     try {
-      const body = await req.json();
+      const body = requestBodyText ? JSON.parse(requestBodyText) : {};
       if (body?.type) syncType = body.type;
-    } catch { /* no body = auto */ }
+    } catch (parseError) {
+      logStep(requestId, "request-body-parse-failed", {
+        error: parseError instanceof Error ? parseError.message : String(parseError),
+        body: previewText(requestBodyText),
+      });
+    }
+
+    logStep(requestId, "sync-type", { syncType, body: previewText(requestBodyText) });
 
     // 1. Insert sync log (running)
+    currentStep = "insert_sync_log";
     const { data: logRow } = await sb.from("sync_logs").insert({
       sync_type: syncType,
       status: "running",
     }).select("id").single();
     logId = logRow?.id ?? null;
+    logStep(requestId, "sync-log-created", { logId, syncType });
 
     // 2. Login to reservation API
+    currentStep = "login_hostplatform";
+    const loginUrl = `${RESERVATION_API_BASE}/auth/session-login`;
+    logStep(requestId, "calling-login", { url: safeBaseUrl(loginUrl) });
     const loginResp = await fetch(`${RESERVATION_API_BASE}/auth/session-login`, {
       method: "POST",
       headers: { "Content-Type": "application/json;charset=UTF-8" },
@@ -95,16 +146,24 @@ serve(async (req: Request) => {
         deviceInfo: { userAgent: "HomestayExpenseSync/1.0" },
       }),
     });
+    const loginRespText = await loginResp.text();
+    logStep(requestId, "login-response", {
+      status: loginResp.status,
+      statusText: loginResp.statusText,
+      bodySummary: loginResp.ok ? "json parsed successfully" : previewText(loginRespText),
+    });
 
     if (!loginResp.ok) {
-      throw new Error(`Login failed: ${loginResp.status} ${await loginResp.text()}`);
+      throw new Error(`Login failed: ${loginResp.status} ${previewText(loginRespText)}`);
     }
 
-    const loginData = await loginResp.json();
-    const token = loginData.token;
+    const loginData = safeJsonParse(loginRespText);
+    const token = String(loginData.token || "");
     if (!token) throw new Error("No token in login response");
+    logStep(requestId, "login-success", { tokenPresent: true });
 
     // 3. Load HP units for matching unit_raw → hp_unit_id
+    currentStep = "load_hostplatform_units";
     const { data: hpUnits, error: hpUnitsError } = await sb
       .from("units")
       .select("hp_unit_id, name")
@@ -112,6 +171,7 @@ serve(async (req: Request) => {
     if (hpUnitsError) {
       throw new Error(`Failed to load HostPlatform units: ${hpUnitsError.message}`);
     }
+    logStep(requestId, "hostplatform-units-loaded", { count: hpUnits?.length ?? 0 });
     const unitRawToHpId: Record<string, string> = {};
     if (hpUnits) {
       for (const u of hpUnits) {
@@ -128,9 +188,14 @@ serve(async (req: Request) => {
     let totalCount = 0;
 
     do {
+      currentStep = `fetch_reservation_page_${currentPage}`;
       const pagination = JSON.stringify({ limit: PAGE_SIZE, currentPage });
       const encoded = encodeURIComponent(encodeURIComponent(pagination));
       const url = `${RESERVATION_API_BASE}/reservation/paginated?pagination=${encoded}`;
+      logStep(requestId, "calling-reservation-page", {
+        currentPage,
+        url: safeBaseUrl(url),
+      });
 
       const apiResp = await fetch(url, {
         headers: {
@@ -140,15 +205,27 @@ serve(async (req: Request) => {
           Origin: "https://system.hostplatform.com",
         },
       });
+      const apiRespText = await apiResp.text();
+      logStep(requestId, "reservation-page-response", {
+        currentPage,
+        status: apiResp.status,
+        statusText: apiResp.statusText,
+        bodySummary: apiResp.ok ? "json parsed successfully" : previewText(apiRespText),
+      });
 
       if (!apiResp.ok) {
-        throw new Error(`API page ${currentPage} failed: ${apiResp.status}`);
+        throw new Error(`API page ${currentPage} failed: ${apiResp.status} ${previewText(apiRespText)}`);
       }
 
-      const pageData = await apiResp.json();
+      const pageData = safeJsonParse(apiRespText);
       totalCount = pageData.totalCount || 0;
       const reservations: Record<string, unknown>[] = pageData.reservations || [];
       totalFetched += reservations.length;
+      logStep(requestId, "reservation-page-processed", {
+        currentPage,
+        totalCount,
+        fetched: reservations.length,
+      });
 
       // 5. Process & upsert each reservation
       // Group by extracted code: keep only the one with largest _id
@@ -221,21 +298,29 @@ serve(async (req: Request) => {
         status: "success",
       }).eq("id", logId);
     }
+    logStep(requestId, "completed", {
+      fetched: totalFetched,
+      upserted: totalUpserted,
+      totalCount,
+    });
 
     return new Response(
-      JSON.stringify({ ok: true, fetched: totalFetched, upserted: totalUpserted, totalCount }),
+      JSON.stringify({ ok: true, fetched: totalFetched, upserted: totalUpserted, totalCount, requestId }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("sync-reservations error:", msg);
+    console.error(`[${requestId}] sync-reservations error:`, msg);
+    if (err instanceof Error && err.stack) {
+      console.error(`[${requestId}] sync-reservations stack:`, err.stack);
+    }
 
     // Update sync log (error)
     if (logId) {
       await sb.from("sync_logs").update({
         finished_at: new Date().toISOString(),
         status: "error",
-        error_msg: msg.substring(0, 500),
+        error_msg: `[${requestId}] ${msg.substring(0, 470)}`,
       }).eq("id", logId);
     }
 
@@ -244,13 +329,22 @@ serve(async (req: Request) => {
       await sb.from("error_logs").insert({
         level: "error",
         source: "sync-reservations",
-        message: msg.substring(0, 500),
-        details: {},
+        message: `[${requestId}] ${msg.substring(0, 470)}`,
+        details: {
+          requestId,
+          step: currentStep,
+          reservationApiBase: safeBaseUrl(RESERVATION_API_BASE),
+        },
       });
     } catch { /* ignore */ }
 
     return new Response(
-      JSON.stringify({ ok: false, error: msg }),
+      JSON.stringify({
+        ok: false,
+        requestId,
+        step: currentStep,
+        error: msg,
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

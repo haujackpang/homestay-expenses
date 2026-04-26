@@ -36,7 +36,11 @@ jobs:
             exit 1
           fi
 
-          response="$(curl -sS --fail-with-body \
+          project_ref="${SUPABASE_URL#https://}"
+          project_ref="${project_ref%%.supabase.co*}"
+          echo "Calling Supabase project ref: ${project_ref}"
+
+          http_code="$(curl -sS -o response.txt -w "%{http_code}" \
             -X POST \
             "${SUPABASE_URL}/functions/v1/sync-reservations" \
             -H "apikey: ${SUPABASE_KEY}" \
@@ -44,4 +48,13 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"type":"scheduled"}')"
 
-          echo "$response"
+          echo "HTTP status: ${http_code}"
+          echo "Response body:"
+          cat response.txt
+
+          case "${http_code}" in
+            2??) ;;
+            *)
+              exit 1
+              ;;
+          esac
