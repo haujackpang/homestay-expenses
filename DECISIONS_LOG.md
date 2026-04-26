@@ -1,5 +1,23 @@
 # Decisions Log
 
+## 2026-04-26: Reconfirm Test And Live Supabase Mapping
+Decision: Treat `afcifzghlkxvnpulahub` as the test Supabase project for `homestayERP-test`, and `skwogboredsczcyhlqgn` as the live Supabase project for `homestay-expenses`.
+
+Reason:
+The user explicitly re-confirmed this mapping during the claims attachment and pagination work. Repo docs, release notes, and deployment checks must follow the same ownership so Pages secrets and smoke tests do not drift again.
+
+## 2026-04-26: Split Claim Receipts From Payout Slips
+Decision: Store original claim receipts in `claims.receipt_refs` and payout bank slips in `claims.payment_slip_refs`, while keeping `slip_ref` as legacy fallback only during migration.
+
+Reason:
+Using one field for both flows caused `Mark as claimed` to overwrite receipt attachments and made claim detail screens ambiguous. Separate fields preserve both document sets and match the actual business workflow.
+
+## 2026-04-26: Keep Claim Attachments On Signed Private-Bucket Flow
+Decision: Reuse `process-invoice` signed upload/read helpers for normal claim receipts and payout slips instead of direct browser uploads.
+
+Reason:
+The `receipts` bucket is private, and direct browser uploads were failing while the claim mutation still continued. Signed uploads keep the bucket private and let the UI fail closed when a selected attachment cannot be stored.
+
 ## 2026-04-26: Keep `Company-Paid` Out Of Claim Queues
 Decision: Hide `Company-Paid` rows from the employee and manager/admin `Claims` lists while keeping company-paid totals in dashboard and report summaries.
 

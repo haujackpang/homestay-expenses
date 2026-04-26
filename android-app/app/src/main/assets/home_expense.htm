@@ -185,6 +185,7 @@ var syncLogs=[],syncLoading=false,syncRunning=false,unitSyncing=false;
 var showInactiveUnits=false;
 var unitPairingFilter='All',unitPairingSearch='';
 var reservations=[];
+var ATTACHMENT_URLS={};
 
 // ===== FRONTEND ERROR LOGGER =====
 async function logFrontendError(level,source,message,details){
@@ -383,7 +384,17 @@ async function loadClaims(){
   var q=sb.from('claims').select('*').order('created_at',{ascending:false});
   var{data,error}=await q;
   if(error){console.error('loadClaims:',error);return;}
-  claims=data.map(function(r){return{id:r.claim_id,uid:r.id,emp:r.emp||'',unit:r.unit||'',hpUnitId:r.hp_unit_id||null,category:r.category||'',desc:r.description,amount:parseFloat(r.amount),date:r.date,expMonth:r.expense_month||r.date.slice(0,7),status:r.status,rejectReason:r.reject_reason||'',slipRef:r.slip_ref||'',payType:r.pay_type,submittedBy:r.submitted_by,chargedTo:r.charged_to||'',invoiceNumber:r.invoice_number||'',merchantName:r.merchant_name||'',aiRaw:r.ai_raw||{},aiConfidence:parseFloat(r.ai_confidence||0),sourceType:r.source_type||'manual',externalId:r.external_id||'',externalSource:r.external_source||''};});
+  claims=data.map(function(r){
+    var legacySlipRef=r.slip_ref||'';
+    var receiptRefs=r.receipt_refs||'';
+    var paymentSlipRefs=r.payment_slip_refs||'';
+    if(!receiptRefs&&!paymentSlipRefs&&legacySlipRef){
+      if(r.status==='Claimed')paymentSlipRefs=legacySlipRef;
+      else receiptRefs=legacySlipRef;
+    }
+    return{id:r.claim_id,uid:r.id,emp:r.emp||'',unit:r.unit||'',hpUnitId:r.hp_unit_id||null,category:r.category||'',desc:r.description,amount:parseFloat(r.amount),date:r.date,expMonth:r.expense_month||r.date.slice(0,7),status:r.status,rejectReason:r.reject_reason||'',slipRef:legacySlipRef,receiptRefs:receiptRefs,paymentSlipRefs:paymentSlipRefs,payType:r.pay_type,submittedBy:r.submitted_by,chargedTo:r.charged_to||'',invoiceNumber:r.invoice_number||'',merchantName:r.merchant_name||'',aiRaw:r.ai_raw||{},aiConfidence:parseFloat(r.ai_confidence||0),sourceType:r.source_type||'manual',externalId:r.external_id||'',externalSource:r.external_source||''};
+  });
+  await hydrateClaimAttachmentUrls(claims);
 }
 async function loadBankInfo(){
   var{data,error}=await sb.from('bank_info').select('*');
@@ -475,7 +486,7 @@ async function getNextClaimId(prefix){
 }
 
 async function dbInsertClaim(c){
-  var{error}=await sb.from('claims').insert({claim_id:c.id,emp:c.emp,unit:c.unit,hp_unit_id:c.hpUnitId||null,category:c.category,description:c.desc,amount:c.amount,date:c.date,expense_month:c.expMonth||c.date.slice(0,7),status:c.status,reject_reason:c.rejectReason,slip_ref:c.slipRef,pay_type:c.payType,submitted_by:c.submittedBy,charged_to:c.chargedTo||'',created_by:currentUser.id,invoice_number:c.invoiceNumber||'',merchant_name:c.merchantName||'',ai_raw:c.aiRaw||{},ai_confidence:c.aiConfidence||0,source_type:c.sourceType||'manual',external_id:c.externalId||null,external_source:c.externalSource||null});
+  var{error}=await sb.from('claims').insert({claim_id:c.id,emp:c.emp,unit:c.unit,hp_unit_id:c.hpUnitId||null,category:c.category,description:c.desc,amount:c.amount,date:c.date,expense_month:c.expMonth||c.date.slice(0,7),status:c.status,reject_reason:c.rejectReason,slip_ref:c.slipRef,pay_type:c.payType,submitted_by:c.submittedBy,charged_to:c.chargedTo||'',created_by:currentUser.id,invoice_number:c.invoiceNumber||'',merchant_name:c.merchantName||'',ai_raw:c.aiRaw||{},ai_confidence:c.aiConfidence||0,source_type:c.sourceType||'manual',external_id:c.externalId||null,external_source:c.externalSource||null,receipt_refs:c.receiptRefs||'',payment_slip_refs:c.paymentSlipRefs||''});
   if(error)console.error('dbInsertClaim:',error);
   return !error;
 }
@@ -490,6 +501,8 @@ async function dbUpdateClaim(claimId,fields){
   if(fields.hpUnitId!==undefined)upd.hp_unit_id=fields.hpUnitId;
   if(fields.rejectReason!==undefined)upd.reject_reason=fields.rejectReason;
   if(fields.slipRef!==undefined)upd.slip_ref=fields.slipRef;
+  if(fields.receiptRefs!==undefined)upd.receipt_refs=fields.receiptRefs;
+  if(fields.paymentSlipRefs!==undefined)upd.payment_slip_refs=fields.paymentSlipRefs;
   if(fields.expMonth!==undefined)upd.expense_month=fields.expMonth;
   if(fields.chargedTo!==undefined)upd.charged_to=fields.chargedTo;
   if(fields.invoiceNumber!==undefined)upd.invoice_number=fields.invoiceNumber;
@@ -802,16 +815,68 @@ async function imageToPdf(file){
     img.src=url;
   });
 }
+function splitAttachmentRefs(value){
+  return String(value||'').split(',').map(function(v){return String(v||'').trim();}).filter(function(v){return !!v;});
+}
+function joinAttachmentRefs(list){
+  return list.filter(function(v){return !!v;}).join(',');
+}
+function mergeAttachmentRefs(existing,added){
+  var seen={},out=[];
+  splitAttachmentRefs(existing).concat(splitAttachmentRefs(added)).forEach(function(ref){
+    if(ref&&!seen[ref]){seen[ref]=true;out.push(ref);}
+  });
+  return joinAttachmentRefs(out);
+}
+function attachmentName(ref,prefix,index){
+  var raw=decodeURIComponent(String(ref||'').split('/').pop()||'').replace(/^receipt_/,'');
+  if(!raw)return prefix+(index+1);
+  return raw;
+}
+function attachmentUrlForRef(ref){
+  if(!ref)return'';
+  if(/^https?:\/\//i.test(ref))return ref;
+  return ATTACHMENT_URLS[ref]||'';
+}
+async function hydrateClaimAttachmentUrls(list){
+  var need=[],seen={};
+  (list||[]).forEach(function(c){
+    splitAttachmentRefs(c.receiptRefs).concat(splitAttachmentRefs(c.paymentSlipRefs)).forEach(function(ref){
+      if(!ref||/^https?:\/\//i.test(ref)||ATTACHMENT_URLS[ref]||seen[ref])return;
+      seen[ref]=true;
+      need.push(ref);
+    });
+  });
+  if(!need.length)return;
+  try{
+    var resp=await callEdgeFunction('process-invoice',{action:'create-claim-attachment-read-urls',paths:need});
+    var items=resp&&resp.items?resp.items:[];
+    items.forEach(function(it){
+      if(it&&it.path&&it.signedUrl)ATTACHMENT_URLS[it.path]=it.signedUrl;
+    });
+  }catch(e){
+    console.error('hydrateClaimAttachmentUrls failed:',e);
+  }
+}
+async function prepareClaimAttachmentUpload(file,claimId,attachmentType){
+  var resp=await callEdgeFunction('process-invoice',{action:'create-claim-attachment-upload',claimId:claimId,attachmentType:attachmentType,fileName:file.name||'attachment.pdf',mimeType:file.type||'application/octet-stream'});
+  if(!resp||!resp.path||!resp.token)throw new Error('Failed to prepare attachment upload.');
+  return resp;
+}
+async function uploadSignedClaimAttachment(file,claimId,attachmentType){
+  var upload=await prepareClaimAttachmentUpload(file,claimId,attachmentType);
+  var res=await sb.storage.from(upload.bucket||'receipts').uploadToSignedUrl(upload.path,upload.token,file,{contentType:file.type||'application/octet-stream'});
+  if(res.error)throw new Error((attachmentType==='payment-slip'?'Slip upload failed: ':'Receipt upload failed: ')+(res.error.message||'Storage upload rejected.'));
+  return upload.path;
+}
 async function uploadAllFiles(claimId,opts){
   if(!pendingFiles.length)return '';
-  var urls=[];
+  var paths=[];
   var cat=(opts&&opts.category)||'';
   var unit=(opts&&opts.unit)||'';
   var desc=(opts&&opts.desc)||'';
   var date=(opts&&opts.date)||new Date().toISOString().slice(0,10);
   var aiItems=(opts&&opts.aiItems)||null;
-  var userId=currentUser&&currentUser.id?currentUser.id:'unknown';
-  var yearMonth=date.slice(0,7);
   for(var i=0;i<pendingFiles.length;i++){
     var f=pendingFiles[i];
     var ext=f.name.split('.').pop().toLowerCase();
@@ -822,15 +887,14 @@ async function uploadAllFiles(claimId,opts){
     }
     var baseName=buildAttachName(cat,unit,desc,date,aiItems);
     var safeBase=baseName.replace(/[^a-zA-Z0-9\[\] ]/g,'_').replace(/\s+/g,'_');
-    var filename=safeBase+'_'+(i+1)+'.'+ext;
-    var path='receipts/'+userId+'/'+yearMonth+'/'+filename;
-    var res=await sb.storage.from('receipts').upload(path,f,{upsert:true});
-    if(res.error){console.error('Upload error:',res.error);toast('Upload failed: '+f.name);continue;}
-    var{data:urlData}=sb.storage.from('receipts').getPublicUrl(path);
-    if(urlData.publicUrl)urls.push(urlData.publicUrl);
+    var finalFile=f;
+    if(safeBase&&safeBase!==f.name.replace(/\.[^.]+$/,'')){
+      finalFile=new File([f],safeBase+'_'+(i+1)+'.'+ext,{type:f.type||'application/octet-stream'});
+    }
+    paths.push(await uploadSignedClaimAttachment(finalFile,claimId,'receipt'));
   }
   pendingFiles=[];pendingFileNames=[];
-  return urls.join(',');
+  return joinAttachmentRefs(paths);
 }
 function receiptBox(existingUrl){
   var html='';
@@ -903,6 +967,94 @@ function managerSlipBox(slipRef){
   return html;
 }
 
+function receiptBox(existingRefs){
+  var html='';
+  var refs=splitAttachmentRefs(existingRefs);
+  if(refs.length){
+    html+='<div style="margin:4px 0;display:flex;flex-direction:column;gap:4px">';
+    refs.forEach(function(ref,i){
+      var url=attachmentUrlForRef(ref);
+      var name=attachmentName(ref,'Receipt ',i);
+      var isImg=/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(name);
+      var body='<span style="font-size:16px">'+(isImg?'🖼️':'📄')+'</span><span style="font-size:11px;color:#059669;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+name+'</span><span style="font-size:10px;color:#6b7280">'+(url?'View →':'Loading...')+'</span>';
+      html+=url
+        ?'<a href="'+url+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f0fdf4;border:1px dashed #059669;border-radius:10px;text-decoration:none">'+body+'</a>'
+        :'<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f0fdf4;border:1px dashed #059669;border-radius:10px">'+body+'</div>';
+    });
+    html+='</div>';
+  }
+  if(pendingFileNames.length){
+    html+='<div style="margin:4px 0;display:flex;flex-direction:column;gap:4px">';
+    pendingFileNames.forEach(function(n,i){
+      html+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f0fdf4;border:1px solid #059669;border-radius:10px"><span style="font-size:16px">✅</span><span style="font-size:11px;color:#059669;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+n+'</span><span onclick="removePendingFile('+i+')" style="font-size:14px;color:#991b1b;cursor:pointer;padding:2px 6px">✕</span></div>';
+    });
+    html+='</div>';
+  }
+  html+='<div class="up-box" onclick="pickReceipt()"><div style="font-size:20px">'+(refs.length||pendingFileNames.length?'➕':'📷')+'</div><div style="font-size:12px;color:#6b7280;margin-top:3px">'+(refs.length||pendingFileNames.length?'Add more files':'Tap to upload receipt')+'</div><div style="font-size:10px;color:#9ca3af">Photos, images or documents</div></div>';
+  return html;
+}
+window.pickReceipt=pickReceipt;
+function viewReceiptBox(existingRefs){
+  var refs=splitAttachmentRefs(existingRefs);
+  if(!refs.length)return '<div style="font-size:11px;color:#9ca3af;padding:8px 0;text-align:center">No receipt attached</div>';
+  var html='<div style="margin:4px 0;display:flex;flex-direction:column;gap:4px">';
+  refs.forEach(function(ref,i){
+    var url=attachmentUrlForRef(ref);
+    var name=attachmentName(ref,'Receipt ',i);
+    var isImg=/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(name);
+    var body='<span style="font-size:18px">'+(isImg?'🖼️':'📄')+'</span><span style="font-size:12px;color:#059669;font-weight:600;flex:1">'+name+'</span><span style="font-size:11px;color:#6b7280">'+(url?'Tap to view →':'Link unavailable')+'</span>';
+    html+=url
+      ?'<a href="'+url+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f0fdf4;border:1px solid #059669;border-radius:10px;text-decoration:none">'+body+'</a>'
+      :'<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f0fdf4;border:1px solid #059669;border-radius:10px">'+body+'</div>';
+  });
+  html+='</div>';
+  return html;
+}
+function viewPaymentSlipBox(existingRefs){
+  var refs=splitAttachmentRefs(existingRefs);
+  if(!refs.length)return '<div class="slip-box"><span>💳</span><span style="font-size:12px;color:#92400e;font-weight:600;margin-left:4px">Payment processed</span></div>';
+  var html='<div style="margin:4px 0"><div style="font-size:11px;font-weight:600;color:#92400e;margin-bottom:4px">💳 Bank transfer slip(s)</div>';
+  refs.forEach(function(ref,i){
+    var url=attachmentUrlForRef(ref);
+    var name=attachmentName(ref,'Slip ',i);
+    var body='<span style="font-size:14px">📄</span><span style="font-size:11px;color:#92400e;font-weight:600;flex:1">'+name+'</span><span style="font-size:10px;color:#6b7280">'+(url?'View →':'Link unavailable')+'</span>';
+    html+=url
+      ?'<a href="'+url+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:3px;background:#fef3c7;border:1px dashed #f59e0b;border-radius:10px;text-decoration:none">'+body+'</a>'
+      :'<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:3px;background:#fef3c7;border:1px dashed #f59e0b;border-radius:10px">'+body+'</div>';
+  });
+  html+='</div>';
+  return html;
+}
+function removeMgrSlip(idx){
+  var c=claims.filter(function(x){return x.id===editingId;})[0];
+  if(!c)return;
+  var refs=splitAttachmentRefs(c.receiptRefs);
+  if(idx>=0&&idx<refs.length){
+    refs.splice(idx,1);
+    c.receiptRefs=joinAttachmentRefs(refs);
+    mgrSlipsToRemove=['changed'];
+    render();
+  }
+}
+window.pickMgrSlip=pickMgrSlip;window.removeMgrSlip=removeMgrSlip;
+function managerSlipBox(receiptRefs){
+  var existingRefs=splitAttachmentRefs(receiptRefs);
+  var html='';
+  if(existingRefs.length){
+    html+='<div style="margin:4px 0;display:flex;flex-direction:column;gap:4px">';
+    existingRefs.forEach(function(ref,i){
+      var url=attachmentUrlForRef(ref);
+      var name=attachmentName(ref,'Receipt ',i);
+      var isImg=/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(name);
+      var linkBody='<span style="font-size:16px">'+(isImg?'🖼️':'📄')+'</span><span style="font-size:11px;color:#059669;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+name+'</span><span style="font-size:10px;color:#6b7280;margin-left:auto">'+(url?'View →':'Link unavailable')+'</span>';
+      html+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f0fdf4;border:1px solid #059669;border-radius:10px">'+(url?'<a href="'+url+'" target="_blank" style="display:flex;align-items:center;gap:6px;flex:1;text-decoration:none;overflow:hidden">'+linkBody+'</a>':'<div style="display:flex;align-items:center;gap:6px;flex:1;overflow:hidden">'+linkBody+'</div>')+'<span onclick="removeMgrSlip('+i+')" style="font-size:14px;color:#991b1b;cursor:pointer;padding:2px 8px;flex-shrink:0">✕</span></div>';
+    });
+    html+='</div>';
+  }
+  html+='<div class="up-box" onclick="pickMgrSlip()" style="margin-top:4px"><div style="font-size:20px">'+(existingRefs.length?'➕':'📎')+'</div><div style="font-size:12px;color:#6b7280;margin-top:3px">'+(existingRefs.length?'Add more attachments':'Tap to upload attachment')+'</div><div style="font-size:10px;color:#9ca3af">Photos or PDF</div></div>';
+  return html;
+}
+
 // ===== AI RECEIPT ANALYSIS =====
 // Fixed expenses check function
 function getFixedExpensesStatus(month){
@@ -952,6 +1104,55 @@ async function pdfToImageFile(file){
   });
 }
 
+function loadImageElement(src){
+  return new Promise(function(resolve,reject){
+    var img=new Image();
+    img.onload=function(){resolve(img);};
+    img.onerror=function(){reject(new Error('Image load failed'));};
+    img.src=src;
+  });
+}
+
+async function optimizeImageForAI(file){
+  var mimeType=(file.type||'').toLowerCase();
+  if(!mimeType||mimeType==='application/pdf'||mimeType==='image/gif')return file;
+  var src=URL.createObjectURL(file);
+  try{
+    var img=await loadImageElement(src);
+    var maxDim=Math.max(img.width||0,img.height||0);
+    if(file.size<=4*1024*1024&&maxDim<=1800)return file;
+    var scale=maxDim>1800?1800/maxDim:1;
+    var canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round((img.width||1)*scale));
+    canvas.height=Math.max(1,Math.round((img.height||1)*scale));
+    var ctx=canvas.getContext('2d');
+    if(!ctx)throw new Error('Canvas not available');
+    ctx.fillStyle='#ffffff';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    var qualities=[0.9,0.82,0.74,0.66];
+    var bestBlob=null;
+    for(var i=0;i<qualities.length;i++){
+      var blob=await new Promise(function(resolve){canvas.toBlob(resolve,'image/jpeg',qualities[i]);});
+      if(!blob)continue;
+      bestBlob=blob;
+      if(blob.size<=4*1024*1024)break;
+    }
+    if(!bestBlob)throw new Error('Image compression failed');
+    return new File([bestBlob],file.name.replace(/\.[^.]+$/,'')+'.jpg',{type:'image/jpeg'});
+  }finally{
+    URL.revokeObjectURL(src);
+  }
+}
+
+async function uploadScanFileForAI(file){
+  var upload=await callEdgeFunction('process-invoice',{action:'create-ai-scan-upload',fileName:file.name||'receipt-scan.jpg',mimeType:file.type||'image/jpeg'});
+  if(!upload||!upload.path||!upload.token)throw new Error('Failed to prepare receipt for AI scan.');
+  var res=await sb.storage.from('receipts').uploadToSignedUrl(upload.path,upload.token,file,{contentType:file.type||'image/jpeg'});
+  if(res.error)throw new Error('Failed to upload receipt for AI scan: '+(res.error.message||'Storage upload rejected.'));
+  return {path:upload.path};
+}
+
 function pickReceiptForAI(){
   var inp=document.getElementById('receipt-input');
   if(!inp){inp=document.createElement('input');inp.type='file';inp.id='receipt-input';inp.accept='image/*,.pdf';inp.style.display='none';inp.setAttribute('capture','environment');document.body.appendChild(inp);}
@@ -973,12 +1174,22 @@ function pickReceiptForAI(){
 window.pickReceiptForAI=pickReceiptForAI;
 
 async function analyzeInvoiceFile(f,unit){
-  var ext=f.name.split('.').pop().toLowerCase();
+  var scanFile=await optimizeImageForAI(f);
+  if(scanFile.size>5*1024*1024)throw new Error('Receipt photo is too large. Please crop it or use a clearer photo under 5MB.');
+  var ext=scanFile.name.split('.').pop().toLowerCase();
   var mimeMap={jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',pdf:'application/pdf'};
-  var mimeType=mimeMap[ext]||'image/jpeg';
-  var reader=new FileReader();
-  var base64=await new Promise(function(resolve,reject){reader.onload=function(){resolve(reader.result);};reader.onerror=reject;reader.readAsDataURL(f);});
-  var result=await callEdgeFunction('process-invoice',{base64Data:base64,mimeType:mimeType,unit:unit||''});
+  var mimeType=(scanFile.type||mimeMap[ext]||'image/jpeg').toLowerCase();
+  var uploadedScan=await uploadScanFileForAI(scanFile);
+  var result;
+  try{
+    result=await callEdgeFunction('process-invoice',{storagePath:uploadedScan.path,mimeType:mimeType,unit:unit||''});
+  }catch(e){
+    var msg=e&&e.message?e.message:String(e||'');
+    if(msg==='Failed to fetch'||msg.toLowerCase().indexOf('network request failed')>=0){
+      throw new Error('Network request failed while scanning receipt. Please retry with a clearer photo under 5MB.');
+    }
+    throw e;
+  }
   var ai=result.ai||result;
   ai.duplicate_claims=result.duplicate_claims||[];
   ai.suggested=result.suggested||{};
@@ -1099,8 +1310,8 @@ function claimListPager(listKey,total,page){
   var totalPages=claimListPageCount(total);
   var prevDisabled=page<=1;
   var nextDisabled=page>=totalPages;
-  var prevBtn='<button class="pbtn btn-o" style="width:auto;padding:7px 12px;'+(prevDisabled?'opacity:.45;cursor:not-allowed;':'')+'" onclick="'+(prevDisabled?'':'setClaimListPage(\\\''+listKey+'\\\','+(page-1)+')')+'"'+(prevDisabled?' disabled':'')+'>Back</button>';
-  var nextBtn='<button class="pbtn btn-o" style="width:auto;padding:7px 12px;'+(nextDisabled?'opacity:.45;cursor:not-allowed;':'')+'" onclick="'+(nextDisabled?'':'setClaimListPage(\\\''+listKey+'\\\','+(page+1)+')')+'"'+(nextDisabled?' disabled':'')+'>Next</button>';
+  var prevBtn='<button class="pbtn btn-o" style="width:auto;padding:7px 12px;'+(prevDisabled?'opacity:.45;cursor:not-allowed;':'')+'" onclick="'+(prevDisabled?'':'setClaimListPage(\''+listKey+'\','+(page-1)+')')+'"'+(prevDisabled?' disabled':'')+'>Back</button>';
+  var nextBtn='<button class="pbtn btn-o" style="width:auto;padding:7px 12px;'+(nextDisabled?'opacity:.45;cursor:not-allowed;':'')+'" onclick="'+(nextDisabled?'':'setClaimListPage(\''+listKey+'\','+(page+1)+')')+'"'+(nextDisabled?' disabled':'')+'>Next</button>';
   return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px"><span style="font-size:11px;color:#6b7280">Page '+page+' of '+totalPages+'</span><div style="display:flex;gap:8px">'+prevBtn+nextBtn+'</div></div>';
 }
 
@@ -1135,18 +1346,13 @@ function removeSlipFile(idx){
 window.pickSlip=pickSlip;window.removeSlipFile=removeSlipFile;
 async function uploadAllSlips(batchId){
   if(!slipFiles.length)return '';
-  var urls=[];
+  var paths=[];
   for(var i=0;i<slipFiles.length;i++){
     var f=slipFiles[i];
-    var ext=f.name.split('.').pop().toLowerCase();
-    var path='slips/'+batchId+'/slip_'+Date.now()+'_'+i+'.'+ext;
-    var res=await sb.storage.from('receipts').upload(path,f,{upsert:true});
-    if(res.error){console.error('Slip upload error:',res.error);toast('Upload failed: '+f.name);continue;}
-    var{data:urlData}=sb.storage.from('receipts').getPublicUrl(path);
-    if(urlData.publicUrl)urls.push(urlData.publicUrl);
+    paths.push(await uploadSignedClaimAttachment(f,batchId,'payment-slip'));
   }
   slipFiles=[];slipFileNames=[];
-  return urls.join(',');
+  return joinAttachmentRefs(paths);
 }
 function slipBox(){
   var html='';
@@ -1166,9 +1372,13 @@ async function markClaimed(){
   if(!ids.length){toast('Select at least one claim');return;}
   var batchId='BATCH-'+Date.now();
   toast('Uploading slips...');
-  var slipUrls=await uploadAllSlips(batchId);
-  if(!slipUrls){toast('Slip upload failed');return;}
-  for(var i=0;i<ids.length;i++){await dbUpdateClaim(ids[i],{status:'Claimed',slipRef:slipUrls});}
+  var slipRefs='';
+  try{slipRefs=await uploadAllSlips(batchId);}catch(e){console.error(e);toast(e&&e.message?e.message:'Slip upload failed');return;}
+  if(!slipRefs){toast('Slip upload failed');return;}
+  for(var i=0;i<ids.length;i++){
+    var claim=claims.filter(function(x){return x.id===ids[i];})[0];
+    await dbUpdateClaim(ids[i],{status:'Claimed',paymentSlipRefs:mergeAttachmentRefs(claim?claim.paymentSlipRefs:'',slipRefs)});
+  }
   checkedClaims={};slipFiles=[];slipFileNames=[];
   await loadClaims();toast(ids.length+' claim(s) marked as Claimed');ss('adminDash');
 }
@@ -1184,7 +1394,13 @@ async function saveEmpEdit(){
   if(!desc||!amt||!dt||!desc.value||!amt.value||!dt.value){toast('Please fill all required fields');return;}
   var upd={desc:desc.value,amount:parseFloat(amt.value),date:dt.value};
   if(emv)upd.expMonth=emv.value;
-  if(pendingFiles.length){var ec=claims.filter(function(x){return x.id===editingId;})[0];var urls=await uploadAllFiles(editingId,{category:ec?ec.category:'',unit:ec?ec.unit:'',desc:desc.value,date:dt.value});if(urls){upd.slipRef=ec&&ec.slipRef?(ec.slipRef+','+urls):urls;}}
+  if(pendingFiles.length){
+    var ec=claims.filter(function(x){return x.id===editingId;})[0];
+    var receiptRefs='';
+    try{receiptRefs=await uploadAllFiles(editingId,{category:ec?ec.category:'',unit:ec?ec.unit:'',desc:desc.value,date:dt.value});}catch(e){console.error(e);toast(e&&e.message?e.message:'Receipt upload failed');return;}
+    if(!receiptRefs){toast('Receipt upload failed');return;}
+    upd.receiptRefs=mergeAttachmentRefs(ec?ec.receiptRefs:'',receiptRefs);
+  }
   await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim updated');editingId=null;ss('claimDetail',PS);
 }
@@ -1193,7 +1409,13 @@ async function submitEmpEdit(){
   if(!desc||!amt||!dt||!desc.value||!amt.value||!dt.value){toast('Please fill all required fields');return;}
   var upd={desc:desc.value,amount:parseFloat(amt.value),date:dt.value,status:'Submitted'};
   if(emv)upd.expMonth=emv.value;
-  if(pendingFiles.length){var ec=claims.filter(function(x){return x.id===editingId;})[0];var urls=await uploadAllFiles(editingId,{category:ec?ec.category:'',unit:ec?ec.unit:'',desc:desc.value,date:dt.value});if(urls){upd.slipRef=ec&&ec.slipRef?(ec.slipRef+','+urls):urls;}}
+  if(pendingFiles.length){
+    var ec=claims.filter(function(x){return x.id===editingId;})[0];
+    var receiptRefs='';
+    try{receiptRefs=await uploadAllFiles(editingId,{category:ec?ec.category:'',unit:ec?ec.unit:'',desc:desc.value,date:dt.value});}catch(e){console.error(e);toast(e&&e.message?e.message:'Receipt upload failed');return;}
+    if(!receiptRefs){toast('Receipt upload failed');return;}
+    upd.receiptRefs=mergeAttachmentRefs(ec?ec.receiptRefs:'',receiptRefs);
+  }
   await dbUpdateClaim(editingId,upd);
   await loadClaims();toast('Claim re-submitted');editingId=null;ss('empList','empHome');
 }
@@ -1201,8 +1423,16 @@ async function saveMgrEdit(){
   var cat=document.getElementById('rv-cat'),unit=document.getElementById('rv-unit'),amt=document.getElementById('rv-amt'),desc=document.getElementById('rv-desc'),dt=document.getElementById('rv-date'),emv=document.getElementById('rv-expmonth'),chg=document.getElementById('rv-charged');
   var upd={};
   if(cat&&cat.value)upd.category=cat.value;if(unit&&unit.value){upd.unit=unit.value;upd.hpUnitId=unitHpId(unit.value);}if(amt&&amt.value)upd.amount=parseFloat(amt.value);if(desc&&desc.value)upd.desc=desc.value;if(dt&&dt.value)upd.date=dt.value;if(emv&&emv.value)upd.expMonth=emv.value;if(unit&&unit.value==='MP Office')upd.chargedTo='';else if(chg&&chg.value)upd.chargedTo=chg.value;
-  if(pendingFiles.length){var c=claims.filter(function(x){return x.id===editingId;})[0];var urls=await uploadAllFiles(editingId,{category:c?c.category:'',unit:c?c.unit:'',desc:desc?desc.value:''});if(urls){upd.slipRef=c&&c.slipRef?(c.slipRef+','+urls):urls;}}
+  var c=claims.filter(function(x){return x.id===editingId;})[0];
+  if(mgrSlipsToRemove.length)upd.receiptRefs=c?c.receiptRefs:'';
+  if(pendingFiles.length){
+    var receiptRefs='';
+    try{receiptRefs=await uploadAllFiles(editingId,{category:c?c.category:'',unit:c?c.unit:'',desc:desc?desc.value:'',date:dt&&dt.value?dt.value:(c?c.date:'')});}catch(e){console.error(e);toast(e&&e.message?e.message:'Receipt upload failed');return;}
+    if(!receiptRefs){toast('Receipt upload failed');return;}
+    upd.receiptRefs=mergeAttachmentRefs(c?c.receiptRefs:'',receiptRefs);
+  }
   await dbUpdateClaim(editingId,upd);
+  mgrSlipsToRemove=[];
   await loadClaims();toast('Claim updated');editingId=null;ss('adminList','adminDash');
 }
 async function submitNewClaim(asDraft){
@@ -1231,9 +1461,14 @@ async function submitNewClaim(asDraft){
   }
   var cid=await getNextClaimId('HE');
   var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:(dtv||new Date().toISOString().slice(0,10)).slice(0,7);
-  var nc={id:cid,emp:myName(),unit:'',category:cv,desc:dv||'(untitled)',amount:av||0,date:dtv||new Date().toISOString().slice(0,10),expMonth:expM,status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',payType:'employee',submittedBy:'self',invoiceNumber:aiResult?(aiResult.invoice_number||aiResult.reference_number||''):'',merchantName:aiResult?(aiResult.merchant_name||''):'',aiRaw:aiResult||{},aiConfidence:aiResult?(aiResult.confidence||0):0,sourceType:aiResult?'ai_scan':'manual'};
+  var nc={id:cid,emp:myName(),unit:'',category:cv,desc:dv||'(untitled)',amount:av||0,date:dtv||new Date().toISOString().slice(0,10),expMonth:expM,status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',receiptRefs:'',paymentSlipRefs:'',payType:'employee',submittedBy:'self',invoiceNumber:aiResult?(aiResult.invoice_number||aiResult.reference_number||''):'',merchantName:aiResult?(aiResult.merchant_name||''):'',aiRaw:aiResult||{},aiConfidence:aiResult?(aiResult.confidence||0):0,sourceType:aiResult?'ai_scan':'manual'};
   // Upload pending files with claim ID naming
-  if(pendingFiles.length){var urls=await uploadAllFiles(cid,{category:cv,unit:'',desc:dv||'',date:dtv||new Date().toISOString().slice(0,10),aiItems:aiResult?aiResult.items:null});if(urls)nc.slipRef=urls;}
+  if(pendingFiles.length){
+    var receiptRefs='';
+    try{receiptRefs=await uploadAllFiles(cid,{category:cv,unit:'',desc:dv||'',date:dtv||new Date().toISOString().slice(0,10),aiItems:aiResult?aiResult.items:null});}catch(e){console.error(e);toast(e&&e.message?e.message:'Receipt upload failed');return;}
+    if(!receiptRefs){toast('Receipt upload failed');return;}
+    nc.receiptRefs=receiptRefs;
+  }
   await dbInsertClaim(nc);
   await loadClaims();toast(asDraft?'Draft saved':'Claim '+cid+' submitted!');
   aiResult=null;aiError='';newClaimStep='upload';
@@ -1258,8 +1493,13 @@ async function submitMgrClaim(){
   }
   var cid=await getNextClaimId(isCompany?'CO':'MGR');
   var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:dtv.slice(0,7);
-  var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,hpUnitId:unitHpId(uv),category:cv,desc:dv,amount:av,date:dtv,expMonth:expM,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',payType:mgrFormPayType,submittedBy:'manager',chargedTo:isMP?'':charged.value,invoiceNumber:aiResult?(aiResult.invoice_number||aiResult.reference_number||''):'',merchantName:aiResult?(aiResult.merchant_name||''):'',aiRaw:aiResult||{},aiConfidence:aiResult?(aiResult.confidence||0):0,sourceType:aiResult?'ai_scan':'manual'};
-  if(pendingFiles.length){var urls=await uploadAllFiles(cid,{category:cv,unit:uv,desc:dv,date:dtv});if(urls)nc.slipRef=urls;}
+  var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,hpUnitId:unitHpId(uv),category:cv,desc:dv,amount:av,date:dtv,expMonth:expM,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',receiptRefs:'',paymentSlipRefs:'',payType:mgrFormPayType,submittedBy:'manager',chargedTo:isMP?'':charged.value,invoiceNumber:aiResult?(aiResult.invoice_number||aiResult.reference_number||''):'',merchantName:aiResult?(aiResult.merchant_name||''):'',aiRaw:aiResult||{},aiConfidence:aiResult?(aiResult.confidence||0):0,sourceType:aiResult?'ai_scan':'manual'};
+  if(pendingFiles.length){
+    var receiptRefs='';
+    try{receiptRefs=await uploadAllFiles(cid,{category:cv,unit:uv,desc:dv,date:dtv});}catch(e){console.error(e);toast(e&&e.message?e.message:'Receipt upload failed');return;}
+    if(!receiptRefs){toast('Receipt upload failed');return;}
+    nc.receiptRefs=receiptRefs;
+  }
   await dbInsertClaim(nc);
   await loadClaims();toast(isCompany?'Recorded as Company-Paid':'Auto-approved for '+mgrFormEmp);
   aiResult=null;mgrFormPayType='employee';mgrFormEmp=myName();ss('adminDash');
@@ -1472,13 +1712,13 @@ function render(){
     var deleteBtn=canDel?'<button class="pbtn btn-d" style="margin-top:8px" onclick="deleteEmpClaim(\''+c.id+'\')">🗑 Delete Claim</button>':'';
     var byMgr=c.submittedBy==='manager'?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Submitted by manager</span> on your behalf.</div></div>':'';
     var rejBox=c.status==='Rejected'&&c.rejectReason?'<div class="rbox"><div style="font-size:10px;font-weight:600;color:#991b1b">Rejection reason</div><div style="font-size:12px;color:#991b1b;margin-top:1px">'+c.rejectReason+'</div></div>':'';
-    var claimedBox=c.status==='Claimed'?(function(){var sr=c.slipRef||'';var urls=sr.split(',').filter(function(u){return u.trim()&&u.startsWith('http');});if(!urls.length)return'<div class="slip-box"><span>💳</span><span style="font-size:12px;color:#92400e;font-weight:600;margin-left:4px">Payment processed</span></div>';return'<div style="margin:4px 0"><div style="font-size:11px;font-weight:600;color:#92400e;margin-bottom:4px">💳 Bank transfer slip(s)</div>'+urls.map(function(u,i){return'<a href="'+u.trim()+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:3px;background:#fef3c7;border:1px dashed #f59e0b;border-radius:10px;text-decoration:none"><span style="font-size:14px">📄</span><span style="font-size:11px;color:#92400e;font-weight:600;flex:1">Slip '+(i+1)+'</span><span style="font-size:10px;color:#6b7280">View →</span></a>';}).join('')+'</div>';}()):'';
-    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(dstat(c.status))+'</div><div class="dgrid">'+['Category','Amount','Date','Expense Month','Unit','Status'].map(function(l,i){var v=[c.category||'—','RM '+c.amount.toFixed(2),c.date,c.expMonth||c.date.slice(0,7),c.unit||'—',dstat(c.status)];return'<div class="di"><div class="dil">'+l+'</div><div class="div_">'+v[i]+'</div></div>';}).join('')+'</div>'+rejBox+claimedBox+(!c.category?'<div class="info-box" style="background:#fef3c7;margin-top:6px"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Category pending</span> — manager will assign on review.</div></div>':'')+'</div>'+viewReceiptBox(c.slipRef)+deleteBtn+'</div>';
+    var claimedBox=c.status==='Claimed'?viewPaymentSlipBox(c.paymentSlipRefs):'';
+    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(dstat(c.status))+'</div><div class="dgrid">'+['Category','Amount','Date','Expense Month','Unit','Status'].map(function(l,i){var v=[c.category||'—','RM '+c.amount.toFixed(2),c.date,c.expMonth||c.date.slice(0,7),c.unit||'—',dstat(c.status)];return'<div class="di"><div class="dil">'+l+'</div><div class="div_">'+v[i]+'</div></div>';}).join('')+'</div>'+rejBox+claimedBox+(!c.category?'<div class="info-box" style="background:#fef3c7;margin-top:6px"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Category pending</span> — manager will assign on review.</div></div>':'')+'</div>'+viewReceiptBox(c.receiptRefs)+deleteBtn+'</div>';
   }
   else if(S==='empEdit'){
     var c=claims.filter(function(x){return x.id===editingId;})[0];if(!c){ss('empList');return;}
     tbt_el.textContent='Edit Claim';bb_el.style.display='block';empNav('claims');
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Editing '+c.id+'</span> — currently '+dstat(c.status)+'.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" value="'+c.desc+'"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+c.date+'"/></div></div><div id="rbox">'+receiptBox(c.slipRef)+'</div>'+(c.status==='Draft'?'<div class="arow"><button class="pbtn btn-o" onclick="saveEmpEdit()">Save Draft</button><button class="pbtn btn-p" onclick="submitEmpEdit()">Save & Submit</button></div>':'<div class="arow"><button class="pbtn btn-o" onclick="ss(\'claimDetail\',\'empList\')">Cancel</button><button class="pbtn btn-p" onclick="submitEmpEdit()">Save & Re-submit</button></div>')+'</div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Editing '+c.id+'</span> — currently '+dstat(c.status)+'.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" value="'+c.desc+'"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+c.date+'"/></div></div><div id="rbox">'+receiptBox(c.receiptRefs)+'</div>'+(c.status==='Draft'?'<div class="arow"><button class="pbtn btn-o" onclick="saveEmpEdit()">Save Draft</button><button class="pbtn btn-p" onclick="submitEmpEdit()">Save & Submit</button></div>':'<div class="arow"><button class="pbtn btn-o" onclick="ss(\'claimDetail\',\'empList\')">Cancel</button><button class="pbtn btn-p" onclick="submitEmpEdit()">Save & Re-submit</button></div>')+'</div>';
   }
   else if(S==='newClaim'){
     tbt_el.textContent='New Claim';bb_el.style.display='block';empNav('');
@@ -1558,8 +1798,8 @@ function render(){
     var actionArea=isPending?(function(){var now=new Date();var mopts='';for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var sv=c.expMonth||c.date.slice(0,7);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();mopts+='<option value="'+v+'"'+(sv===v?' selected':'')+'>'+lbl+'</option>';}return'<div class="fg"><label class="fl">Assign category *</label><select class="fi" id="rv-cat"><option value="">— Select —</option>'+catOpts+'</select></div><div class="fg"><label class="fl">Assign unit *</label><select class="fi" id="rv-unit" onchange="toggleChargeTo(this.value,\x27rv-charge-wrap\x27)"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="rv-expmonth">'+mopts+'</select></div><div id="rv-charge-wrap"><div class="fg"><label class="fl">Charge to *</label><select class="fi" id="rv-charged"><option value="">— Select —</option><option value="Owner">Owner</option><option value="Operator">Operator</option><option value="Both">Both</option></select></div></div><div class="fg"><label class="fl">Rejection reason (if rejecting)</label><input class="fi" id="rv-reason" placeholder="Leave blank if approving"/></div><div class="arow"><button class="pbtn btn-d" onclick="doReject()">✕  Reject</button><button class="pbtn btn-s" onclick="doApprove()">✓  Approve</button></div>';}()):isCompanyPaid?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid</span> — no reimbursement needed.</div></div>':'<div style="background:#f9fafb;border-radius:8px;padding:10px;text-align:center;font-size:12px;color:#6b7280">Status: '+c.status+'</div>';
     var byMgr=c.submittedBy==='manager'?'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Submitted by manager</span>'+(c.emp?' for '+c.emp:'')+'</div></div>':'';
     var rejBox=c.status==='Rejected'&&c.rejectReason?'<div class="rbox"><div style="font-size:10px;font-weight:600;color:#991b1b">Rejection reason</div><div style="font-size:12px;color:#991b1b;margin-top:1px">'+c.rejectReason+'</div></div>':'';
-    var claimedBox=c.status==='Claimed'?(function(){var sr=c.slipRef||'';var urls=sr.split(',').filter(function(u){return u.trim()&&u.startsWith('http');});if(!urls.length)return'<div class="slip-box"><span>💳</span><span style="font-size:12px;color:#92400e;font-weight:600;margin-left:4px">Paid</span></div>';return'<div style="margin:4px 0"><div style="font-size:11px;font-weight:600;color:#92400e;margin-bottom:4px">💳 Bank transfer slip(s)</div>'+urls.map(function(u,i){return'<a href="'+u.trim()+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:3px;background:#fef3c7;border:1px dashed #f59e0b;border-radius:10px;text-decoration:none"><span style="font-size:14px">📄</span><span style="font-size:11px;color:#92400e;font-weight:600;flex:1">Slip '+(i+1)+'</span><span style="font-size:10px;color:#6b7280">View →</span></a>';}).join('')+'</div>';}()):'';
-    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(c.status)+'</div><div class="dgrid">'+(c.emp?'<div class="di"><div class="dil">Employee</div><div class="div_">'+c.emp+'</div></div>':'')+'<div class="di"><div class="dil">Amount</div><div class="div_">RM '+c.amount.toFixed(2)+'</div></div><div class="di"><div class="dil">Date</div><div class="div_">'+c.date+'</div></div><div class="di"><div class="dil">Expense Month</div><div class="div_">'+(c.expMonth||c.date.slice(0,7))+'</div></div><div class="di"><div class="dil">Category</div><div class="div_">'+(c.category||'—')+'</div></div><div class="di"><div class="dil">Unit</div><div class="div_">'+(c.unit||'—')+'</div></div><div class="di"><div class="dil">Payment</div><div class="div_">'+(c.payType==='company'?'Company':'Employee')+'</div></div>'+(c.chargedTo?'<div class="di"><div class="dil">Charged To</div><div class="div_">'+c.chargedTo+'</div></div>':'')+'</div>'+rejBox+claimedBox+'</div>'+viewReceiptBox(c.slipRef)+actionArea+'</div>';
+    var claimedBox=c.status==='Claimed'?viewPaymentSlipBox(c.paymentSlipRefs):'';
+    ms.innerHTML='<div class="scr">'+byMgr+editBar+'<div class="dc"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="cc-id">'+c.id+'</div><div style="font-size:14px;font-weight:600;color:#111;margin-top:2px">'+c.desc+'</div></div>'+sbadge(c.status)+'</div><div class="dgrid">'+(c.emp?'<div class="di"><div class="dil">Employee</div><div class="div_">'+c.emp+'</div></div>':'')+'<div class="di"><div class="dil">Amount</div><div class="div_">RM '+c.amount.toFixed(2)+'</div></div><div class="di"><div class="dil">Date</div><div class="div_">'+c.date+'</div></div><div class="di"><div class="dil">Expense Month</div><div class="div_">'+(c.expMonth||c.date.slice(0,7))+'</div></div><div class="di"><div class="dil">Category</div><div class="div_">'+(c.category||'—')+'</div></div><div class="di"><div class="dil">Unit</div><div class="div_">'+(c.unit||'—')+'</div></div><div class="di"><div class="dil">Payment</div><div class="div_">'+(c.payType==='company'?'Company':'Employee')+'</div></div>'+(c.chargedTo?'<div class="di"><div class="dil">Charged To</div><div class="div_">'+c.chargedTo+'</div></div>':'')+'</div>'+rejBox+claimedBox+'</div>'+viewReceiptBox(c.receiptRefs)+actionArea+'</div>';
   }
   else if(S==='mgrEdit'){
     var c=SEL;tbt_el.textContent='Edit Decision';bb_el.style.display='block';adminNav('list');
@@ -1569,7 +1809,7 @@ function render(){
     var isApprOrRej=(c.status==='Approved'||c.status==='Auto-Approved'||c.status==='Rejected');
     var isAppr=c.status==='Approved'||c.status==='Auto-Approved';
     var mgrExpMonthOpts=(function(){var now=new Date();var opts=[];for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var sv=c.expMonth||c.date.slice(0,7);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();opts.push('<option value="'+v+'"'+(sv===v?' selected':'')+'>'+lbl+'</option>');}return opts.join('');})();
-    var attachmentUI=isApprOrRej?'<div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:12px">'+managerSlipBox(c.slipRef)+(pendingFileNames.length?'<div style="margin-top:6px;padding:6px 10px;background:#d1fae5;border-radius:8px;font-size:11px;color:#065f46"><span style="font-weight:600">'+pendingFileNames.length+'</span> file(s) selected to upload</div>':'')+'</div>':'';
+    var attachmentUI=isApprOrRej?'<div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:12px">'+managerSlipBox(c.receiptRefs)+(pendingFileNames.length?'<div style="margin-top:6px;padding:6px 10px;background:#d1fae5;border-radius:8px;font-size:11px;color:#065f46"><span style="font-weight:600">'+pendingFileNames.length+'</span> file(s) selected to upload</div>':'')+'</div>':'';
     ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Modifying '+c.id+'</span> — currently '+c.status+'. Not yet paid out.</div></div><div class="fg"><label class="fl">Description</label><input class="fi" id="rv-desc" value="'+c.desc+'"/></div><div class="fg"><label class="fl">Category</label><select class="fi" id="rv-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location</label><select class="fi" id="rv-unit" onchange="toggleChargeTo(this.value,\x27rv-charge-wrap\x27)">'+unitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM)</label><input class="fi" id="rv-amt" type="number" value="'+c.amount+'"/></div><div class="fg"><label class="fl">Date</label><input class="fi" id="rv-date" type="date" value="'+c.date+'"/></div></div><div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="rv-expmonth">'+mgrExpMonthOpts+'</select></div><div id="rv-charge-wrap"><div class="fg"><label class="fl">Charge to *</label><select class="fi" id="rv-charged"><option value="">— Select —</option><option value="Owner"'+(c.chargedTo==='Owner'?' selected':'')+'>Owner</option><option value="Operator"'+(c.chargedTo==='Operator'?' selected':'')+'>Operator</option><option value="Both"'+(c.chargedTo==='Both'?' selected':'')+'>Both</option></select></div></div>'+attachmentUI+'<div class="arow">'+(isAppr?'<button class="pbtn btn-d" onclick="mgrChangeToReject()">Change to Reject</button>':'')+'<button class="pbtn btn-s" onclick="saveMgrEdit()">Save Changes</button></div></div>';
     setTimeout(function(){var u=document.getElementById('rv-unit');if(u)toggleChargeTo(u.value,'rv-charge-wrap');},0);
   }

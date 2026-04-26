@@ -116,6 +116,17 @@ function safeStorageName(value: unknown) {
   return name || "receipt-scan.jpg";
 }
 
+function attachmentFolder(type: unknown) {
+  const value = String(type || "").trim().toLowerCase();
+  return value === "payment-slip" ? "payment-slips" : "receipts";
+}
+
+function attachmentPath(userId: string, claimId: unknown, attachmentType: unknown, fileName: unknown) {
+  const safeName = safeStorageName(fileName);
+  const claimKey = String(claimId || "draft").replace(/[^a-zA-Z0-9._-]+/g, "_") || "draft";
+  return `claims/${userId}/${claimKey}/${attachmentFolder(attachmentType)}/${Date.now()}_${safeName}`;
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "POST required" }, 405);
@@ -150,6 +161,38 @@ serve(async (req: Request) => {
         token: data.token,
         signedUrl: data.signedUrl,
       });
+    }
+
+    if (body.action === "create-claim-attachment-upload") {
+      await ensureReceiptsBucket(admin);
+      const path = attachmentPath(userData.user.id, body.claimId, body.attachmentType, body.fileName);
+      const { data, error } = await admin.storage.from("receipts").createSignedUploadUrl(path);
+      if (error || !data) {
+        return json({ ok: false, error: error?.message || "Failed to prepare claim attachment upload" }, 500);
+      }
+      return json({
+        ok: true,
+        bucket: "receipts",
+        path,
+        token: data.token,
+        signedUrl: data.signedUrl,
+      });
+    }
+
+    if (body.action === "create-claim-attachment-read-urls") {
+      await ensureReceiptsBucket(admin);
+      const input = Array.isArray(body.paths) ? body.paths : [];
+      const items: Array<{ path: string; signedUrl: string }> = [];
+      for (const rawPath of input) {
+        const path = String(rawPath || "").trim();
+        if (!path) continue;
+        const { data, error } = await admin.storage.from("receipts").createSignedUrl(path, 3600);
+        if (error || !data?.signedUrl) {
+          return json({ ok: false, error: error?.message || `Failed to read attachment ${path}` }, 500);
+        }
+        items.push({ path, signedUrl: data.signedUrl });
+      }
+      return json({ ok: true, items });
     }
 
     let fileUrl = body.fileUrl;

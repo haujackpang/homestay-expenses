@@ -43,11 +43,13 @@ Recent completed work:
   - The pairing screen now shows active HostPlatform rows only, while the Units summary still reports how many inactive HP rows are hidden.
   - `sync-units` and `sync-reservations` now fail closed when required env/config is missing instead of returning a misleading success.
 - Environment separation was tightened:
-  - Test remains `homestayERP-test` with Supabase `skwogboredsczcyhlqgn`.
-  - Live remains `homestay-expenses` with Supabase `afcifzghlkxvnpulahub`.
+  - Test remains `homestayERP-test` with Supabase `afcifzghlkxvnpulahub`.
+  - Live remains `homestay-expenses` with Supabase `skwogboredsczcyhlqgn`.
   - `homestayERP-prod` is obsolete and must not be used as the live repo.
   - The `TESTING` watermark is tied to the test Pages path, not Supabase URL alone.
   - Live promotion must not copy or sync database table data between test and live.
+  - Claim attachments now split original receipts from payout slips, while `slip_ref` remains legacy fallback only during migration.
+  - Normal claim attachments and payout slips should use signed upload/read helpers against the private `receipts` bucket.
 - Unit pairing UX was clarified in the admin frontend:
   - `Units` now separates `Internal Units` from `HostPlatform Pairing`.
   - HostPlatform pairing uses pairing-first wording, search, and `All / Unmapped / Paired` filters.
@@ -56,7 +58,7 @@ Recent completed work:
 - Admin user management was fixed and promoted to both environments:
   - `admin-users` now lists users with a `profiles` fallback when auth listing is incomplete.
   - System admin password reset works again for test and live.
-  - The updated Edge Function was deployed to `skwogboredsczcyhlqgn` and `afcifzghlkxvnpulahub`.
+  - The updated Edge Function was deployed to `afcifzghlkxvnpulahub` and `skwogboredsczcyhlqgn`.
 - Test Supabase Edge Functions `sync-units` and `sync-reservations` were deployed.
 - HostPlatform sync credentials were copied from live to test Supabase.
 - Test sync was verified successfully:
@@ -69,9 +71,9 @@ Recent completed work:
   - `analyze-receipt` now supports a test-focused OpenRouter receipt flow that prefers a configured Qwen-VL primary model and falls back to other configured vision-capable OpenRouter models.
   - Non-utility OCR descriptions are normalized server-side to include invoice/reference details and key item names, while `Water Bill`, `Electricity Bill`, and `Internet Bill` remain standardized as `[WB]/[EB]/[INT] UNIT Mon YY`.
   - Test duplicate handling now blocks final submit when `find_possible_duplicate_claims` returns a match, while still allowing draft save.
-- Repo/environment mapping was corrected on 2026-04-24:
-  - Test repo `homestayERP-test` -> Supabase `skwogboredsczcyhlqgn`
-  - Live repo `homestay-expenses` -> Supabase `afcifzghlkxvnpulahub`
+- Repo/environment mapping was re-confirmed on 2026-04-26:
+  - Test repo `homestayERP-test` -> Supabase `afcifzghlkxvnpulahub`
+  - Live repo `homestay-expenses` -> Supabase `skwogboredsczcyhlqgn`
 - Follow-up CLI audit on 2026-04-24 found:
   - `profiles` and `claims` are mirrored on the audited business fields.
   - `reservations`, `units`, `unit_config`, `unit_types`, and log tables are not fully mirrored.

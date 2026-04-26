@@ -29,7 +29,7 @@ CREATE TABLE profiles (
   id uuid REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
   email text NOT NULL,
   full_name text NOT NULL DEFAULT '',
-  role text NOT NULL DEFAULT 'employee' CHECK (role IN ('employee', 'admin')),
+  role text NOT NULL DEFAULT 'employee' CHECK (role IN ('employee', 'manager', 'admin')),
   created_at timestamptz DEFAULT now()
 );
 
@@ -46,6 +46,8 @@ CREATE TABLE claims (
   status text NOT NULL CHECK (status IN ('Draft','Submitted','Approved','Rejected','Claimed','Auto-Approved','Company-Paid')),
   reject_reason text DEFAULT '',
   slip_ref text DEFAULT '',
+  receipt_refs text DEFAULT '',
+  payment_slip_refs text DEFAULT '',
   pay_type text NOT NULL CHECK (pay_type IN ('employee','company')),
   submitted_by text NOT NULL CHECK (submitted_by IN ('self','manager')),
   created_by uuid REFERENCES auth.users(id),
@@ -107,14 +109,14 @@ CREATE POLICY "profiles_update" ON profiles FOR UPDATE USING (auth.uid() = id);
 -- Claims
 ALTER TABLE claims ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "claims_select_admin" ON claims FOR SELECT USING (
-  public.get_my_role() = 'admin'
+  public.get_my_role() IN ('admin', 'manager')
 );
 CREATE POLICY "claims_select_own" ON claims FOR SELECT USING (
   emp = public.get_my_name()
 );
 CREATE POLICY "claims_insert" ON claims FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 CREATE POLICY "claims_update_admin" ON claims FOR UPDATE USING (
-  public.get_my_role() = 'admin'
+  public.get_my_role() IN ('admin', 'manager')
 );
 CREATE POLICY "claims_update_own" ON claims FOR UPDATE USING (
   emp = public.get_my_name() AND status IN ('Draft', 'Submitted', 'Auto-Approved')

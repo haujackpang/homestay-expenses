@@ -8,7 +8,7 @@ create table if not exists profiles (
   id uuid references auth.users(id) on delete cascade primary key,
   email text not null,
   display_name text not null,
-  role text not null check (role in ('employee', 'admin')),
+  role text not null check (role in ('employee', 'manager', 'admin')),
   created_at timestamptz default now()
 );
 
@@ -35,6 +35,8 @@ create table if not exists claims (
   status text not null check (status in ('Draft','Submitted','Approved','Rejected','Claimed','Auto-Approved','Company-Paid')),
   reject_reason text default '',
   slip_ref text default '',
+  receipt_refs text default '',
+  payment_slip_refs text default '',
   pay_type text not null check (pay_type in ('employee','company')),
   submitted_by text not null check (submitted_by in ('self','manager')),
   created_by uuid references auth.users(id),
@@ -65,15 +67,15 @@ create policy "Users can update own profile" on profiles for update using (auth.
 -- Bank info: admin can do all, employee can read
 create policy "Anyone authenticated can read bank_info" on bank_info for select using (auth.uid() is not null);
 create policy "Admin can insert bank_info" on bank_info for insert with check (
-  exists (select 1 from profiles where id = auth.uid() and role = 'admin')
+  exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'manager'))
 );
 create policy "Admin can update bank_info" on bank_info for update using (
-  exists (select 1 from profiles where id = auth.uid() and role = 'admin')
+  exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'manager'))
 );
 
 -- Claims: admin can read all, employee can read own
 create policy "Admin can read all claims" on claims for select using (
-  exists (select 1 from profiles where id = auth.uid() and role = 'admin')
+  exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'manager'))
 );
 create policy "Employee can read own claims" on claims for select using (
   emp = (select display_name from profiles where id = auth.uid())
@@ -82,7 +84,7 @@ create policy "Employee can read own claims" on claims for select using (
 create policy "Authenticated can insert claims" on claims for insert with check (auth.uid() is not null);
 -- Admin can update any claim, employee can update own non-paid claims
 create policy "Admin can update any claim" on claims for update using (
-  exists (select 1 from profiles where id = auth.uid() and role = 'admin')
+  exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'manager'))
 );
 create policy "Employee can update own claims" on claims for update using (
   emp = (select display_name from profiles where id = auth.uid())
