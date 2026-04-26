@@ -18,6 +18,12 @@ Decision: Reuse `process-invoice` signed upload/read helpers for normal claim re
 Reason:
 The `receipts` bucket is private, and direct browser uploads were failing while the claim mutation still continued. Signed uploads keep the bucket private and let the UI fail closed when a selected attachment cannot be stored.
 
+## 2026-04-26: Bring Test `claims` Schema Up To Current Frontend Expectation
+Decision: Apply the existing idempotent script `supabase-invoice-automation.sql` to test `afcifzghlkxvnpulahub` before validating the attachment fix.
+
+Reason:
+During end-to-end verification, manual claim submit still failed at `dbInsertClaim()` because the test `claims` table was missing OCR/import metadata columns such as `ai_confidence`, even though the current frontend already sends them. Running the existing migration was required to make attachment verification meaningful.
+
 ## 2026-04-26: Keep `Company-Paid` Out Of Claim Queues
 Decision: Hide `Company-Paid` rows from the employee and manager/admin `Claims` lists while keeping company-paid totals in dashboard and report summaries.
 

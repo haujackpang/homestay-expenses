@@ -54,6 +54,7 @@ This file defines how changes move through test and live environments for this p
 - If the promoted feature depends on Supabase Functions or database schema, deploy the matching functions and run only idempotent live SQL upgrades that are required for the tested code to work.
 - Do not copy, mirror, or reconcile table data between live and test during a live promotion unless the user gives a separate explicit data-migration instruction.
 - For claim attachment fixes, promote the tested frontend together with the matching `process-invoice` deployment and the idempotent schema/backfill script `supabase-add-claim-attachment-refs.sql`.
+- If the target environment still lacks the current OCR/import columns on `claims`, include the existing idempotent script `supabase-invoice-automation.sql` in the same promotion, because the current frontend insert/update path already writes those fields.
 
 ## Environment UI Rule
 - Test-only UI markers, including the `TESTING` watermark, must be tied to the test GitHub Pages repo path (`/homestayERP-test`).

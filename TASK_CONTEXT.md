@@ -33,6 +33,9 @@ Recent unit-pairing context:
   - `claims.payment_slip_refs` stores payout bank slips
   - `claims.slip_ref` is legacy fallback only
 - Because the `receipts` bucket is private, normal claim attachments must use `process-invoice` signed upload/read helpers instead of direct browser storage writes.
+- On 2026-04-26, test `afcifzghlkxvnpulahub` also needed the existing idempotent script `supabase-invoice-automation.sql` before manual claim submit worked again:
+  - `claims` was still missing `invoice_number`, `merchant_name`, `ai_raw`, `ai_confidence`, `source_type`, `external_id`, and `external_source`
+  - the frontend was already inserting those fields, so PostgREST rejected `dbInsertClaim()` until that script was applied
 - User has already executed the test Supabase script that adds unit-level cleaning/laundry columns.
 - Test and live Supabase functions are deployed and direct function calls succeeded after secrets were copied/configured.
 - `admin-users` now supports user listing fallback and password reset updates for system admin accounts.
@@ -63,6 +66,10 @@ Recent unit-pairing context:
 - Direct call to test `sync-units` returned HTTP 200 and synced 16 units, so the screenshot 401 is likely caused by stale browser auth token, not missing function deployment.
 - Direct call to test `sync-reservations` returned HTTP 200 and upserted records, so browser 401 is likely caused by stale/rejected user-session JWT before the function runs.
 - Manage Users 401/Unauthorized issues were traced to the admin-users backend permission check and function secret/env mismatch, then fixed by updating the function and redeploying.
+- End-to-end verification on 2026-04-26 after applying `supabase-add-claim-attachment-refs.sql`, `supabase-invoice-automation.sql`, redeploying `process-invoice`, and pushing the frontend to `homestayERP-test` confirmed:
+  - employee claim submit with attachment now persists `receipt_refs`
+  - manager `Mark as Claimed` now persists `payment_slip_refs` without overwriting `receipt_refs`
+  - manager `All Claims` pagination `Next` moves from page 1 to page 2 on the deployed test Pages app
 - Report PDF cleaning fee uses `(cleaning_fee + laundry_fee) x reservation count`, displayed as `Cleaning fee` in the shared expenses/expense details area.
 - Report page should display the same wording as `Cleaning fee` and include it in the visible Expenses detail list.
 - Homestay profit = sales - sharing expenses charged to Both.
