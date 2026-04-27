@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const AI_RECEIPT_SCAN_ENABLED = Deno.env.get("AI_RECEIPT_SCAN_ENABLED") === "true";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -149,6 +150,7 @@ serve(async (req: Request) => {
 
     const body = await req.json();
     if (body.action === "create-ai-scan-upload") {
+      if (!AI_RECEIPT_SCAN_ENABLED) return json({ ok: false, error: "AI receipt scan is currently disabled" }, 403);
       await ensureReceiptsBucket(admin);
       const safeName = safeStorageName(body.fileName);
       const path = `ai-scan/${userData.user.id}/${Date.now()}_${safeName}`;
@@ -196,6 +198,7 @@ serve(async (req: Request) => {
     }
 
     let fileUrl = body.fileUrl;
+    if (!AI_RECEIPT_SCAN_ENABLED) return json({ ok: false, error: "AI receipt scan is currently disabled" }, 403);
     if (body.storagePath) {
       await ensureReceiptsBucket(admin);
       const { data, error } = await admin.storage

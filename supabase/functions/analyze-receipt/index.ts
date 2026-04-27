@@ -7,6 +7,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const OPENROUTER_PRIMARY_MODEL = Deno.env.get("OPENROUTER_OCR_PRIMARY_MODEL") || "qwen/qwen2.5-vl-32b-instruct:free";
 const OPENROUTER_FALLBACK_MODELS = (Deno.env.get("OPENROUTER_OCR_FALLBACK_MODELS") || "").trim();
+const AI_RECEIPT_SCAN_ENABLED = Deno.env.get("AI_RECEIPT_SCAN_ENABLED") === "true";
 
 const CATEGORIES = [
   "Water Bill",
@@ -342,6 +343,7 @@ function normalizeResult(parsed: any, selectedUnit: string, provider: string, mo
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "POST required" }, 405);
+  if (!AI_RECEIPT_SCAN_ENABLED) return json({ ok: false, error: "AI receipt scan is currently disabled" }, 403);
 
   try {
     const { fileUrl, mimeType, base64Data: clientBase64, unit } = await req.json();
