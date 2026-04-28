@@ -1,5 +1,11 @@
 # Decisions Log
 
+## 2026-04-28: Use Functions Domain For Live Scheduled Reservation Import
+Decision: Call the live `sync-reservations` Edge Function through `https://skwogboredsczcyhlqgn.functions.supabase.co/sync-reservations` in the GitHub scheduled workflow, after normalizing the Supabase origin with shell parameter expansion.
+
+Reason:
+The workflow first failed because the `sed` backreference was escaped as literal `\1`, producing a bad hostname. After that was fixed, GitHub Actions still received 404 from the `/functions/v1` gateway even though direct live calls worked. The functions-domain URL succeeded in manual workflow runs and keeps the schedule independent from path suffixes in `SUPABASE_URL`.
+
 ## 2026-04-28: Promote Expense Submit Diagnostics To Test And Live
 Decision: Keep test and live at the same schema/app level for claim submission by applying the attachment refs, invoice automation, and error-log migrations to both environments, then deploying paged admin logs and detailed submit-failure logging to both Pages apps.
 

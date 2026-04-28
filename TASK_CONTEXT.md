@@ -24,6 +24,12 @@ Current focus:
 4. Test Pages deployment `25061045338` and live Pages deployment `25061116883` completed successfully.
 5. Public API verification confirmed both environments expose the current claim attachment/OCR columns and accept client-side error-log inserts.
 
+2026-04-28 live scheduled import repair:
+1. Live `Scheduled Reservation Import` was failing because workflow URL normalization produced literal `\1`, then the `/functions/v1` gateway returned 404 from GitHub Actions.
+2. `.github/workflows/sync-reservations.yml` now normalizes the live Supabase origin with shell parameter expansion and calls `https://skwogboredsczcyhlqgn.functions.supabase.co/sync-reservations`.
+3. Live repo secrets `SUPABASE_URL` and `SUPABASE_KEY` were refreshed from the deployed live app config.
+4. Manual live verification run `25062092776` succeeded with HTTP 200, `fetched=4396`, `upserted=4394`, `totalCount=4396`.
+
 Environment guardrails that still apply:
 1. Test is `homestayERP-test` / `afcifzghlkxvnpulahub`, live is `homestay-expenses` / `skwogboredsczcyhlqgn`, and `homestayERP-prod` is obsolete.
 2. The `TESTING` watermark should be controlled by the test Pages path only, not by Supabase URL alone.
