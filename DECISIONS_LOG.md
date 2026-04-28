@@ -1,5 +1,11 @@
 # Decisions Log
 
+## 2026-04-28: Show Existing Claim For Exact Duplicate Expense
+Decision: Keep the DB duplicate guard for exact active duplicates, but add a frontend pre-check that finds the matching loaded claim and shows the existing claim ID before upload/insert.
+
+Reason:
+The live AR C3706 retry was an actual duplicate of `MGR-2026-04-00024`, so allowing another insert would create duplicate accounting data. The user-facing fix is to explain the existing claim clearly instead of exposing the raw `claims_dup_check` database error.
+
 ## 2026-04-28: Use Functions Domain For Live Scheduled Reservation Import
 Decision: Call the live `sync-reservations` Edge Function through `https://skwogboredsczcyhlqgn.functions.supabase.co/sync-reservations` in the GitHub scheduled workflow, after normalizing the Supabase origin with shell parameter expansion.
 
