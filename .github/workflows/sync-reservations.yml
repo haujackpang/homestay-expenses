@@ -61,6 +61,24 @@ jobs:
           project_ref="${project_ref%%.supabase.co*}"
           echo "Calling Supabase project ref: ${project_ref}"
           echo "Supabase origin: ${supabase_origin}"
+          python3 <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+
+          key = os.environ.get("SUPABASE_KEY", "")
+          print("Supabase key sha256 prefix:", hashlib.sha256(key.encode()).hexdigest()[:12])
+          try:
+              payload = key.split(".")[1]
+              payload += "=" * ((4 - len(payload) % 4) % 4)
+              data = json.loads(base64.urlsafe_b64decode(payload))
+              ref = data.get("ref") or data.get("iss", "").split("//")[-1].split(".")[0]
+              print("Supabase key ref:", ref)
+              print("Supabase key role:", data.get("role", "unknown"))
+          except Exception:
+              print("Supabase key payload: unreadable")
+          PY
 
           http_code="$(curl -sS -o response.txt -w "%{http_code}" \
             -X POST \
