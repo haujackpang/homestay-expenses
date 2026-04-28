@@ -39,7 +39,22 @@ jobs:
           # Normalize secrets to avoid hidden whitespace, trailing slashes, or accidental path suffixes.
           supabase_url="$(echo -n "${SUPABASE_URL}" | tr -d '\r' | xargs)"
           supabase_url="${supabase_url%/}"
-          supabase_origin="$(echo -n "${supabase_url}" | sed -E 's#(https?://[^/]+).*#\\1#')"
+          case "${supabase_url}" in
+            https://*)
+              supabase_scheme="https"
+              supabase_host="${supabase_url#https://}"
+              ;;
+            http://*)
+              supabase_scheme="http"
+              supabase_host="${supabase_url#http://}"
+              ;;
+            *)
+              echo "SUPABASE_URL must start with http:// or https://."
+              exit 1
+              ;;
+          esac
+          supabase_host="${supabase_host%%/*}"
+          supabase_origin="${supabase_scheme}://${supabase_host}"
 
           project_ref="${supabase_origin#https://}"
           project_ref="${project_ref#http://}"
