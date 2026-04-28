@@ -36,13 +36,20 @@ jobs:
             exit 1
           fi
 
-          project_ref="${SUPABASE_URL#https://}"
+          # Normalize secrets to avoid hidden whitespace, trailing slashes, or accidental path suffixes.
+          supabase_url="$(echo -n "${SUPABASE_URL}" | tr -d '\r' | xargs)"
+          supabase_url="${supabase_url%/}"
+          supabase_origin="$(echo -n "${supabase_url}" | sed -E 's#(https?://[^/]+).*#\\1#')"
+
+          project_ref="${supabase_origin#https://}"
+          project_ref="${project_ref#http://}"
           project_ref="${project_ref%%.supabase.co*}"
           echo "Calling Supabase project ref: ${project_ref}"
+          echo "Supabase origin: ${supabase_origin}"
 
           http_code="$(curl -sS -o response.txt -w "%{http_code}" \
             -X POST \
-            "${SUPABASE_URL}/functions/v1/sync-reservations" \
+            "${supabase_origin}/functions/v1/sync-reservations" \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
             -H "Content-Type: application/json" \
