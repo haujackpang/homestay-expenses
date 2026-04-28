@@ -59,8 +59,10 @@ jobs:
           project_ref="${supabase_origin#https://}"
           project_ref="${project_ref#http://}"
           project_ref="${project_ref%%.supabase.co*}"
+          function_origin="https://${project_ref}.functions.supabase.co"
           echo "Calling Supabase project ref: ${project_ref}"
           echo "Supabase origin: ${supabase_origin}"
+          echo "Function origin: ${function_origin}"
           python3 <<'PY'
           import base64
           import hashlib
@@ -82,7 +84,7 @@ jobs:
 
           http_code="$(curl -sS -o response.txt -w "%{http_code}" \
             -X POST \
-            "${supabase_origin}/functions/v1/sync-reservations" \
+            "${function_origin}/sync-reservations" \
             -H "apikey: ${SUPABASE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_KEY}" \
             -H "Content-Type: application/json" \
