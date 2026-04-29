@@ -1,8 +1,6 @@
 name: Scheduled Reservation Import
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -61,7 +59,7 @@ jobs:
           project_ref="${project_ref#http://}"
           project_ref="${project_ref%%.supabase.co*}"
           function_origin="https://${project_ref}.functions.supabase.co"
-          echo "Calling Supabase project ref: ${project_ref}"
+          echo "Calling Supabase project ref: ${project_ref}" 
           echo "Supabase origin: ${supabase_origin}"
           echo "Function origin: ${function_origin}"
 
