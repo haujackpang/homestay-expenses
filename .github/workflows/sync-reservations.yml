@@ -28,11 +28,12 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           set -euo pipefail
 
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_KEY:-}" ]; then
-            echo "Missing SUPABASE_URL or SUPABASE_KEY."
+          if [ -z "${SUPABASE_URL:-}" ] || { [ -z "${SUPABASE_KEY:-}" ] && [ -z "${SUPABASE_SERVICE_KEY:-}" ]; }; then
+            echo "Missing SUPABASE_URL, and no SUPABASE_KEY or SUPABASE_SERVICE_KEY provided."
             exit 1
           fi
 
@@ -64,13 +65,29 @@ jobs:
           echo "Supabase origin: ${supabase_origin}"
           echo "Function origin: ${function_origin}"
 
-          http_code="$(curl -sS -o response.txt -w "%{http_code}" \
-            -X POST \
-            "${function_origin}/sync-reservations" \
-            -H "apikey: ${SUPABASE_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_KEY}" \
-            -H "Content-Type: application/json" \
-            -d '{"type":"scheduled"}')"
+          call_sync() {
+            local api_key="$1"
+            curl -sS -o response.txt -w "%{http_code}" \
+              -X POST \
+              "${function_origin}/sync-reservations" \
+              -H "apikey: ${api_key}" \
+              -H "Authorization: Bearer ${api_key}" \
+              -H "Content-Type: application/json" \
+              -d '{"type":"scheduled"}'
+          }
+
+          primary_key="${SUPABASE_KEY:-}"
+          if [ -z "${primary_key}" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ]; then
+            primary_key="${SUPABASE_SERVICE_KEY}"
+          fi
+
+          http_code="$(call_sync "${primary_key}")"
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            if [ -n "${SUPABASE_SERVICE_KEY:-}" ] && [ "${primary_key}" != "${SUPABASE_SERVICE_KEY}" ]; then
+              echo "Primary key call failed; retrying with service key..."
+              http_code="$(call_sync "${SUPABASE_SERVICE_KEY}")"
+            fi
+          fi
 
           echo "HTTP status: ${http_code}"
           echo "Response body:"
