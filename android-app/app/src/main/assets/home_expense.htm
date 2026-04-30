@@ -507,11 +507,18 @@ async function loadBankInfo(){
   if(error){console.error('loadBankInfo:',error);return;}
   BANK_INFO={};data.forEach(function(r){BANK_INFO[r.employee_name]={bank:r.bank||'',acc:r.acc||'',fullName:r.full_name||''};});
   EMPS=Object.keys(BANK_INFO);
-    // Build active employees list (exclude deactivated and admin)
-    var{data:profs}=await sb.from('profiles').select('full_name,active,role');
-    var inactiveNames={};var adminNames={};
-    if(profs)profs.forEach(function(p){if(p.active===false)inactiveNames[p.full_name]=true;if(p.role==='admin')adminNames[p.full_name]=true;});
-    ACTIVE_EMPS=EMPS.filter(function(e){return!inactiveNames[e]&&!adminNames[e];});
+  // Manager-submitted employee claims must use the same canonical name employees log in with.
+  var{data:profs}=await sb.from('profiles').select('full_name,active,role');
+  var inactiveNames={},adminNames={},activeProfileNames=[];
+  if(profs)profs.forEach(function(p){
+    var name=String(p&&p.full_name||'').trim();
+    if(!name)return;
+    if(p.active===false)inactiveNames[name]=true;
+    if(p.role==='admin')adminNames[name]=true;
+    if(p.active!==false&&p.role!=='admin')activeProfileNames.push(name);
+  });
+  ACTIVE_EMPS=uniqueNames(activeProfileNames);
+  if(!ACTIVE_EMPS.length)ACTIVE_EMPS=EMPS.filter(function(e){return!inactiveNames[e]&&!adminNames[e];});
   if(mgrFormEmp===''&&ACTIVE_EMPS.length)mgrFormEmp=myName();
 }
 async function loadUnits(){

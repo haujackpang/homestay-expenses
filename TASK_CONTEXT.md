@@ -15,6 +15,16 @@ Current focus:
 3. The Android wrapper asset was synced from `home_expense.htm`, and the WebView file chooser now supports camera capture through a FileProvider path for camera-mode inputs.
 4. No Supabase schema, Edge Function, or live deployment changes were made for this upload-picker fix.
 
+2026-04-30 update (implemented locally on `main`, not applied to DB yet):
+1. Manager-submitted employee claims now use canonical `profiles.full_name` values when building the employee dropdown, instead of relying on `bank_info.employee_name`.
+2. This keeps new manager-submitted employee claims aligned with the name employees log in under, so employee-side claim lists can match them reliably.
+3. `supabase-claims-manager-access.sql` now also recreates `claims_select_own` and `claims_update_own` using `emp = public.get_my_name()`, so employee visibility for on-behalf claims can be repaired in test without touching live.
+
+2026-05-01 live promotion:
+1. The manager-submitted employee claim visibility fix was promoted to live code and live claim policies after test verification.
+2. Employee own-claim visibility is standardized on `emp = public.get_my_name()` at the policy layer.
+3. Manager employee selection now prefers canonical `profiles.full_name` values when creating on-behalf employee claims.
+
 2026-04-27 update (implemented in test first):
 1. Claims cleanup: normal Claims pages now hide paid-out (`Claimed`, `Company-Paid`) and keep them out of the active queue.
 2. History: employee can review own payout history (`Claimed`); manager can review all payout history (`Claimed`).
