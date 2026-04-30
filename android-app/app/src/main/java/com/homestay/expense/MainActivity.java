@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.ValueCallback;
@@ -14,11 +15,16 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import androidx.core.content.FileProvider;
+
+import java.io.File;
+import java.io.IOException;
 
 public class MainActivity extends Activity {
 
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
+    private Uri cameraImageUri;
     private static final int FILE_CHOOSER_CODE = 1001;
 
     @Override
@@ -64,16 +70,60 @@ public class MainActivity extends Activity {
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType("*/*");
-                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/*", "application/pdf"});
-                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                    "image/*",
+                    "application/pdf",
+                    "application/msword",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                });
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params == null || params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
 
-                Intent chooser = Intent.createChooser(intent, "Select receipts");
-                startActivityForResult(chooser, FILE_CHOOSER_CODE);
+                Intent cameraIntent = acceptsImages(params) ? createImageCaptureIntent() : null;
+                Intent chooser;
+                if (params != null && params.isCaptureEnabled() && cameraIntent != null) {
+                    chooser = cameraIntent;
+                } else {
+                    chooser = Intent.createChooser(intent, "Select receipts");
+                    if (cameraIntent != null) {
+                        chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[]{cameraIntent});
+                    }
+                }
+                try {
+                    startActivityForResult(chooser, FILE_CHOOSER_CODE);
+                } catch (Exception e) {
+                    fileCallback.onReceiveValue(null);
+                    fileCallback = null;
+                }
                 return true;
             }
         });
 
         webView.loadUrl("file:///android_asset/home_expense.htm");
+    }
+
+    private Intent createImageCaptureIntent() {
+        Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        if (cameraIntent.resolveActivity(getPackageManager()) == null) return null;
+        try {
+            File imageFile = File.createTempFile("receipt_", ".jpg", getCacheDir());
+            cameraImageUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", imageFile);
+            cameraIntent.putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri);
+            cameraIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            return cameraIntent;
+        } catch (IOException e) {
+            cameraImageUri = null;
+            return null;
+        }
+    }
+
+    private boolean acceptsImages(WebChromeClient.FileChooserParams params) {
+        if (params == null) return true;
+        String[] types = params.getAcceptTypes();
+        if (types == null || types.length == 0) return true;
+        for (String type : types) {
+            if (type == null || type.length() == 0 || type.startsWith("image/")) return true;
+        }
+        return false;
     }
 
     @Override
@@ -94,8 +144,12 @@ public class MainActivity extends Activity {
                         if (uri != null) results = new Uri[]{uri};
                     }
                 }
+                if (resultCode == RESULT_OK && results == null && cameraImageUri != null) {
+                    results = new Uri[]{cameraImageUri};
+                }
                 fileCallback.onReceiveValue(results);
                 fileCallback = null;
+                cameraImageUri = null;
             }
         }
         super.onActivityResult(requestCode, resultCode, data);
