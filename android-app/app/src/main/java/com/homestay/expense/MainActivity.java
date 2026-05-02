@@ -1,6 +1,7 @@
 package com.homestay.expense;
 
 import android.app.Activity;
+import android.content.pm.ApplicationInfo;
 import android.content.ClipData;
 import android.content.Intent;
 import android.graphics.Color;
@@ -22,6 +23,8 @@ import java.io.IOException;
 
 public class MainActivity extends Activity {
 
+    private static final String DEBUG_ASSET_URL = "file:///android_asset/home_expense.htm";
+    private static final String LIVE_APP_URL = "https://haujackpang.github.io/homestay-expenses/";
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
     private Uri cameraImageUri;
@@ -98,7 +101,12 @@ public class MainActivity extends Activity {
             }
         });
 
-        webView.loadUrl("file:///android_asset/home_expense.htm");
+        webView.loadUrl(resolveAppUrl());
+    }
+
+    private String resolveAppUrl() {
+        boolean isDebuggable = (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        return isDebuggable ? DEBUG_ASSET_URL : LIVE_APP_URL;
     }
 
     private Intent createImageCaptureIntent() {

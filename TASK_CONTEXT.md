@@ -9,6 +9,11 @@ Current focus:
 5. Move normal claim attachments to signed upload/read helpers because the `receipts` bucket is private.
 6. Keep the rollout test-first; use the focused script `supabase-claims-manager-access.sql` only in environments where manager claim access still follows admin-only policies.
 
+2026-05-02 update (implemented locally, test-first):
+1. Added `supabase-test-fix-claim-delete.sql` as a paste-ready SQL Editor script to replace legacy `claims` delete policies in test with the current unpaid-claim delete rules.
+2. Claim delete failures in `home_expense.htm` now distinguish `Supabase error` from `0 rows deleted`, show the real error text in the toast when available, and write delete diagnostics into `error_logs`.
+3. The Android WebView asset copy was synced with the same delete-diagnostics behavior.
+
 2026-04-30 update (implemented locally, test-first):
 1. iOS/mobile upload picker now uses one visible `Upload Photo/File` style button so users can choose camera, photo library, or files from the system picker without a two-button attachment layout.
 2. The shared file picker resets `accept`, `multiple`, and `capture` before every open; normal visible upload actions do not set `capture='environment'`.
@@ -24,6 +29,10 @@ Current focus:
 1. The manager-submitted employee claim visibility fix was promoted to live code and live claim policies after test verification.
 2. Employee own-claim visibility is standardized on `emp = public.get_my_name()` at the policy layer.
 3. Manager employee selection now prefers canonical `profiles.full_name` values when creating on-behalf employee claims.
+
+2026-05-01 live data correction:
+1. Claims `MGR-2026-04-00037` and `MGR-2026-04-00038` were corrected in live DB from `emp = System Admin` to `emp = Jack Pang`.
+2. Both records remain `pay_type = employee` and `submitted_by = manager`, so they now group under Jack Pang instead of the `System Admin` bucket.
 
 2026-04-27 update (implemented in test first):
 1. Claims cleanup: normal Claims pages now hide paid-out (`Claimed`, `Company-Paid`) and keep them out of the active queue.
