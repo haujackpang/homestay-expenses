@@ -1,4 +1,4 @@
-﻿-- =======================================
+-- =======================================
 -- Admin Account & User Management Setup
 -- Run this in Supabase SQL Editor (one-time)
 -- =======================================
@@ -284,6 +284,6 @@ BEGIN
 
     RAISE NOTICE 'Admin account created successfully: username=admin, password=MP@2018';
   ELSE
-    RAISE NOTICE 'Admin account already exists â€” skipped.';
+    RAISE NOTICE 'Admin account already exists — skipped.';
   END IF;
 END $$;
