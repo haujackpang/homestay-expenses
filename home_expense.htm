@@ -548,7 +548,7 @@ function reportSectionRowsHTML(rows){
   if(!rows.length)return'<div style="font-size:11px;color:#9ca3af;padding:5px 0">No expenses</div>';
   return reportCategoryGroups(rows).map(function(group){
     var col=CAT_COLORS[group.category]||'#888';
-    if(group.items.length===1){
+    if(group.items.length===1&&group.category!=='Other'){
       return'<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f3f4f6"><span style="font-size:11px;color:'+col+'">'+esc(group.category)+'</span><span style="font-size:11px;font-weight:600">RM '+group.total.toFixed(2)+'</span></div>';
     }
     var detailRows=group.items.map(function(item){
@@ -2310,7 +2310,7 @@ async function exportReportPDF(){
     function renderPdfExpenseGroups(groups,emptyText){
       if(!groups.length){doc.setFont(undefined,'normal');doc.setFontSize(7.4);doc.setTextColor(45,45,45);doc.text(emptyText,x+2,y);y+=6;return;}
       groups.forEach(function(group){
-        if(group.items.length===1){
+        if(group.items.length===1&&group.category!=='Other'){
           addPageIfNeeded(8);
           doc.setFont(undefined,'normal');doc.setFontSize(7.4);doc.setTextColor(45,45,45);
           doc.text(doc.splitTextToSize(group.category||'',130)[0]||'',x+2,y);
