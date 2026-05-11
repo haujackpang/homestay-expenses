@@ -261,7 +261,6 @@ var adminHistMonth='All',adminHistYear='All',adminHistEmp='All';
 var unitExpUnit='All',unitExpMonth='All',unitExpYear='All',unitExpStatus='All';
 var checkedClaims={},slipFiles=[],slipFileNames=[];
 var mgrFormEmp='',mgrFormPayType='employee';
-var mgrClaimDraft={desc:'',amount:'',date:'',cat:'',unit:'',chargedTo:'',expMonth:'',expMonthTouched:false};
 var empExpandMap={},editingBankEmp=null;
 var fxCollapsed=true;
 var claims=[],BANK_INFO={},EMPS=[],ACTIVE_EMPS=[],UNITS_DATA=[];
@@ -283,6 +282,7 @@ var syncLogs=[],syncLoading=false,syncRunning=false,unitSyncing=false;
 var showInactiveUnits=false;
 var unitPairingFilter='All',unitPairingSearch='';
 var reservations=[];
+var unitUnavailability=[];
 var ATTACHMENT_URLS={};
 var ATTACHMENT_URL_EXPIRY={};
 var ATTACHMENT_URL_TTL_MS=55*60*1000;
@@ -411,13 +411,12 @@ var UNITS=['KT11','150A','14A','LC03','IR B1506','IR B1631','IR B1913B','IR A210
 var PROPERTY_SHORT_CODES=['AR','IR','AC','CL','BR','SH','KT','LC','MP','OF'];
 var CATS=['Water Bill','Electricity Bill','Internet Bill','Rental','MFSF','Maintenance & Repair','Housekeeping & Cleaning','Laundry','Daily Products','Hospitality Items','Electrical & Unit Setup','Office Expenses','Employee Welfare','Outsource Cleaning Staff','Unit Renovation','Other'];
 var CAT_COLORS={'Water Bill':'#185FA5','Electricity Bill':'#0E6E9E','Internet Bill':'#2D5FA5','Rental':'#7C3AED','MFSF':'#A45D2B','Maintenance & Repair':'#854F0B','Housekeeping & Cleaning':'#3B6D11','Laundry':'#534AB7','Daily Products':'#0F6E56','Hospitality Items':'#993556','Electrical & Unit Setup':'#993C1D','Office Expenses':'#5F5E5A','Employee Welfare':'#185FA5','Outsource Cleaning Staff':'#854F0B','Unit Renovation':'#A32D2D','Other':'#888780'};
-var COMPANY_INSIGHTS_PREVIEW=[
-  {period:'2026-01',grossBookingSales:48620,maintenance:{ownerCharged:9800,vendorCost:7020,netMargin:2780},incomeMix:[{label:'Management Fee',value:7100,color:'#2563eb'},{label:'Cleaning Fee',value:1450,color:'#0f766e'},{label:'Laundry Fee',value:1250,color:'#4f46e5'},{label:'Maintenance Margin',value:2780,color:'#c2410c'}],expenseBreakdown:[{label:'Utilities',value:1760,color:'#185FA5'},{label:'Rental',value:1680,color:'#7C3AED'},{label:'MFSF',value:850,color:'#A45D2B'},{label:'Maintenance Cost',value:2470,color:'#854F0B'},{label:'Cleaning-related',value:1130,color:'#3B6D11'},{label:'Other',value:1050,color:'#888780'}],units:[{unit:'AR C3706',bookings:9,occupiedNights:19,occupancy:65,adr:168,revpar:109,managementFeeIncome:1930,cleaningLaundryIncome:650,maintenanceMargin:630,expenses:1160},{unit:'IR B1506',bookings:8,occupiedNights:18,occupancy:62,adr:181,revpar:112,managementFeeIncome:2140,cleaningLaundryIncome:590,maintenanceMargin:910,expenses:1320},{unit:'34F',bookings:5,occupiedNights:12,occupancy:41,adr:196,revpar:81,managementFeeIncome:960,cleaningLaundryIncome:340,maintenanceMargin:0,expenses:870},{unit:'LC03',bookings:6,occupiedNights:14,occupancy:48,adr:149,revpar:71,managementFeeIncome:1180,cleaningLaundryIncome:470,maintenanceMargin:290,expenses:1450},{unit:'SH P0403',bookings:9,occupiedNights:21,occupancy:72,adr:159,revpar:114,managementFeeIncome:890,cleaningLaundryIncome:650,maintenanceMargin:950,expenses:1020}],alerts:[{tone:'warn',title:'Low occupancy units',detail:'34F and LC03 are below 50% estimated occupancy. Review weekday pricing and short-gap fill.'},{tone:'info',title:'Maintenance-heavy month',detail:'IR B1506 and SH P0403 drove most maintenance work. Margin is positive, but vendor load is elevated.'},{tone:'good',title:'Profit still positive',detail:'Company net remained positive because management fee and maintenance margin covered a softer booking month.'},{tone:'bad',title:'Cleaning cost pressure',detail:'Cleaning-related cost stayed above RM 1,100. Watch outsourced cleaning usage before peak weekends.'}]},
-  {period:'2026-02',grossBookingSales:51220,maintenance:{ownerCharged:10240,vendorCost:7360,netMargin:2880},incomeMix:[{label:'Management Fee',value:7420,color:'#2563eb'},{label:'Cleaning Fee',value:1520,color:'#0f766e'},{label:'Laundry Fee',value:1420,color:'#4f46e5'},{label:'Maintenance Margin',value:2880,color:'#c2410c'}],expenseBreakdown:[{label:'Utilities',value:1840,color:'#185FA5'},{label:'Rental',value:1710,color:'#7C3AED'},{label:'MFSF',value:890,color:'#A45D2B'},{label:'Maintenance Cost',value:2520,color:'#854F0B'},{label:'Cleaning-related',value:1210,color:'#3B6D11'},{label:'Other',value:1010,color:'#888780'}],units:[{unit:'AR C3706',bookings:10,occupiedNights:20,occupancy:67,adr:169,revpar:113,managementFeeIncome:2050,cleaningLaundryIncome:690,maintenanceMargin:710,expenses:1180},{unit:'IR B1506',bookings:8,occupiedNights:18,occupancy:61,adr:184,revpar:112,managementFeeIncome:2220,cleaningLaundryIncome:610,maintenanceMargin:940,expenses:1360},{unit:'34F',bookings:6,occupiedNights:13,occupancy:45,adr:198,revpar:89,managementFeeIncome:1020,cleaningLaundryIncome:380,maintenanceMargin:0,expenses:910},{unit:'LC03',bookings:7,occupiedNights:16,occupancy:53,adr:151,revpar:80,managementFeeIncome:1270,cleaningLaundryIncome:510,maintenanceMargin:310,expenses:1520},{unit:'SH P0403',bookings:10,occupiedNights:22,occupancy:74,adr:161,revpar:119,managementFeeIncome:860,cleaningLaundryIncome:750,maintenanceMargin:920,expenses:1120}],alerts:[{tone:'warn',title:'Low occupancy units',detail:'34F still trails the portfolio and remains the main occupancy drag.'},{tone:'info',title:'Maintenance margin stable',detail:'Owner charge and vendor cost both increased, but net maintenance margin stayed healthy.'},{tone:'good',title:'Net profit improved',detail:'Higher booking sales and slightly better occupancy lifted net profit versus January.'},{tone:'bad',title:'Expense mix creeping up',detail:'Utilities and cleaning-related cost both rose. Recheck February turnovers and supply runs.'}]},
-  {period:'2026-03',grossBookingSales:54870,maintenance:{ownerCharged:11080,vendorCost:7700,netMargin:3380},incomeMix:[{label:'Management Fee',value:7810,color:'#2563eb'},{label:'Cleaning Fee',value:1630,color:'#0f766e'},{label:'Laundry Fee',value:1270,color:'#4f46e5'},{label:'Maintenance Margin',value:3380,color:'#c2410c'}],expenseBreakdown:[{label:'Utilities',value:1980,color:'#185FA5'},{label:'Rental',value:1790,color:'#7C3AED'},{label:'MFSF',value:910,color:'#A45D2B'},{label:'Maintenance Cost',value:2980,color:'#854F0B'},{label:'Cleaning-related',value:1430,color:'#3B6D11'},{label:'Other',value:1020,color:'#888780'}],units:[{unit:'AR C3706',bookings:10,occupiedNights:21,occupancy:70,adr:171,revpar:120,managementFeeIncome:2160,cleaningLaundryIncome:720,maintenanceMargin:760,expenses:1240},{unit:'IR B1506',bookings:9,occupiedNights:19,occupancy:64,adr:186,revpar:119,managementFeeIncome:2290,cleaningLaundryIncome:630,maintenanceMargin:1180,expenses:1490},{unit:'34F',bookings:5,occupiedNights:12,occupancy:40,adr:203,revpar:81,managementFeeIncome:1090,cleaningLaundryIncome:360,maintenanceMargin:0,expenses:980},{unit:'LC03',bookings:8,occupiedNights:17,occupancy:57,adr:152,revpar:87,managementFeeIncome:1410,cleaningLaundryIncome:540,maintenanceMargin:440,expenses:1680},{unit:'SH P0403',bookings:10,occupiedNights:22,occupancy:73,adr:164,revpar:120,managementFeeIncome:860,cleaningLaundryIncome:650,maintenanceMargin:1000,expenses:1240}],alerts:[{tone:'warn',title:'Profit down vs last month',detail:'March net eased because maintenance cost and cleaning-related spend rose faster than fee income.'},{tone:'info',title:'Maintenance kept revenue up',detail:'Maintenance work added strong fee margin, but it also pushed the maintenance cost stack higher.'},{tone:'good',title:'Core units held up',detail:'AR C3706, IR B1506, and SH P0403 kept the month positive despite softer contribution elsewhere.'},{tone:'bad',title:'34F remains underutilized',detail:'34F stayed below 45% estimated occupancy for a third straight month.'}]},
-  {period:'2026-04',grossBookingSales:59240,maintenance:{ownerCharged:11800,vendorCost:8190,netMargin:3610},incomeMix:[{label:'Management Fee',value:8240,color:'#2563eb'},{label:'Cleaning Fee',value:1760,color:'#0f766e'},{label:'Laundry Fee',value:1260,color:'#4f46e5'},{label:'Maintenance Margin',value:3610,color:'#c2410c'}],expenseBreakdown:[{label:'Utilities',value:1820,color:'#185FA5'},{label:'Rental',value:1550,color:'#7C3AED'},{label:'MFSF',value:880,color:'#A45D2B'},{label:'Maintenance Cost',value:2810,color:'#854F0B'},{label:'Cleaning-related',value:960,color:'#3B6D11'},{label:'Other',value:700,color:'#888780'}],units:[{unit:'AR C3706',bookings:11,occupiedNights:22,occupancy:73,adr:172,revpar:126,managementFeeIncome:2240,cleaningLaundryIncome:780,maintenanceMargin:820,expenses:1210},{unit:'IR B1506',bookings:9,occupiedNights:20,occupancy:67,adr:188,revpar:126,managementFeeIncome:2380,cleaningLaundryIncome:660,maintenanceMargin:1460,expenses:1380},{unit:'34F',bookings:5,occupiedNights:11,occupancy:37,adr:205,revpar:76,managementFeeIncome:1100,cleaningLaundryIncome:360,maintenanceMargin:0,expenses:960},{unit:'LC03',bookings:8,occupiedNights:18,occupancy:60,adr:154,revpar:92,managementFeeIncome:1510,cleaningLaundryIncome:570,maintenanceMargin:420,expenses:2130},{unit:'SH P0403',bookings:10,occupiedNights:23,occupancy:77,adr:166,revpar:128,managementFeeIncome:1010,cleaningLaundryIncome:650,maintenanceMargin:910,expenses:4040}],alerts:[{tone:'warn',title:'Low occupancy units',detail:'34F is below 40% estimated occupancy. It needs a pricing or channel strategy change before the next cycle.'},{tone:'info',title:'High maintenance units',detail:'IR B1506 and SH P0403 generated most maintenance activity. Margin is positive, but vendor work is concentrated.'},{tone:'good',title:'Profit recovered strongly',detail:'April net profit rebounded because company revenue rose while overhead and utilities normalized.'},{tone:'bad',title:'High cleaning cost per checkout',detail:'LC03 and SH P0403 need a turnover review. Cleaning-linked spend is not scaling down with current booking mix.'}]}
+var UNIT_BUSINESS_MODELS=[
+  {value:'owner_profit_sharing',label:'Owner Profit Sharing'},
+  {value:'rented_homestay',label:'Rented Homestay'},
+  {value:'long_term_management',label:'Long-term Management'},
+  {value:'company_office_excluded',label:'Company Office / Excluded'}
 ];
-
 function hpPropertyKey(hpPropertyId,propertyName){
   if(hpPropertyId)return 'id:'+hpPropertyId;
   return 'name:'+String(propertyName||'').toLowerCase().trim();
@@ -674,6 +673,12 @@ async function loadUnits(){
     UNITS=uniqueNames(UNITS_DATA.filter(function(u){return u.active!==false;}).map(unitDisplayName));
   }
 }
+async function loadUnitUnavailability(){
+  if(isSystemAdmin||R!=='admin'){unitUnavailability=[];return;}
+  var{data,error}=await sb.from('unit_unavailability').select('*').order('start_date',{ascending:false});
+  if(error){console.error('loadUnitUnavailability:',error);return;}
+  unitUnavailability=data||[];
+}
 async function dbInsertUnit(name,propertyShort){
   var{error}=await sb.from('units').insert({name:name.trim(),property_short:propertyShort||'',source:'manual'});
   if(error)console.error('dbInsertUnit:',error);
@@ -684,21 +689,35 @@ async function dbUpdateUnit(id,fields){
   if(error)console.error('dbUpdateUnit:',error);
   return !error;
 }
-async function loadAll(){await loadClaims();await loadBankInfo();await loadUnits();await loadUnitTypes();await loadUnitConfig();await loadSyncLogs();await loadReservations();}
+async function loadAll(){await loadClaims();await loadBankInfo();await loadUnits();await loadUnitTypes();await loadUnitConfig();await loadSyncLogs();await loadUnitUnavailability();await loadReservations();}
 async function loadUnitTypes(){var{data}=await sb.from('unit_types').select('*').order('name');if(data)unitTypes=data;}
 async function loadUnitConfig(){var{data}=await sb.from('unit_config').select('*').order('unit_name');if(data)unitConfig=data;}
 async function dbInsertUnitType(name,cf,lf){var{error}=await sb.from('unit_types').insert({name:name.trim(),cleaning_fee:cf,laundry_fee:lf});return !error;}
 async function dbUpdateUnitType(id,name,cf,lf){var{error}=await sb.from('unit_types').update({name:name.trim(),cleaning_fee:cf,laundry_fee:lf}).eq('id',id);return !error;}
 async function dbDeleteUnitType(id){var{error}=await sb.from('unit_types').delete().eq('id',id);return !error;}
-async function dbUpsertUnitConfig(unitName,ownerName,profitPct,cleaningFee,laundryFee){
-  var payload={unit_name:unitName,owner_name:ownerName||'',service_fee_pct:profitPct||0,cleaning_fee:cleaningFee||0,laundry_fee:laundryFee||0};
+async function dbUpsertUnitConfig(unitName,ownerName,profitPct,cleaningFee,laundryFee,businessModel,monthlyRent,marketRentBaseline,marketRentSourceUrl,marketRentReviewedAt){
+  var payload={
+    unit_name:unitName,
+    owner_name:ownerName||'',
+    service_fee_pct:profitPct||0,
+    cleaning_fee:cleaningFee||0,
+    laundry_fee:laundryFee||0,
+    business_model:businessModel||'owner_profit_sharing',
+    monthly_rent:monthlyRent||0,
+    market_rent_baseline:marketRentBaseline||0,
+    market_rent_source_url:marketRentSourceUrl||'',
+    market_rent_reviewed_at:marketRentReviewedAt||null
+  };
   var{error}=await sb.from('unit_config').upsert(payload,{onConflict:'unit_name'});
   if(error&&String(error.message||'').toLowerCase().indexOf('cleaning_fee')>=0){
     // Backward compatible fallback when DB has not added new rate columns yet.
     var retry=await sb.from('unit_config').upsert({unit_name:unitName,owner_name:ownerName||'',service_fee_pct:profitPct||0},{onConflict:'unit_name'});
     return{ok:!retry.error,missingRateColumns:!retry.error,error:retry.error};
   }
-  return{ok:!error,missingRateColumns:false,error:error};
+  if(error&&String(error.message||'').toLowerCase().match(/business_model|monthly_rent|market_rent/)){
+    return{ok:false,missingDashboardColumns:true,error:error};
+  }
+  return{ok:!error,missingRateColumns:false,missingDashboardColumns:false,error:error};
 }
 async function loadSyncLogs(){var{data}=await sb.from('sync_logs').select('*').order('started_at',{ascending:false}).limit(20);if(data)syncLogs=data;}
 async function loadReservations(){var{data}=await sb.from('reservations').select('*').order('start_date',{ascending:false});if(data)reservations=data;}
@@ -846,6 +865,7 @@ async function doLogout(){
   }
   await sb.auth.signOut();
   currentUser=null;currentProfile=null;R=null;S='auth';PS=null;claims=[];BANK_INFO={};EMPS=[];ACTIVE_EMPS=[];UNITS_DATA=[];
+  unitUnavailability=[];
   isSystemAdmin=false;allUsers=[];editingUser=null;userFormError='';editingUnit=null;unitFormError='';
   resetPasswordUser=null;resetPasswordError='';resetPasswordDraft1='';resetPasswordDraft2='';
   showInactiveUnits=false;
@@ -1010,6 +1030,7 @@ function logDetailValue(v){
 function fmtDateShort(v){if(!v)return'--';var d=String(v).slice(0,10);return d.length===10?d.slice(8,10)+' '+(MONTHS[d.slice(5,7)]||d.slice(5,7)):esc(v);}
 function moneyFmt(v){return 'RM '+(Number(v)||0).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function pctFmt(v){return (Number(v)||0).toFixed(1)+'%';}
+function pctFmtDash(v){return v===null||v===undefined?'--':pctFmt(v);}
 function canUseLocalPreview(){
   var proto=(location&&location.protocol?location.protocol:'').toLowerCase();
   var host=(location&&location.hostname?location.hostname:'').toLowerCase();
@@ -1030,45 +1051,486 @@ function companyInsightsMonthLabel(period){
   if(p.length!==2)return period||'';
   return (MONTHS[p[1]]||p[1])+' '+p[0];
 }
-function companyInsightsMonthData(){
-  if(!companyInsightPeriod&&COMPANY_INSIGHTS_PREVIEW.length)companyInsightPeriod=COMPANY_INSIGHTS_PREVIEW[COMPANY_INSIGHTS_PREVIEW.length-1].period;
-  var found=COMPANY_INSIGHTS_PREVIEW.filter(function(m){return m.period===companyInsightPeriod;})[0];
-  return found||COMPANY_INSIGHTS_PREVIEW[COMPANY_INSIGHTS_PREVIEW.length-1];
+function companyInsightsPeriodStart(period){return new Date(period+'-01T00:00:00');}
+function companyInsightsPeriodEnd(period){var p=String(period||'').split('-');return new Date(Number(p[0]||0),Math.max(0,Number(p[1]||1)),1);}
+function companyInsightsDaysInPeriod(period){return Math.max(0,Math.round((companyInsightsPeriodEnd(period)-companyInsightsPeriodStart(period))/86400000));}
+function companyInsightsOverlapNights(startDate,endDate,period){
+  if(!startDate||!endDate)return 0;
+  var start=new Date(String(startDate).slice(0,10)+'T00:00:00');
+  var end=new Date(String(endDate).slice(0,10)+'T00:00:00');
+  if(isNaN(start.getTime())||isNaN(end.getTime()))return 0;
+  var periodStart=companyInsightsPeriodStart(period),periodEnd=companyInsightsPeriodEnd(period);
+  var from=start>periodStart?start:periodStart;
+  var to=end<periodEnd?end:periodEnd;
+  return Math.max(0,Math.round((to-from)/86400000));
 }
-function companyInsightsDecoratedMonth(m){
-  var revenue=(m.incomeMix||[]).reduce(function(sum,row){return sum+(Number(row.value)||0);},0);
-  var expenses=(m.expenseBreakdown||[]).reduce(function(sum,row){return sum+(Number(row.value)||0);},0);
-  var units=(m.units||[]).map(function(u){
-    var income=(Number(u.managementFeeIncome)||0)+(Number(u.cleaningLaundryIncome)||0)+(Number(u.maintenanceMargin)||0);
-    var unitExpenses=Number(u.expenses)||0;
-    return{unit:u.unit,bookings:Number(u.bookings)||0,occupiedNights:Number(u.occupiedNights)||0,occupancy:Number(u.occupancy)||0,adr:Number(u.adr)||0,revpar:Number(u.revpar)||0,managementFeeIncome:Number(u.managementFeeIncome)||0,cleaningLaundryIncome:Number(u.cleaningLaundryIncome)||0,maintenanceMargin:Number(u.maintenanceMargin)||0,companyIncome:income,expenses:unitExpenses,netContribution:income-unitExpenses};
+function companyInsightsAddPeriodRange(bucket,startDate,endDate){
+  if(!startDate||!endDate)return;
+  var start=String(startDate).slice(0,7),end=String(endDate).slice(0,7);
+  if(!/^\d{4}-\d{2}$/.test(start)||!/^\d{4}-\d{2}$/.test(end))return;
+  var cur=start;
+  while(cur<=end){
+    bucket[cur]=true;
+    var y=Number(cur.slice(0,4)),m=Number(cur.slice(5,7));
+    m++;
+    if(m>12){m=1;y++;}
+    cur=y+'-'+(m<10?'0':'')+m;
+  }
+}
+function companyInsightsPeriods(){
+  var bucket={};
+  claims.forEach(function(c){
+    var period=(c.expMonth||String(c.date||'').slice(0,7)||'').slice(0,7);
+    if(/^\d{4}-\d{2}$/.test(period))bucket[period]=true;
   });
+  reservations.forEach(function(r){
+    if(r&&r.booking_type!==6&&!String(r.booking_status||'').match(/Cancel/i))companyInsightsAddPeriodRange(bucket,r.start_date,r.end_date);
+  });
+  unitUnavailability.forEach(function(r){companyInsightsAddPeriodRange(bucket,r.start_date,r.end_date);});
+  var currentYm=(function(){var now=new Date();return now.getFullYear()+'-'+((now.getMonth()+1<10?'0':'')+(now.getMonth()+1));})();
+  var periods=Object.keys(bucket).sort().filter(function(period){return period<=currentYm;});
+  if(!periods.length){
+    periods=[currentYm];
+  }
+  return periods;
+}
+function companyInsightsExpenseBucket(category){
+  var cat=String(category||'');
+  if(cat==='Water Bill'||cat==='Electricity Bill'||cat==='Internet Bill')return{label:'Utilities',color:'#185FA5'};
+  if(cat==='Rental')return{label:'Rental',color:'#7C3AED'};
+  if(cat==='MFSF')return{label:'MFSF',color:'#A45D2B'};
+  if(cat==='Maintenance & Repair'||cat==='Electrical & Unit Setup'||cat==='Unit Renovation')return{label:'Maintenance Cost',color:'#854F0B'};
+  if(cat==='Housekeeping & Cleaning'||cat==='Laundry'||cat==='Outsource Cleaning Staff'||cat==='Daily Products'||cat==='Hospitality Items')return{label:'Cleaning-related',color:'#3B6D11'};
+  if(cat==='Office Expenses'||cat==='Employee Welfare')return{label:'Office/Admin',color:'#5F5E5A'};
+  return{label:'Other',color:'#888780'};
+}
+function unitConfigFor(unitName){
+  return unitConfig.filter(function(x){return x.unit_name===unitName;})[0]||{};
+}
+function unitBusinessModel(unitName,cfg){
+  if(String(unitName||'')==='MP Office')return'company_office_excluded';
+  var v=String((cfg||{}).business_model||'').trim();
+  return UNIT_BUSINESS_MODELS.filter(function(m){return m.value===v;}).length?v:'owner_profit_sharing';
+}
+function unitBusinessModelLabel(model){
+  var row=UNIT_BUSINESS_MODELS.filter(function(m){return m.value===model;})[0];
+  return row?row.label:'Owner Profit Sharing';
+}
+function unitBusinessModelOptions(selected){
+  return UNIT_BUSINESS_MODELS.map(function(m){return'<option value="'+m.value+'"'+(selected===m.value?' selected':'')+'>'+m.label+'</option>';}).join('');
+}
+function unitConfigModelNote(model){
+  if(model==='owner_profit_sharing')return 'Owner profit sharing: fill company fee %, optional per-booking cleaning/laundry revenue, and market rent baseline for comparison.';
+  if(model==='rented_homestay')return 'Rented homestay: fill monthly rent and any per-booking cleaning/laundry revenue. Profit-sharing fields stay hidden.';
+  if(model==='long_term_management')return 'Long-term management: fill management fee % and tenancy base only. Cleaning, laundry, and market-rent comparison stay hidden.';
+  return 'Excluded unit: this unit stays out of homestay KPI calculations.';
+}
+function unitConfigModelFields(cfg,model){
+  var ownerLabel=model==='rented_homestay'?'Owner / Landlord Name':'Owner Name';
+  var html='<div class="fg"><label class="fl">Business Model</label><select class="fi" id="ucf-model" onchange="unitCfgModelChanged(this.value)">'+unitBusinessModelOptions(model)+'</select></div>';
+  if(model!=='company_office_excluded'){
+    html+='<div class="fg"><label class="fl">'+ownerLabel+'</label><input class="fi" id="ucf-owner" value="'+(cfg.owner_name||'')+'" placeholder="e.g. Ahmad"/></div>';
+  }
+  if(model==='owner_profit_sharing'||model==='rented_homestay'){
+    html+='<div class="tcol"><div class="fg"><label class="fl">Cleaning Fee Revenue Per Booking (RM)</label><input class="fi" id="ucf-cf" type="number" step="0.01" value="'+parseFloat(cfg.cleaning_fee||0).toFixed(2)+'"/></div><div class="fg"><label class="fl">Laundry Fee Revenue Per Booking (RM)</label><input class="fi" id="ucf-lf" type="number" step="0.01" value="'+parseFloat(cfg.laundry_fee||0).toFixed(2)+'"/></div></div>';
+  }
+  if(model==='owner_profit_sharing'){
+    html+='<div class="fg"><label class="fl">Profit Sharing %</label><input class="fi" id="ucf-svc" type="number" step="0.01" value="'+(cfg.service_fee_pct||0)+'"/></div>';
+    html+='<div class="tcol"><div class="fg"><label class="fl">Market Rent Baseline (RM)</label><input class="fi" id="ucf-market" type="number" step="0.01" value="'+parseFloat(cfg.market_rent_baseline||0).toFixed(2)+'"/></div><div class="fg"><label class="fl">Market Rent Reviewed At</label><input class="fi" id="ucf-market-date" type="date" value="'+(cfg.market_rent_reviewed_at||'')+'"/></div></div>';
+  }else if(model==='rented_homestay'){
+    html+='<div class="fg"><label class="fl">Monthly Rent (RM)</label><input class="fi" id="ucf-rent" type="number" step="0.01" value="'+parseFloat(cfg.monthly_rent||0).toFixed(2)+'"/></div>';
+  }else if(model==='long_term_management'){
+    html+='<div class="tcol"><div class="fg"><label class="fl">Management Fee %</label><input class="fi" id="ucf-svc" type="number" step="0.01" value="'+(cfg.service_fee_pct||0)+'"/></div><div class="fg"><label class="fl">Tenancy Base (RM)</label><input class="fi" id="ucf-rent" type="number" step="0.01" value="'+parseFloat(cfg.monthly_rent||0).toFixed(2)+'"/></div></div>';
+  }else{
+    html+='<div class="info-box" style="background:#f3f4f6"><div style="font-size:11px;color:#6b7280">No financial inputs are needed for excluded units.</div></div>';
+  }
+  html+='<div class="info-box" style="background:#eff6ff"><div style="font-size:11px;color:#1d4ed8">'+unitConfigModelNote(model)+'</div></div>';
+  return html;
+}
+function unitConfigSummaryText(cfg){
+  var model=unitBusinessModel(cfg.unit_name,cfg);
+  var parts=[unitBusinessModelLabel(model)];
+  if(cfg.owner_name)parts.push(cfg.owner_name);
+  if(model==='owner_profit_sharing'){
+    parts.push('Cleaning '+moneyFmt(cfg.cleaning_fee||0)+' / booking');
+    parts.push('Laundry '+moneyFmt(cfg.laundry_fee||0)+' / booking');
+    parts.push('Profit Sharing '+(cfg.service_fee_pct||0)+'%');
+    if(cfgMoney(cfg,'market_rent_baseline')>0)parts.push('Market baseline '+moneyFmt(cfg.market_rent_baseline||0));
+  }else if(model==='rented_homestay'){
+    parts.push('Cleaning '+moneyFmt(cfg.cleaning_fee||0)+' / booking');
+    parts.push('Laundry '+moneyFmt(cfg.laundry_fee||0)+' / booking');
+    parts.push('Monthly rent '+moneyFmt(cfg.monthly_rent||0));
+  }else if(model==='long_term_management'){
+    parts.push('Management Fee '+(cfg.service_fee_pct||0)+'%');
+    parts.push('Tenancy base '+moneyFmt(cfg.monthly_rent||0));
+  }else{
+    parts.push('Excluded from homestay KPI');
+  }
+  return parts.join(' · ');
+}
+function cfgMoney(cfg,key){
+  return Number(cfg&&cfg[key]||0)||0;
+}
+function companyInsightsClaimPeriod(c){
+  return (c.expMonth||String(c.date||'').slice(0,7)||'').slice(0,7);
+}
+function companyInsightsApprovedClaims(period){
+  var APPROVED_STATUSES=['Approved','Claimed','Auto-Approved','Company-Paid'];
+  return claims.filter(function(c){return APPROVED_STATUSES.indexOf(c.status)>=0&&companyInsightsClaimPeriod(c)===period;});
+}
+function companyInsightsClaimAffectsCompany(c){
+  if(!c)return false;
+  if(String(c.unit||'')==='MP Office')return true;
+  var cfg=unitConfigFor(c.unit);
+  var model=unitBusinessModel(c.unit,cfg);
+  if(model==='company_office_excluded')return true;
+  if(reportChargeBucket(c.unit,c.chargedTo)==='Owner')return false;
+  if(model==='rented_homestay'&&c.category==='Rental'&&cfgMoney(cfg,'monthly_rent')>0)return false;
+  if(model==='long_term_management'&&(c.category==='Water Bill'||c.category==='Electricity Bill'||c.category==='Internet Bill'))return false;
+  return true;
+}
+function companyInsightsOccupancyStatus(days){
+  var d=Number(days)||0;
+  if(d<8)return{label:'Unhealthy',tone:'bad'};
+  if(d<15)return{label:'Normal',tone:'warn'};
+  if(d<=20)return{label:'Good',tone:'good'};
+  return{label:'Best',tone:'info'};
+}
+function companyInsightsReservationActive(r){return !!(r&&r.start_date&&r.end_date&&r.booking_type!==6&&!String(r.booking_status||'').match(/Cancel/i));}
+function companyInsightsReservationRevenue(r){return (Number(r&&r.rental||0)||0)+(Number(r&&r.extra_guest||0)||0);}
+function companyInsightsReservationRevenueParts(r,cfg){
+  var gross=companyInsightsReservationRevenue(r);
+  var cleaningFee=cfgMoney(cfg,'cleaning_fee');
+  var laundryFee=cfgMoney(cfg,'laundry_fee');
+  var fee=cleaningFee+laundryFee;
+  var feeIncome=Math.min(gross,fee);
+  return{
+    gross:gross,
+    net:Math.max(0,gross-fee),
+    cleaning:fee>0?feeIncome*(cleaningFee/fee):0,
+    laundry:fee>0?feeIncome*(laundryFee/fee):0
+  };
+}
+function companyInsightsReservationNights(r){
+  var n=Number(r&&r.nights||0)||0;
+  if(n>0)return n;
+  if(!r||!r.start_date||!r.end_date)return 0;
+  return Math.max(0,Math.round((new Date(String(r.end_date).slice(0,10)+'T00:00:00')-new Date(String(r.start_date).slice(0,10)+'T00:00:00'))/86400000));
+}
+function companyInsightsHpIdsForDisplayUnit(unitName){
+  return UNITS_DATA
+    .filter(function(u){return u.source==='hostplatform'&&unitDisplayName(u)===unitName&&u.hp_unit_id;})
+    .map(function(u){return u.hp_unit_id;});
+}
+function companyInsightsUnitAliases(unitName){
+  var out=reportUnitAliases(unitName);
+  var base=String(unitName||'').trim();
+  var bare=(base.match(/^[A-Za-z]{2,3}\s+(.+)$/)||[])[1]||base;
+  UNITS_DATA.forEach(function(u){
+    if(!u||u.source!=='hostplatform')return;
+    var raw=u.property_short?u.property_short+' '+u.name:u.name;
+    var mapped=String(u.mapped_unit_name||'').trim();
+    var hpName=String(u.name||'').trim();
+    if(mapped&&mapped===bare&&raw)out.push(raw);
+    if(hpName&&hpName===bare&&raw)out.push(raw);
+  });
+  return uniqueNames(out);
+}
+function companyInsightsUnitMatch(unitName,rowUnitName,rowHpUnitId){
+  var aliases=companyInsightsUnitAliases(unitName);
+  var hpIds=companyInsightsHpIdsForDisplayUnit(unitName);
+  var rowUnit=String(rowUnitName||'').trim();
+  return aliases.indexOf(rowUnit)>=0||(rowHpUnitId&&hpIds.indexOf(rowHpUnitId)>=0);
+}
+function companyInsightsUnitHasPeriodActivity(unit,period){
+  var hasClaim=companyInsightsApprovedClaims(period).some(function(c){return companyInsightsUnitMatch(unit,c.unit,c.hpUnitId);});
+  if(hasClaim)return true;
+  return reservations.some(function(r){return companyInsightsReservationActive(r)&&companyInsightsUnitMatch(unit,r.unit_name,r.hp_unit_id)&&companyInsightsOverlapNights(r.start_date,r.end_date,period)>0;});
+}
+function companyInsightsUnitNames(period){
+  var names=UNITS.filter(function(u){return u&&u!=='MP Office';});
+  UNITS_DATA.forEach(function(u){
+    if(!u||u.active!==false)return;
+    var display=unitDisplayName(u);
+    if(display&&display!=='MP Office'&&names.indexOf(display)<0&&companyInsightsUnitHasPeriodActivity(display,period))names.push(display);
+  });
+  return uniqueNames(names);
+}
+function companyInsightsUnitRows(period){
+  return companyInsightsUnitNames(period).map(function(unit){
+    var cfg=unitConfigFor(unit);
+    var model=unitBusinessModel(unit,cfg);
+    if(model==='company_office_excluded')return null;
+    var unitClaims=companyInsightsApprovedClaims(period).filter(function(c){return companyInsightsUnitMatch(unit,c.unit,c.hpUnitId);});
+    var activeRes=reservations.filter(function(r){return companyInsightsReservationActive(r)&&companyInsightsUnitMatch(unit,r.unit_name,r.hp_unit_id);});
+    var overlapRes=activeRes.filter(function(r){return companyInsightsOverlapNights(r.start_date,r.end_date,period)>0;});
+    var bookingCount=activeRes.filter(function(r){return String(r.end_date||'').slice(0,7)===period;}).length;
+    var occupiedNights=overlapRes.reduce(function(sum,r){return sum+companyInsightsOverlapNights(r.start_date,r.end_date,period);},0);
+    var grossBookingSales=overlapRes.reduce(function(sum,r){
+      var overlap=companyInsightsOverlapNights(r.start_date,r.end_date,period);
+      var totalNights=Math.max(1,companyInsightsReservationNights(r));
+      return sum+(companyInsightsReservationRevenue(r)*(overlap/totalNights));
+    },0);
+    var netAccommodationRevenue=overlapRes.reduce(function(sum,r){
+      var overlap=companyInsightsOverlapNights(r.start_date,r.end_date,period);
+      var totalNights=Math.max(1,companyInsightsReservationNights(r));
+      return sum+(companyInsightsReservationRevenueParts(r,cfg).net*(overlap/totalNights));
+    },0);
+    var feeRevenueParts=overlapRes.reduce(function(acc,r){
+      var overlap=companyInsightsOverlapNights(r.start_date,r.end_date,period);
+      var totalNights=Math.max(1,companyInsightsReservationNights(r));
+      var ratio=overlap/totalNights;
+      var parts=companyInsightsReservationRevenueParts(r,cfg);
+      acc.cleaning+=parts.cleaning*ratio;
+      acc.laundry+=parts.laundry*ratio;
+      return acc;
+    },{cleaning:0,laundry:0});
+    var unitUnavailable=unitUnavailability.filter(function(r){return companyInsightsUnitMatch(unit,r.unit_name,r.hp_unit_id)&&companyInsightsOverlapNights(r.start_date,r.end_date,period)>0;});
+    var unavailableNights=unitUnavailable.reduce(function(sum,r){return sum+companyInsightsOverlapNights(r.start_date,r.end_date,period);},0);
+    unavailableNights=Math.min(companyInsightsDaysInPeriod(period),unavailableNights);
+    var sellableNights=Math.max(0,companyInsightsDaysInPeriod(period)-unavailableNights);
+    var occupancy=sellableNights>0?(occupiedNights/sellableNights*100):null;
+    var adr=occupiedNights>0?(netAccommodationRevenue/occupiedNights):0;
+    var revpar=sellableNights>0?(netAccommodationRevenue/sellableNights):0;
+    var sharedExpenses=unitClaims.filter(function(c){return reportChargeBucket(c.unit,c.chargedTo)==='Both';}).reduce(function(sum,c){return sum+(Number(c.amount)||0);},0);
+    var ownerExpenses=unitClaims.filter(function(c){return reportChargeBucket(c.unit,c.chargedTo)==='Owner';}).reduce(function(sum,c){return sum+(Number(c.amount)||0);},0);
+    var cleaningFeeIncome=feeRevenueParts.cleaning;
+    var laundryFeeIncome=feeRevenueParts.laundry;
+    var profitPct=(Number(cfg.service_fee_pct||0)||0)/100;
+    var monthlyRent=cfgMoney(cfg,'monthly_rent');
+    var marketRentBaseline=cfgMoney(cfg,'market_rent_baseline');
+    var homestayProfit=grossBookingSales-sharedExpenses-cleaningFeeIncome-laundryFeeIncome;
+    var managementFeeIncome=model==='owner_profit_sharing'?(homestayProfit*profitPct):(model==='long_term_management'?(monthlyRent*profitPct):0);
+    var bookingRevenue=model==='rented_homestay'?netAccommodationRevenue:0;
+    var companyRevenue=bookingRevenue+managementFeeIncome+cleaningFeeIncome+laundryFeeIncome;
+    var companyClaimExpenses=unitClaims.filter(companyInsightsClaimAffectsCompany).reduce(function(sum,c){return sum+(Number(c.amount)||0);},0);
+    var monthlyRentCost=model==='rented_homestay'?monthlyRent:0;
+    var unitExpenses=companyClaimExpenses+monthlyRentCost;
+    var operatingProfitBeforeRent=grossBookingSales+cleaningFeeIncome+laundryFeeIncome-companyClaimExpenses;
+    var ownerPayout=model==='owner_profit_sharing'?(homestayProfit-managementFeeIncome-ownerExpenses):0;
+    var marketBenchmarkDelta=(model==='owner_profit_sharing'&&marketRentBaseline>0)?(ownerPayout-marketRentBaseline):null;
+    var netContribution=companyRevenue-unitExpenses;
+    var rentedBenchmarkPct=monthlyRentCost>0?(netContribution/monthlyRentCost*100):null;
+    var ownerBenchmarkPct=marketRentBaseline>0?(ownerPayout/marketRentBaseline*100):null;
+    var cleaningRelatedCost=unitClaims.filter(function(c){return companyInsightsExpenseBucket(c.category).label==='Cleaning-related';}).reduce(function(sum,c){return sum+(Number(c.amount)||0);},0);
+    var maintenanceCost=unitClaims.filter(function(c){return companyInsightsExpenseBucket(c.category).label==='Maintenance Cost';}).reduce(function(sum,c){return sum+(Number(c.amount)||0);},0);
+    if(model==='long_term_management'){
+      bookingCount=0;occupiedNights=0;unavailableNights=0;sellableNights=0;occupancy=null;adr=0;revpar=0;grossBookingSales=0;netAccommodationRevenue=0;cleaningFeeIncome=0;laundryFeeIncome=0;bookingRevenue=0;companyRevenue=managementFeeIncome;unitExpenses=0;netContribution=managementFeeIncome;operatingProfitBeforeRent=managementFeeIncome-companyClaimExpenses;marketBenchmarkDelta=null;rentedBenchmarkPct=null;ownerBenchmarkPct=null;
+    }
+    return{
+      unit:unit,
+      businessModel:model,
+      businessModelLabel:unitBusinessModelLabel(model),
+      bookings:bookingCount,
+      occupiedNights:occupiedNights,
+      unavailableNights:unavailableNights,
+      sellableNights:sellableNights,
+      occupancy:occupancy,
+      occupancyStatus:companyInsightsOccupancyStatus(occupiedNights),
+      adr:adr,
+      revpar:revpar,
+      grossBookingSales:grossBookingSales,
+      netAccommodationRevenue:netAccommodationRevenue,
+      bookingRevenue:bookingRevenue,
+      managementFeeIncome:managementFeeIncome,
+      cleaningFeeIncome:cleaningFeeIncome,
+      laundryFeeIncome:laundryFeeIncome,
+      companyIncome:companyRevenue,
+      companyRevenue:companyRevenue,
+      expenses:unitExpenses,
+      monthlyRentCost:monthlyRentCost,
+      marketRentBaseline:marketRentBaseline,
+      marketRentSourceUrl:String(cfg.market_rent_source_url||''),
+      marketRentReviewedAt:String(cfg.market_rent_reviewed_at||''),
+      rentCoverage:rentedBenchmarkPct,
+      rentedBenchmarkPct:rentedBenchmarkPct,
+      ownerBenchmarkPct:ownerBenchmarkPct,
+      marketBenchmarkDelta:marketBenchmarkDelta,
+      ownerPayout:ownerPayout,
+      netContribution:netContribution,
+      cleaningRelatedCost:cleaningRelatedCost,
+      maintenanceCost:maintenanceCost
+    };
+  }).filter(Boolean);
+}
+function companyInsightsExpenseRows(period){
+  var totals={};
+  companyInsightsApprovedClaims(period).forEach(function(c){
+    if(!companyInsightsClaimAffectsCompany(c))return;
+    var bucket=companyInsightsExpenseBucket(c.category);
+    if(!totals[bucket.label])totals[bucket.label]={label:bucket.label,value:0,color:bucket.color};
+    totals[bucket.label].value+=(Number(c.amount)||0);
+  });
+  return Object.keys(totals).map(function(k){return totals[k];}).sort(function(a,b){return b.value-a.value;});
+}
+function companyInsightsClaimIsAdminOverhead(c){
+  if(!c||!companyInsightsClaimAffectsCompany(c))return false;
+  var unit=String(c.unit||'');
+  var model=unitBusinessModel(unit,unitConfigFor(unit));
+  if(unit==='MP Office'||model==='company_office_excluded')return true;
+  return c.category==='Office Expenses'||c.category==='Employee Welfare';
+}
+function companyInsightsAdminExpenseRows(period){
+  var totals={};
+  companyInsightsApprovedClaims(period).forEach(function(c){
+    if(!companyInsightsClaimIsAdminOverhead(c))return;
+    var bucket=companyInsightsExpenseBucket(c.category);
+    if(!totals[bucket.label])totals[bucket.label]={label:bucket.label,value:0,color:bucket.color};
+    totals[bucket.label].value+=(Number(c.amount)||0);
+  });
+  return Object.keys(totals).map(function(k){return totals[k];}).sort(function(a,b){return b.value-a.value;});
+}
+function companyInsightsLeaders(units){
   var leader={net:null,weakest:null,occupancy:null,adr:null};
   units.forEach(function(u){
     if(!leader.net||u.netContribution>leader.net.netContribution)leader.net=u;
     if(!leader.weakest||u.netContribution<leader.weakest.netContribution)leader.weakest=u;
-    if(!leader.occupancy||u.occupancy>leader.occupancy.occupancy)leader.occupancy=u;
+    if(u.occupancy!==null&&(!leader.occupancy||u.occupancy>leader.occupancy.occupancy))leader.occupancy=u;
     if(!leader.adr||u.adr>leader.adr.adr)leader.adr=u;
   });
-  return{period:m.period,label:companyInsightsMonthLabel(m.period),grossBookingSales:Number(m.grossBookingSales)||0,companyRevenue:revenue,companyExpenses:expenses,netProfit:revenue-expenses,profitMargin:revenue?((revenue-expenses)/revenue*100):0,maintenance:m.maintenance||{ownerCharged:0,vendorCost:0,netMargin:0},incomeMix:m.incomeMix||[],expenseBreakdown:m.expenseBreakdown||[],units:units,alerts:m.alerts||[],leaders:leader};
+  return leader;
+}
+function companyInsightsBuildAlerts(current,previous){
+  var alerts=[];
+  var lowOcc=current.units.filter(function(u){return u.sellableNights>=5&&u.occupancy!==null&&u.occupancy<50;}).sort(function(a,b){return a.occupancy-b.occupancy;});
+  if(lowOcc.length)alerts.push({tone:'warn',title:'Low occupancy units',detail:lowOcc.slice(0,2).map(function(u){return u.unit+' '+pctFmt(u.occupancy);}).join(' · ')+' . Recheck weekday pricing and listing conversion.'});
+  var unavailable=current.units.filter(function(u){return u.unavailableNights>=3;}).sort(function(a,b){return b.unavailableNights-a.unavailableNights;});
+  if(unavailable.length)alerts.push({tone:'info',title:'Unavailable-day impact',detail:unavailable[0].unit+' lost '+unavailable[0].unavailableNights+' sellable night(s) this month from HostPlatform unavailable blocks.'});
+  var maintenance=current.units.filter(function(u){return u.maintenanceCost>0;}).sort(function(a,b){return b.maintenanceCost-a.maintenanceCost;});
+  if(maintenance.length&&maintenance[0].maintenanceCost>=300)alerts.push({tone:'bad',title:'Maintenance spike',detail:maintenance[0].unit+' recorded '+moneyFmt(maintenance[0].maintenanceCost)+' in maintenance-related costs. Review repeat repair items.'});
+  var cleaning=current.units.filter(function(u){return u.bookings>0&&u.cleaningRelatedCost>0;}).sort(function(a,b){return (b.cleaningRelatedCost/Math.max(1,b.bookings))-(a.cleaningRelatedCost/Math.max(1,a.bookings));});
+  if(cleaning.length&&cleaning[0].cleaningRelatedCost/Math.max(1,cleaning[0].bookings)>=120)alerts.push({tone:'warn',title:'Cleaning cost pressure',detail:cleaning[0].unit+' is spending '+moneyFmt(cleaning[0].cleaningRelatedCost/Math.max(1,cleaning[0].bookings))+' per booking on cleaning-related categories.'});
+  if(current.netProfit<0||current.profitMargin<10||(previous&&current.netProfit<previous.netProfit))alerts.push({tone:'bad',title:'Margin compression',detail:(current.netProfit<0?'The month is running at a net loss after tracked expenses.':('Net profit softened versus '+previous.label+'.'))+' Watch expense-heavy units and low-occupancy inventory.'});
+  else alerts.push({tone:'good',title:'Healthy margin',detail:'Net profit remained positive with a '+pctFmt(current.profitMargin)+' margin on company revenue.'});
+  return alerts.slice(0,4);
+}
+function companyInsightsBuildV1Alerts(current,previous){
+  var alerts=[];
+  var lowOcc=current.units.filter(function(u){return u.businessModel!=='long_term_management'&&u.occupiedNights<8;}).sort(function(a,b){return a.occupiedNights-b.occupiedNights;});
+  if(lowOcc.length)alerts.push({tone:'warn',title:'入住不健康单位 Unhealthy Occupancy Units',detail:lowOcc.slice(0,2).map(function(u){return u.unit+' '+u.occupiedNights+' 晚 night(s)';}).join(' / ')+'。建议复查平日定价与 listing 转化 Recheck weekday pricing and listing conversion.'});
+  var rentLoss=current.units.filter(function(u){return u.businessModel==='rented_homestay'&&u.netContribution<0;}).sort(function(a,b){return a.netContribution-b.netContribution;});
+  if(rentLoss.length)alerts.push({tone:'bad',title:'包租单位亏损 Rented Unit Loss',detail:rentLoss[0].unit+' 在成本和租金后仍低于打平点 below break-even：'+moneyFmt(rentLoss[0].netContribution)+'.'});
+  var weakMarket=current.units.filter(function(u){return u.businessModel==='owner_profit_sharing'&&u.ownerBenchmarkPct!==null&&u.ownerBenchmarkPct<100;}).sort(function(a,b){return a.ownerBenchmarkPct-b.ownerBenchmarkPct;});
+  if(weakMarket.length)alerts.push({tone:'warn',title:'低于市场租金基线 Below Market-Rent Baseline',detail:weakMarket[0].unit+' 的业主利润 owner profit 只有市场租金基线的 '+pctFmt(weakMarket[0].ownerBenchmarkPct)+'.'});
+  var unavailable=current.units.filter(function(u){return u.unavailableNights>=3;}).sort(function(a,b){return b.unavailableNights-a.unavailableNights;});
+  if(unavailable.length)alerts.push({tone:'info',title:'不可售天数影响 Unavailable-Day Impact',detail:unavailable[0].unit+' 本月因 HostPlatform unavailable blocks 少了 '+unavailable[0].unavailableNights+' 个可售晚 lost sellable night(s).'});
+  var maintenance=current.units.filter(function(u){return u.maintenanceCost>0;}).sort(function(a,b){return b.maintenanceCost-a.maintenanceCost;});
+  if(maintenance.length&&maintenance[0].maintenanceCost>=300)alerts.push({tone:'bad',title:'维修成本突增 Maintenance Spike',detail:maintenance[0].unit+' 录得维修相关成本 maintenance-related costs '+moneyFmt(maintenance[0].maintenanceCost)+'。请检查是否有重复维修项目 Review repeat repair items.'});
+  if(current.netProfit<0||current.profitMargin<10||(previous&&current.netProfit<previous.netProfit))alerts.push({tone:'bad',title:'利润率受压 Margin Compression',detail:(current.netProfit<0?'本月在已追踪成本后仍为亏损 The month is running at a net loss after tracked expenses.':('与 '+previous.label+' 相比净利润走弱 Net profit softened versus '+previous.label+'.'))+' 请关注高成本单位和低入住库存 Watch expense-heavy units and low-occupancy inventory.'});
+  else alerts.push({tone:'good',title:'利润率健康 Healthy Margin',detail:'公司收入上的净利润率保持正数 Net profit remained positive，margin 为 '+pctFmt(current.profitMargin)+'.'});
+  return alerts.slice(0,4);
+}
+function companyInsightsDecoratedMonth(period){
+  var units=companyInsightsUnitRows(period);
+  var expenses=companyInsightsExpenseRows(period);
+  var adminExpenses=companyInsightsAdminExpenseRows(period);
+  var companyRevenue=units.reduce(function(sum,u){return sum+u.companyIncome;},0);
+  var monthlyRentExpense=units.reduce(function(sum,u){return sum+u.monthlyRentCost;},0);
+  if(monthlyRentExpense>0)expenses.push({label:'Monthly Rent',value:monthlyRentExpense,color:'#7C3AED'});
+  var companyExpenses=expenses.reduce(function(sum,row){return sum+row.value;},0);
+  var occupiedTotal=units.reduce(function(sum,u){return sum+u.occupiedNights;},0);
+  var sellableTotal=units.reduce(function(sum,u){return sum+u.sellableNights;},0);
+  var current={
+    period:period,
+    label:companyInsightsMonthLabel(period),
+    grossBookingSales:units.reduce(function(sum,u){return sum+u.grossBookingSales;},0),
+    companyRevenue:companyRevenue,
+    companyExpenses:companyExpenses,
+    netProfit:companyRevenue-companyExpenses,
+    profitMargin:companyRevenue?((companyRevenue-companyExpenses)/companyRevenue*100):0,
+    portfolioOccupancy:sellableTotal>0?(occupiedTotal/sellableTotal*100):null,
+    occupiedNights:occupiedTotal,
+    sellableNights:sellableTotal,
+    unavailableNights:units.reduce(function(sum,u){return sum+u.unavailableNights;},0),
+    incomeMix:[
+      {label:'Net Booking Revenue',value:units.reduce(function(sum,u){return sum+u.bookingRevenue;},0),color:'#60a5fa'},
+      {label:'Management Fee',value:units.reduce(function(sum,u){return sum+u.managementFeeIncome;},0),color:'#2563eb'},
+      {label:'Cleaning Fee Revenue',value:units.reduce(function(sum,u){return sum+u.cleaningFeeIncome;},0),color:'#0f766e'},
+      {label:'Laundry Fee Revenue',value:units.reduce(function(sum,u){return sum+u.laundryFeeIncome;},0),color:'#4f46e5'}
+    ],
+    expenseBreakdown:expenses,
+    adminExpenseBreakdown:adminExpenses,
+    units:units
+  };
+  current.leaders=companyInsightsLeaders(units);
+  return current;
 }
 function companyInsightsUnitTags(unit,leaders){
   var tags=[];
-  if(leaders.net&&leaders.net.unit===unit.unit)tags.push({label:'Top contribution',tone:'good'});
-  if(leaders.weakest&&leaders.weakest.unit===unit.unit)tags.push({label:'Weakest contribution',tone:'bad'});
-  if(leaders.occupancy&&leaders.occupancy.unit===unit.unit)tags.push({label:'Highest occupancy',tone:'info'});
-  if(leaders.adr&&leaders.adr.unit===unit.unit)tags.push({label:'Highest ADR',tone:'warn'});
+  if(leaders.net&&leaders.net.unit===unit.unit)tags.push({label:'最高贡献 Top Contribution',tone:'good'});
+  if(leaders.weakest&&leaders.weakest.unit===unit.unit)tags.push({label:'最低贡献 Weakest Contribution',tone:'bad'});
+  if(leaders.occupancy&&leaders.occupancy.unit===unit.unit)tags.push({label:'最高入住 Highest Occupancy',tone:'info'});
+  if(leaders.adr&&leaders.adr.unit===unit.unit)tags.push({label:'最高 ADR Highest ADR',tone:'warn'});
   return tags;
 }
 function companyInsightsBarList(rows){
+  if(!rows.length)return '<div class="ci-note" style="margin-top:0">本月无数据 No data for this month.</div>';
   var max=Math.max.apply(null,rows.map(function(r){return Number(r.value)||0;}).concat([1]));
   return rows.map(function(r){
     var width=Math.max(6,Math.round((Number(r.value)||0)/max*100));
     return '<div class="ci-bar-row"><div class="ci-bar-label">'+esc(r.label)+'</div><div class="ci-bar-track"><div class="ci-bar-fill" style="width:'+width+'%;background:'+(r.color||'#2563eb')+'"></div></div><div class="ci-bar-val">'+moneyFmt(r.value)+'</div></div>';
   }).join('');
 }
+function companyInsightsGuideItems(){
+  return [
+    {title:'Net Profit / Loss',detail:'Company revenue after tracked company expenses. Use this first to see whether the month made money.'},
+    {title:'Company Revenue',detail:'Money the company earns from net booking revenue, management fee, cleaning fee revenue, and laundry fee revenue.'},
+    {title:'Company Expenses',detail:'Full company P/L cost, including unit costs, vendor/staff claims, admin costs, and rented homestay monthly rent.'},
+    {title:'Company Expense Breakdown',detail:'Overhead view only. Unit rent, utilities, cleaning, laundry, maintenance, and supplies stay in unit performance.'},
+    {title:'Portfolio Occupancy',detail:'Occupied nights divided by sellable nights. It shows how full the portfolio was this month.'},
+    {title:'ADR',detail:'Average Daily Rate. This uses net room revenue after configured cleaning and laundry fee are removed.'},
+    {title:'RevPAR',detail:'Revenue per Available Room. This uses net room revenue per sellable night, so it combines price and occupancy.'},
+    {title:'Net Contribution',detail:'Unit revenue minus unit expenses. Positive means the unit added profit to the company.'},
+    {title:'Benchmark',detail:'Rented units use Net / Rent. Owner profit sharing uses Owner Profit / Market Rent Baseline.'},
+    {title:'Owner Profit',detail:'For owner profit sharing units, this shows the owner profit after company share and owner-charged expenses.'},
+    {title:'Business Model Badge',detail:'Rented units, owner profit sharing, long-term management, and MP Office are split so the same unit is not judged with the wrong formula.'}
+  ];
+}
+function companyInsightsGuideHtml(){
+  return '<div class="ci-chart-card"><div class="ci-chart-title">How To Read This Screen</div><div class="ci-chart-sub">Short definitions for the numbers shown in Company Insights.</div><div class="ci-alerts">'+companyInsightsGuideItems().map(function(item){return '<div class="ci-alert info"><div class="ci-alert-title">'+esc(item.title)+'</div><div class="ci-alert-copy">'+esc(item.detail)+'</div></div>';}).join('')+'</div></div>';
+}
+function companyInsightsDash(v){
+  return v===null||v===undefined?'--':v;
+}
+function companyInsightsBenchmarkText(u){
+  if(u.businessModel==='rented_homestay')return u.rentedBenchmarkPct===null?'未设置租金 No rent set':pctFmt(u.rentedBenchmarkPct)+' 净额/租金 Net/Rent';
+  if(u.businessModel==='owner_profit_sharing')return u.marketRentBaseline>0?(moneyFmt(u.ownerPayout)+' / 市场租金 market rent = '+pctFmt(u.ownerBenchmarkPct)):'未设置市场基线 No market baseline';
+  if(u.businessModel==='long_term_management')return '--';
+  return '--';
+}
+function companyInsightsUnitRowHtml(u,leaders){
+  if(u.businessModel==='long_term_management')return '<tr><td><div class="ci-unit-name">'+esc(u.unit)+'</div></td><td class="num" style="font-weight:700;color:'+(u.netContribution>=0?'#065f46':'#991b1b')+'">'+moneyFmt(u.netContribution)+'</td></tr>';
+  var tags=companyInsightsUnitTags(u,leaders);
+  tags.unshift({label:(u.businessModel==='rented_homestay'?'包租民宿 Rented Homestay':u.businessModel==='owner_profit_sharing'?'业主分成 Owner Profit Sharing':u.businessModelLabel),tone:u.businessModel==='rented_homestay'?'warn':'good'});
+  tags.push({label:u.occupancyStatus.label,tone:u.occupancyStatus.tone});
+  var tagHtml=tags.map(function(t){return '<span class="ci-tag '+t.tone+'">'+esc(t.label)+'</span>';}).join('');
+  return '<tr><td><div class="ci-unit-name">'+esc(u.unit)+'</div><div class="ci-unit-tags">'+tagHtml+'</div></td><td class="num">'+u.bookings+'</td><td class="num">'+u.occupiedNights+'</td><td class="num">'+pctFmtDash(u.occupancy)+'</td><td class="num">'+moneyFmt(u.adr)+'</td><td class="num">'+moneyFmt(u.revpar)+'</td><td class="num" style="font-weight:700;color:'+(u.netContribution>=0?'#065f46':'#991b1b')+'">'+moneyFmt(u.netContribution)+'</td><td>'+esc(companyInsightsBenchmarkText(u))+'</td></tr>';
+}
+function companyInsightsUnitCardHtml(u,leaders){
+  if(u.businessModel==='long_term_management')return '<div class="ci-unit-card"><div class="ci-unit-top"><div><div class="ci-unit-name">'+esc(u.unit)+'</div></div><div style="text-align:right"><div class="ci-kicker">净额 Net</div><div class="ci-value" style="font-size:17px;color:'+(u.netContribution>=0?'#065f46':'#991b1b')+'">'+moneyFmt(u.netContribution)+'</div></div></div></div>';
+  var tags=companyInsightsUnitTags(u,leaders);
+  tags.unshift({label:(u.businessModel==='rented_homestay'?'包租民宿 Rented Homestay':u.businessModel==='owner_profit_sharing'?'业主分成 Owner Profit Sharing':u.businessModelLabel),tone:u.businessModel==='rented_homestay'?'warn':'good'});
+  tags.push({label:u.occupancyStatus.label,tone:u.occupancyStatus.tone});
+  var tagHtml=tags.map(function(t){return '<span class="ci-tag '+t.tone+'">'+esc(t.label)+'</span>';}).join('');
+  var ownerMetric=u.businessModel==='owner_profit_sharing'?'<div class="ci-metric"><div class="lbl">业主利润 Owner Profit</div><div class="val">'+moneyFmt(u.ownerPayout)+'</div></div>':'';
+  return '<div class="ci-unit-card"><div class="ci-unit-top"><div><div class="ci-unit-name">'+esc(u.unit)+'</div><div class="ci-unit-tags">'+tagHtml+'</div></div><div style="text-align:right"><div class="ci-kicker">净额 Net</div><div class="ci-value" style="font-size:17px;color:'+(u.netContribution>=0?'#065f46':'#991b1b')+'">'+moneyFmt(u.netContribution)+'</div></div></div><div class="ci-unit-metrics"><div class="ci-metric"><div class="lbl">订单 Bookings</div><div class="val">'+u.bookings+'</div></div>'+ownerMetric+'<div class="ci-metric"><div class="lbl">入住晚数 Occ Nights</div><div class="val">'+u.occupiedNights+'</div></div><div class="ci-metric"><div class="lbl">入住率 Occupancy</div><div class="val">'+pctFmtDash(u.occupancy)+'</div></div><div class="ci-metric"><div class="lbl">ADR 均价</div><div class="val">'+moneyFmt(u.adr)+'</div></div><div class="ci-metric"><div class="lbl">RevPAR 每可售晚收入</div><div class="val">'+moneyFmt(u.revpar)+'</div></div><div class="ci-metric"><div class="lbl">基准 Benchmark</div><div class="val">'+esc(companyInsightsBenchmarkText(u))+'</div></div></div></div>';
+}
+function companyInsightsUnitGroupHtml(title,subtitle,rows,leaders){
+  var sorted=rows.slice().sort(function(a,b){return b.netContribution-a.netContribution;});
+  var empty='<div class="ci-note" style="margin-top:8px">这个分组暂时没有单位 No units in this group yet.</div>';
+  var tableRows=sorted.map(function(u){return companyInsightsUnitRowHtml(u,leaders);}).join('');
+  var cards=sorted.map(function(u){return companyInsightsUnitCardHtml(u,leaders);}).join('');
+  var isLongTerm=sorted.length&&sorted.every(function(u){return u.businessModel==='long_term_management';});
+  var head=isLongTerm?'<tr><th>单位 Unit</th><th class="num">净额 Net</th></tr>':'<tr><th>单位 Unit</th><th class="num">订单 Bookings</th><th class="num">入住晚数 Occ Nights</th><th class="num">入住率 Occupancy</th><th class="num">ADR 均价</th><th class="num">RevPAR 每可售晚收入</th><th class="num">净额 Net</th><th>基准 Benchmark</th></tr>';
+  return '<div style="margin-top:12px"><div class="ci-unit-head"><div><div class="ci-title" style="font-size:13px">'+esc(title)+'</div><div class="ci-sub">'+esc(subtitle)+'</div></div></div>'+(sorted.length?'<div class="ci-desktop-only"><table class="ci-unit-table"><thead>'+head+'</thead><tbody>'+tableRows+'</tbody></table></div><div class="ci-mobile-only ci-unit-cards">'+cards+'</div>':empty)+'</div>';
+}
 function companyInsightsTrendChart(){
-  var months=COMPANY_INSIGHTS_PREVIEW.map(companyInsightsDecoratedMonth);
+  var periods=companyInsightsPeriods();
+  var currentPeriod=(companyInsightPeriod&&periods.indexOf(companyInsightPeriod)>=0)?companyInsightPeriod:periods[periods.length-1];
+  var currentIdx=Math.max(0,periods.indexOf(currentPeriod));
+  var months=periods.slice(Math.max(0,currentIdx-2),currentIdx+1).map(companyInsightsDecoratedMonth);
+  var prevDisabled=currentIdx<=0?' disabled':'';
+  var nextDisabled=currentIdx>=periods.length-1?' disabled':'';
   var max=Math.max.apply(null,months.map(function(m){return Math.max(m.companyRevenue,m.companyExpenses,Math.abs(m.netProfit));}).concat([1]));
   var points=months.map(function(m,idx){
     var x=12+idx*(76/(Math.max(months.length-1,1)));
@@ -1086,81 +1548,42 @@ function companyInsightsTrendChart(){
     var netCls=m.netProfit<0?' down':'';
     return '<div class="ci-trend-col"><div class="ci-trend-net'+netCls+'">'+moneyFmt(m.netProfit)+'</div><div class="ci-trend-bars"><div class="ci-trend-bar rev" style="height:'+revH+'%"></div><div class="ci-trend-bar exp" style="height:'+expH+'%"></div></div><div class="ci-trend-label">'+esc(companyInsightsMonthLabel(m.period).split(' ')[0])+'</div></div>';
   }).join('');
-  return '<div class="ci-chart-card"><div class="ci-chart-title">Company Revenue vs Expenses vs Net Profit</div><div class="ci-chart-sub">Grouped bars show revenue and expense. The green line tracks net company profit.</div><div class="ci-legend"><span class="ci-legend-item"><span class="ci-dot" style="background:#60a5fa"></span>Company Revenue</span><span class="ci-legend-item"><span class="ci-dot" style="background:#fbbf24"></span>Company Expenses</span><span class="ci-legend-item"><span class="ci-dot" style="background:#065f46"></span>Net Profit</span></div><div class="ci-trend-wrap"><svg class="ci-trend-svg" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline fill="none" stroke="#065f46" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="'+points+'"></polyline>'+circles+'</svg><div class="ci-trend-grid">'+cols+'</div></div></div>';
+  return '<div class="ci-chart-card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div class="ci-chart-title">公司收入 vs 开销 vs 净利润 Company Revenue vs Expenses vs Net Profit</div><div style="display:flex;gap:6px"><button class="pbtn btn-o" style="padding:6px 10px;min-width:72px" onclick="shiftCompanyInsightPeriod(-1)"'+prevDisabled+'>上月 Prev</button><button class="pbtn btn-o" style="padding:6px 10px;min-width:72px" onclick="shiftCompanyInsightPeriod(1)"'+nextDisabled+'>下月 Next</button></div></div><div class="ci-chart-sub">显示当前所选月份以及前 2 个月 Shows the selected month with the previous 2 months when available.</div><div class="ci-legend"><span class="ci-legend-item"><span class="ci-dot" style="background:#60a5fa"></span>公司收入 Company Revenue</span><span class="ci-legend-item"><span class="ci-dot" style="background:#fbbf24"></span>公司开销 Company Expenses</span><span class="ci-legend-item"><span class="ci-dot" style="background:#065f46"></span>净利润 Net Profit</span></div><div class="ci-trend-wrap"><svg class="ci-trend-svg" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline fill="none" stroke="#065f46" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="'+points+'"></polyline>'+circles+'</svg><div class="ci-trend-grid">'+cols+'</div></div></div>';
 }
 function companyInsightsScreenHtml(){
-  var current=companyInsightsDecoratedMonth(companyInsightsMonthData());
-  var periodOpts=COMPANY_INSIGHTS_PREVIEW.map(function(m){return '<option value="'+m.period+'"'+(m.period===current.period?' selected':'')+'>'+companyInsightsMonthLabel(m.period)+'</option>';}).join('');
+  var periods=companyInsightsPeriods();
+  if(!companyInsightPeriod||periods.indexOf(companyInsightPeriod)<0)companyInsightPeriod=periods[periods.length-1];
+  var current=companyInsightsDecoratedMonth(companyInsightPeriod);
+  var previousPeriod=periods[Math.max(0,periods.indexOf(current.period)-1)]||'';
+  var previous=previousPeriod?companyInsightsDecoratedMonth(previousPeriod):null;
+  current.alerts=companyInsightsBuildV1Alerts(current,previous);
+  var periodOpts=periods.map(function(period){return '<option value="'+period+'"'+(period===current.period?' selected':'')+'>'+companyInsightsMonthLabel(period)+'</option>';}).join('');
   var profitCls=current.netProfit<0?' down':'';
   var incomeHtml=companyInsightsBarList(current.incomeMix);
-  var expenseHtml=companyInsightsBarList(current.expenseBreakdown);
-  var unitRows=current.units.slice().sort(function(a,b){return b.netContribution-a.netContribution;});
-  var tableRows=unitRows.map(function(u){
-    var tags=companyInsightsUnitTags(u,current.leaders).map(function(t){return '<span class="ci-tag '+t.tone+'">'+t.label+'</span>';}).join('');
-    return '<tr><td><div class="ci-unit-name">'+esc(u.unit)+'</div><div class="ci-unit-tags">'+tags+'</div></td><td class="num">'+u.bookings+'</td><td class="num">'+u.occupiedNights+'</td><td class="num">'+pctFmt(u.occupancy)+'</td><td class="num">'+moneyFmt(u.adr)+'</td><td class="num">'+moneyFmt(u.revpar)+'</td><td class="num">'+moneyFmt(u.companyIncome)+'</td><td class="num">'+moneyFmt(u.expenses)+'</td><td class="num" style="font-weight:700;color:'+(u.netContribution>=0?'#065f46':'#991b1b')+'">'+moneyFmt(u.netContribution)+'</td></tr>';
-  }).join('');
-  var unitCards=unitRows.map(function(u){
-    var tags=companyInsightsUnitTags(u,current.leaders).map(function(t){return '<span class="ci-tag '+t.tone+'">'+t.label+'</span>';}).join('');
-    return '<div class="ci-unit-card"><div class="ci-unit-top"><div><div class="ci-unit-name">'+esc(u.unit)+'</div><div class="ci-unit-tags">'+tags+'</div></div><div style="text-align:right"><div class="ci-kicker">Net Contribution</div><div class="ci-value" style="font-size:17px;color:'+(u.netContribution>=0?'#065f46':'#991b1b')+'">'+moneyFmt(u.netContribution)+'</div></div></div><div class="ci-unit-metrics"><div class="ci-metric"><div class="lbl">Bookings</div><div class="val">'+u.bookings+'</div></div><div class="ci-metric"><div class="lbl">Occupied Nights</div><div class="val">'+u.occupiedNights+'</div></div><div class="ci-metric"><div class="lbl">Occupancy</div><div class="val">'+pctFmt(u.occupancy)+'</div></div><div class="ci-metric"><div class="lbl">ADR</div><div class="val">'+moneyFmt(u.adr)+'</div></div><div class="ci-metric"><div class="lbl">RevPAR</div><div class="val">'+moneyFmt(u.revpar)+'</div></div><div class="ci-metric"><div class="lbl">Company Income</div><div class="val">'+moneyFmt(u.companyIncome)+'</div></div><div class="ci-metric"><div class="lbl">Expenses</div><div class="val">'+moneyFmt(u.expenses)+'</div></div><div class="ci-metric"><div class="lbl">Maintenance Margin</div><div class="val">'+moneyFmt(u.maintenanceMargin)+'</div></div></div></div>';
-  }).join('');
+  var expenseHtml=companyInsightsBarList(current.adminExpenseBreakdown);
+  var rentedUnits=current.units.filter(function(u){return u.businessModel==='rented_homestay';});
+  var ownerUnits=current.units.filter(function(u){return u.businessModel==='owner_profit_sharing';});
+  var longTermUnits=current.units.filter(function(u){return u.businessModel==='long_term_management';});
+  var groupedUnitsHtml=companyInsightsUnitGroupHtml('包租民宿单位 Rented Homestay Units','显示运营 KPI、扣租后净额，以及净额/租金基准 Shows operating KPIs, net profit after rent, and Net / Rent benchmark.',rentedUnits,current.leaders)+companyInsightsUnitGroupHtml('业主分成单位 Owner Profit Sharing Units','显示运营 KPI、业主利润，以及业主利润/市场租金基准 Shows operating KPIs, owner profit, and Owner Profit / Market Rent benchmark.',ownerUnits,current.leaders)+companyInsightsUnitGroupHtml('长租代管单位 Long-term Management Units','只显示净管理费收入 Shows net management fee income only.',longTermUnits,current.leaders);
   var alertHtml=current.alerts.map(function(a){return '<div class="ci-alert '+(a.tone||'info')+'"><div class="ci-alert-title">'+esc(a.title)+'</div><div class="ci-alert-copy">'+esc(a.detail)+'</div></div>';}).join('');
-  return '<div class="scr"><div class="ci-shell"><div class="ci-note">Preview only. This screen uses sample data to show layout and KPI wording. Gross booking sales are shown for context only, and maintenance counts as company revenue only through net margin.</div><div class="ci-section"><div class="ci-topline"><div><div class="ci-title">Company Monthly Insights</div><div class="ci-sub">Owner and operations preview for MP Place company-level monthly performance.</div></div><div class="ci-period"><label class="fl">Month</label><select class="fi" onchange="setCompanyInsightPeriod(this.value)">'+periodOpts+'</select></div></div><div class="ci-summary" style="margin-top:10px"><div class="ci-card revenue"><div class="ci-kicker">Company Revenue</div><div class="ci-value">'+moneyFmt(current.companyRevenue)+'</div><div class="ci-foot">Management fee + cleaning fee + laundry fee + maintenance net margin</div></div><div class="ci-card expense"><div class="ci-kicker">Company Expenses</div><div class="ci-value">'+moneyFmt(current.companyExpenses)+'</div><div class="ci-foot">Company overhead and operating costs in this preview dataset</div></div><div class="ci-card profit'+profitCls+'"><div class="ci-kicker">Net Profit / Loss</div><div class="ci-value">'+moneyFmt(current.netProfit)+'</div><div class="ci-foot">Company Revenue - Company Expenses</div></div><div class="ci-card"><div class="ci-kicker">Profit Margin</div><div class="ci-value">'+pctFmt(current.profitMargin)+'</div><div class="ci-foot">Margin on company revenue only</div></div></div><div class="ci-note" style="margin-top:10px">Gross booking sales for <b>'+esc(current.label)+'</b> are <b>'+moneyFmt(current.grossBookingSales)+'</b>. This is context for business scale and is not counted as company revenue.</div></div>'+companyInsightsTrendChart()+'<div class="ci-grid two-col"><div class="ci-chart-card"><div class="ci-chart-title">Income Drivers</div><div class="ci-chart-sub">This stack answers where MP Place actually earns company revenue in the month.</div><div class="ci-bar-list">'+incomeHtml+'</div></div><div class="ci-chart-card"><div class="ci-chart-title">Maintenance Revenue Detail</div><div class="ci-chart-sub">Do not count the full owner charge as company revenue. Only the net maintenance margin belongs in company income.</div><div class="ci-kpi-strip"><div class="ci-mini"><div class="ci-kicker">Owner Charged</div><div class="ci-value">'+moneyFmt(current.maintenance.ownerCharged)+'</div></div><div class="ci-mini"><div class="ci-kicker">Vendor Cost</div><div class="ci-value">'+moneyFmt(current.maintenance.vendorCost)+'</div></div><div class="ci-mini"><div class="ci-kicker">Net Margin</div><div class="ci-value" style="color:#065f46">'+moneyFmt(current.maintenance.netMargin)+'</div></div></div></div><div class="ci-chart-card"><div class="ci-chart-title">Expense Breakdown</div><div class="ci-chart-sub">Main cost buckets to watch before they compress company margin.</div><div class="ci-bar-list">'+expenseHtml+'</div></div><div class="ci-chart-card"><div class="ci-chart-title">Interpretation</div><div class="ci-chart-sub">Why these blocks exist in the preview.</div><div class="ci-alert info"><div class="ci-alert-title">Company Overview</div><div class="ci-alert-copy">Shows whether the company made money this month before going into unit details.</div></div><div class="ci-alert good"><div class="ci-alert-title">Income and Cost Drivers</div><div class="ci-alert-copy">Separates recurring fee income from maintenance markup so the revenue story is not overstated.</div></div><div class="ci-alert warn"><div class="ci-alert-title">Unit Performance</div><div class="ci-alert-copy">Ranks which units are really contributing after expenses, not just producing bookings.</div></div></div></div><div class="ci-section"><div class="ci-unit-head"><div><div class="ci-title" style="font-size:14px">Unit Performance</div><div class="ci-sub">Occupancy is directional only in this preview because unavailable / maintenance days are not modeled here.</div></div><div class="ci-unit-hint">Desktop shows a ranked table. Narrow screens switch to stacked cards.</div></div><div class="ci-desktop-only"><table class="ci-unit-table"><thead><tr><th>Unit</th><th class="num">Bookings</th><th class="num">Occ Nights</th><th class="num">Occupancy</th><th class="num">ADR</th><th class="num">RevPAR</th><th class="num">Company Income</th><th class="num">Expenses</th><th class="num">Net Contribution</th></tr></thead><tbody>'+tableRows+'</tbody></table></div><div class="ci-mobile-only ci-unit-cards">'+unitCards+'</div></div><div class="ci-section"><div class="ci-title" style="font-size:14px">Alerts</div><div class="ci-sub">Action-oriented prompts for the next month, not just historical reporting.</div><div class="ci-alerts" style="margin-top:10px">'+alertHtml+'</div></div></div></div>';
+  return '<div class="scr"><div class="ci-shell"><div class="ci-note">仅供经理查看 Manager dashboard only。MP Office 不计入民宿单位表现，只计入公司/行政开销 MP Office is excluded from homestay unit performance and counted as company/admin expense only.</div><div class="ci-section"><div class="ci-topline"><div><div class="ci-title">公司月度洞察 Company Monthly Insights</div><div class="ci-sub">经理视角查看公司盈亏、经营模式表现与入住影响 Manager view for company profit/loss, business-model performance, and occupancy impact.</div></div><div class="ci-period"><label class="fl">月份 Month</label><select class="fi" onchange="setCompanyInsightPeriod(this.value)">'+periodOpts+'</select></div></div><div class="ci-summary" style="margin-top:10px"><div class="ci-card profit'+profitCls+'"><div class="ci-kicker">净利润 / 亏损 Net Profit / Loss</div><div class="ci-value">'+moneyFmt(current.netProfit)+'</div><div class="ci-foot">'+(previous?('对比 '+previous.label+' vs '+previous.label+' '+moneyFmt(current.netProfit-previous.netProfit)):'公司收入减已追踪开销 Company revenue minus tracked company expenses')+'</div></div><div class="ci-card revenue"><div class="ci-kicker">公司收入 Company Revenue</div><div class="ci-value">'+moneyFmt(current.companyRevenue)+'</div><div class="ci-foot">包租净房费、管理费、清洁费收入和洗衣费收入 Net booking revenue for rented units, management fee, cleaning fee revenue, and laundry fee revenue</div></div><div class="ci-card expense"><div class="ci-kicker">公司开销 Company Expenses</div><div class="ci-value">'+moneyFmt(current.companyExpenses)+'</div><div class="ci-foot">完整 P/L 成本：单位成本、员工/供应商报销、行政成本和月租 Full P/L cost: unit costs, vendor/staff claims, admin costs, and rented-unit monthly rent</div></div><div class="ci-card"><div class="ci-kicker">整体入住率 Portfolio Occupancy</div><div class="ci-value">'+pctFmtDash(current.portfolioOccupancy)+'</div><div class="ci-foot">'+current.occupiedNights+' 个入住晚 occupied night(s)，共 '+current.sellableNights+' 个可售晚 sellable night(s)</div></div></div><div class="ci-note" style="margin-top:10px"><b>'+esc(current.label)+'</b> 的总销售额 Gross booking sales 为 <b>'+moneyFmt(current.grossBookingSales)+'</b>。ADR/RevPAR 使用扣除清洁/洗衣费后的净房费 net room revenue。利润率 Profit margin 为 <b>'+pctFmt(current.profitMargin)+'</b>。本月导入的不可售晚 Imported unavailable nights：<b>'+current.unavailableNights+'</b>。</div></div>'+companyInsightsTrendChart()+'<div class="ci-grid two-col"><div class="ci-chart-card"><div class="ci-chart-title">收入来源 Income Drivers</div><div class="ci-chart-sub">公司收入按净房费、管理费、清洁费收入和洗衣费收入拆分 Company revenue split by net booking income, management fee, and cleaning/laundry fee revenue.</div><div class="ci-bar-list">'+incomeHtml+'</div></div><div class="ci-chart-card"><div class="ci-chart-title">可售容量 Portfolio Capacity</div><div class="ci-chart-sub">入住率按扣除 HostPlatform unavailable 天数后的可售晚计算 Occupancy uses sellable nights after HostPlatform unavailable days are removed.</div><div class="ci-kpi-strip"><div class="ci-mini"><div class="ci-kicker">入住晚数 Occupied Nights</div><div class="ci-value">'+current.occupiedNights+'</div></div><div class="ci-mini"><div class="ci-kicker">不可售晚 Unavailable Nights</div><div class="ci-value">'+current.unavailableNights+'</div></div><div class="ci-mini"><div class="ci-kicker">可售晚 Sellable Nights</div><div class="ci-value">'+current.sellableNights+'</div></div></div></div><div class="ci-chart-card"><div class="ci-chart-title">公司开销拆分 Company Expense Breakdown</div><div class="ci-chart-sub">这里只看公司/行政开销；单位租金、水电、清洁、洗衣、维修和耗材留在单位表现里 Overhead-only view. Unit rent, utilities, cleaning, laundry, maintenance, setup, and supplies stay in unit performance.</div><div class="ci-bar-list">'+expenseHtml+'</div></div><div class="ci-chart-card"><div class="ci-chart-title">快速解读 Interpretation</div><div class="ci-chart-sub">帮助你快速看懂本月重点 Quick reading guide for this month.</div><div class="ci-alert info"><div class="ci-alert-title">RevPAR 每可售晚收入</div><div class="ci-alert-copy">高 RevPAR 代表净房费和入住都强；低 RevPAR 代表需求弱、定价低、费用负担高，或几者同时出现 High RevPAR means strong net room price and occupancy. Low RevPAR means weak demand, low pricing, high fee load, or a mix.</div></div><div class="ci-alert warn"><div class="ci-alert-title">入住状态 Occupancy Status</div><div class="ci-alert-copy">低于 8 晚为不健康，8-14 为普通，15-20 为好，超过 20 为最好 Below 8 nights is unhealthy, 8-14 normal, 15-20 good, and above 20 best.</div></div><div class="ci-alert good"><div class="ci-alert-title">市场基线 Market Baseline</div><div class="ci-alert-copy">市场租金基线只是参考，不计入收入或开销 Market rent baseline is a benchmark only. It is not counted as revenue or expense.</div></div></div></div><div class="ci-section"><div class="ci-unit-head"><div><div class="ci-title" style="font-size:14px">按经营模式看单位表现 Unit Performance By Business Model</div><div class="ci-sub">不同经营模式使用不同逻辑 Rented, owner profit-sharing, and long-term management units use different profit logic.</div></div><div class="ci-unit-hint">桌面显示表格，窄屏切换为卡片 Desktop shows grouped tables. Narrow screens switch to stacked cards.</div></div>'+groupedUnitsHtml+'</div><div class="ci-section"><div class="ci-title" style="font-size:14px">提醒 Alerts</div><div class="ci-sub">面向下个月行动的提醒，不只是历史报表 Action-oriented prompts for the next month, not just historical reporting.</div><div class="ci-alerts" style="margin-top:10px">'+alertHtml+'</div></div></div></div>';
 }
-function monthLabelFromValue(v){
-  var p=String(v||'').split('-');return (MONTHS[p[1]]||p[1]||'')+' '+(p[0]||'');
+function expMonthSelect(selVal){
+  var now=new Date();var opts=[];
+  for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();opts.push('<option value="'+v+'"'+(selVal===v?' selected':'')+'>'+lbl+'</option>');}
+  return'<div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="f-expmonth">'+opts.join('')+'</select></div>';
 }
-function expMonthSelect(selVal,attrs){
-  var now=new Date();var opts=[];var seen={};var extra=attrs||'';
-  if(extra&&extra.charAt(0)!==' ')extra=' '+extra;
-  for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);seen[v]=true;var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();opts.push('<option value="'+v+'"'+(selVal===v?' selected':'')+'>'+lbl+'</option>');}
-  if(selVal&&!seen[selVal])opts.unshift('<option value="'+esc(selVal)+'" selected>'+esc(monthLabelFromValue(selVal))+'</option>');
-  return'<div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="f-expmonth"'+extra+'>'+opts.join('')+'</select></div>';
-}
-function mgrClaimDefaultDate(){return new Date().toISOString().slice(0,10);}
-function defaultExpenseMonthValue(){var now=new Date();var d=new Date(now.getFullYear(),now.getMonth()-1,1);return d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);}
-function mgrClaimDefaultMonth(){return defaultExpenseMonthValue();}
-function resetMgrClaimDraft(){mgrClaimDraft={desc:'',amount:'',date:'',cat:'',unit:'',chargedTo:'',expMonth:'',expMonthTouched:false};}
-function ensureExpenseMonthOption(sel,val){
-  if(!sel||!val)return;
-  for(var i=0;i<sel.options.length;i++){if(sel.options[i].value===val)return;}
-  var opt=document.createElement('option');opt.value=val;opt.textContent=monthLabelFromValue(val);sel.insertBefore(opt,sel.firstChild);
-}
-function mgrClaimDraftDefaults(){
-  if(!mgrClaimDraft.date)mgrClaimDraft.date=mgrClaimDefaultDate();
-  if(!mgrClaimDraft.expMonth){mgrClaimDraft.expMonth=mgrClaimDefaultMonth(mgrClaimDraft.date);mgrClaimDraft.expMonthTouched=false;}
-}
-function readMgrClaimDraftFromDom(){
-  var d=document.getElementById('f-desc'),a=document.getElementById('f-amount'),dt=document.getElementById('f-date'),c=document.getElementById('f-cat'),u=document.getElementById('f-unit'),em=document.getElementById('f-expmonth'),chg=document.getElementById('f-charged');
-  if(d)mgrClaimDraft.desc=d.value;if(a)mgrClaimDraft.amount=a.value;if(dt)mgrClaimDraft.date=dt.value;if(c)mgrClaimDraft.cat=c.value;if(u)mgrClaimDraft.unit=u.value;if(em&&em.value)mgrClaimDraft.expMonth=em.value;if(chg)mgrClaimDraft.chargedTo=chg.value;
-}
-function mgrClaimDraftSet(k,v){mgrClaimDraft[k]=v;}
-function mgrClaimDateChanged(v){
-  mgrClaimDraft.date=v;
-  if(!mgrClaimDraft.expMonthTouched){
-    mgrClaimDraft.expMonth=defaultExpenseMonthValue();
-    var em=document.getElementById('f-expmonth');ensureExpenseMonthOption(em,mgrClaimDraft.expMonth);if(em)em.value=mgrClaimDraft.expMonth;
+function setExpenseMonthValue(selectId,val){
+  var sel=typeof selectId==='string'?document.getElementById(selectId):selectId;
+  if(!sel||!val)return false;
+  for(var i=0;i<sel.options.length;i++){
+    if(sel.options[i].value===val){
+      sel.selectedIndex=i;
+      return true;
+    }
   }
+  return false;
 }
-function mgrClaimExpMonthChanged(v){mgrClaimDraft.expMonth=v;mgrClaimDraft.expMonthTouched=true;}
-function applyMgrClaimChargeUi(){
-  var u=document.getElementById('f-unit'),chg=document.getElementById('f-charged');
-  if(u&&typeof toggleChargeTo==='function')toggleChargeTo(u.value,'f-charge-wrap');
-  if(chg&&mgrClaimDraft.chargedTo)chg.value=mgrClaimDraft.chargedTo;
-}
-function restoreMgrClaimDraftToDom(){
-  if(S!=='mgrNewClaim')return;
-  mgrClaimDraftDefaults();
-  var d=document.getElementById('f-desc'),a=document.getElementById('f-amount'),dt=document.getElementById('f-date'),c=document.getElementById('f-cat'),u=document.getElementById('f-unit'),em=document.getElementById('f-expmonth'),chg=document.getElementById('f-charged');
-  if(d){d.value=mgrClaimDraft.desc;d.oninput=function(){mgrClaimDraft.desc=this.value;};}
-  if(a){a.value=mgrClaimDraft.amount;a.oninput=function(){mgrClaimDraft.amount=this.value;};}
-  if(dt){dt.value=mgrClaimDraft.date;dt.onchange=function(){mgrClaimDateChanged(this.value);};}
-  if(c){if(mgrClaimDraft.cat)c.value=mgrClaimDraft.cat;c.onchange=function(){mgrClaimDraft.cat=this.value;};}
-  if(u){if(mgrClaimDraft.unit)u.value=mgrClaimDraft.unit;u.onchange=function(){mgrClaimDraft.unit=this.value;toggleChargeTo(this.value,'f-charge-wrap');};}
-  if(em){ensureExpenseMonthOption(em,mgrClaimDraft.expMonth);em.value=mgrClaimDraft.expMonth;em.onchange=function(){mgrClaimExpMonthChanged(this.value);};}
-  applyMgrClaimChargeUi();
-  if(chg){chg.onchange=function(){mgrClaimDraft.chargedTo=this.value;};}
-}
-window.mgrClaimDraftSet=mgrClaimDraftSet;window.mgrClaimDateChanged=mgrClaimDateChanged;window.mgrClaimExpMonthChanged=mgrClaimExpMonthChanged;
 function normalizeAdminScreenName(screen){
   if(isSystemAdmin&&screen==='adminDash')return'adminUsers';
   return screen;
@@ -1171,7 +1594,6 @@ function ss(s,p){
   PS=parent;S=next;
   pendingFiles=[];pendingFileNames=[];
   if(next!=='newClaim'){aiResult=null;aiError='';aiAnalyzing=false;newClaimStep='manual';}
-  if(next!=='mgrNewClaim')resetMgrClaimDraft();
   render();
 }
 function adminHomeScreen(){return isSystemAdmin?'adminUsers':'adminDash';}
@@ -1183,9 +1605,12 @@ function goBack(){
 
 // ===== RECEIPT UPLOAD =====
 function togglePayType(t){
-  readMgrClaimDraftFromDom();
+  var d=document.getElementById('f-desc'),a=document.getElementById('f-amount'),dt=document.getElementById('f-date'),c=document.getElementById('f-cat'),u=document.getElementById('f-unit'),em=document.getElementById('f-expmonth');
+  var sv={desc:d?d.value:'',amt:a?a.value:'',date:dt?dt.value:'',cat:c?c.value:'',unit:u?u.value:'',expMonth:em?em.value:''};
   mgrFormPayType=t;render();
-  setTimeout(restoreMgrClaimDraftToDom,0);
+  d=document.getElementById('f-desc');a=document.getElementById('f-amount');dt=document.getElementById('f-date');c=document.getElementById('f-cat');u=document.getElementById('f-unit');em=document.getElementById('f-expmonth');
+  if(d)d.value=sv.desc;if(a)a.value=sv.amt;if(dt)dt.value=sv.date;if(c)c.value=sv.cat;if(u)u.value=sv.unit;
+  if(em&&sv.expMonth)setExpenseMonthValue(em,sv.expMonth);
 }
 window.togglePayType=togglePayType;
 function openFilePicker(id,opts,onchange){
@@ -1627,6 +2052,7 @@ function managerSlipBox(receiptRefs){
     html+='<div style="margin:4px 0;display:flex;flex-direction:column;gap:4px">';
     existingRefs.forEach(function(ref,i){
       var url=attachmentUrlForRef(ref);
+      var canOpen=attachmentCanOpen(ref);
       var name=attachmentName(ref,'Receipt ',i);
       var isImg=/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(name);
       var linkBody='<span style="font-size:16px">'+(isImg?'🖼️':'📄')+'</span><span style="font-size:11px;color:#059669;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+name+'</span><span style="font-size:10px;color:#6b7280;margin-left:auto">'+(url?'View →':'Link unavailable')+'</span>';
@@ -2152,10 +2578,10 @@ async function submitNewClaim(asDraft){
     var exactDup=activeClaimDbDuplicate(myName(),dtv||new Date().toISOString().slice(0,10),av||0,dv||'(untitled)');
     if(exactDup){toast(dbDuplicateClaimMessage(exactDup));return;}
   }
+  var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:(dtv||new Date().toISOString().slice(0,10)).slice(0,7);
   claimSubmitBusy=true;render();
   try{
     var cid=await getNextClaimId('HE');
-    var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:(dtv||new Date().toISOString().slice(0,10)).slice(0,7);
     var nc={id:cid,emp:myName(),unit:'',category:cv,desc:dv||'(untitled)',amount:av||0,date:dtv||new Date().toISOString().slice(0,10),expMonth:expM,status:asDraft?'Draft':'Submitted',rejectReason:'',slipRef:'',receiptRefs:'',paymentSlipRefs:'',payType:'employee',submittedBy:'self',invoiceNumber:aiResult?(aiResult.invoice_number||aiResult.reference_number||''):'',merchantName:aiResult?(aiResult.merchant_name||''):'',aiRaw:aiResult||{},aiConfidence:aiResult?(aiResult.confidence||0):0,sourceType:aiResult?'ai_scan':'manual'};
     if(pendingFiles.length){
       var receiptRefs='';
@@ -2203,7 +2629,6 @@ async function submitNewClaim(asDraft){
 }
 async function submitMgrClaim(){
   if(mgrSubmitBusy)return;
-  readMgrClaimDraftFromDom();
   var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date'),cat=document.getElementById('f-cat'),unit=document.getElementById('f-unit');
   if(!desc||!amt||!dt)return;
   var dv=desc.value,av=parseFloat(amt.value),dtv=dt.value,cv=cat?cat.value:'Other',uv=unit?unit.value:'';
@@ -2213,8 +2638,6 @@ async function submitMgrClaim(){
   var charged=document.getElementById('f-charged');
   var isMP=uv==='MP Office';
   if(!isMP&&(!charged||!charged.value)){toast('Please select who to charge');return;}
-  var chargedVal=isMP?'':charged.value;
-  var emv=document.getElementById('f-expmonth');var expM=(emv&&emv.value)||mgrClaimDraft.expMonth||dtv.slice(0,7);
   var isCompany=mgrFormPayType==='company';
   // Duplicate check: same employee, same amount, same month, not rejected/draft
   if(av&&dtv){
@@ -2225,10 +2648,11 @@ async function submitMgrClaim(){
   }
   var exactDup=activeClaimDbDuplicate(isCompany?'':mgrFormEmp,dtv,av,dv);
   if(exactDup){toast(dbDuplicateClaimMessage(exactDup));return;}
+  var emv=document.getElementById('f-expmonth');var expM=emv?emv.value:dtv.slice(0,7);
   mgrSubmitBusy=true;render();
   try{
     var cid=await getNextClaimId(isCompany?'CO':'MGR');
-    var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,hpUnitId:unitHpId(uv),category:cv,desc:dv,amount:av,date:dtv,expMonth:expM,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',receiptRefs:'',paymentSlipRefs:'',payType:mgrFormPayType,submittedBy:'manager',chargedTo:chargedVal,invoiceNumber:aiResult?(aiResult.invoice_number||aiResult.reference_number||''):'',merchantName:aiResult?(aiResult.merchant_name||''):'',aiRaw:aiResult||{},aiConfidence:aiResult?(aiResult.confidence||0):0,sourceType:aiResult?'ai_scan':'manual'};
+    var nc={id:cid,emp:isCompany?'':mgrFormEmp,unit:uv,hpUnitId:unitHpId(uv),category:cv,desc:dv,amount:av,date:dtv,expMonth:expM,status:isCompany?'Company-Paid':'Auto-Approved',rejectReason:'',slipRef:'',receiptRefs:'',paymentSlipRefs:'',payType:mgrFormPayType,submittedBy:'manager',chargedTo:isMP?'':charged.value,invoiceNumber:aiResult?(aiResult.invoice_number||aiResult.reference_number||''):'',merchantName:aiResult?(aiResult.merchant_name||''):'',aiRaw:aiResult||{},aiConfidence:aiResult?(aiResult.confidence||0):0,sourceType:aiResult?'ai_scan':'manual'};
     if(pendingFiles.length){
       var receiptRefs='';
       try{receiptRefs=await uploadAllFiles(cid,{category:cv,unit:uv,desc:dv,date:dtv});}catch(e){console.error(e);await logClaimSubmitFailure('submitMgrClaim.receiptUpload',nc,e,{is_company:isCompany});toast(e&&e.message?e.message:'Receipt upload failed');mgrSubmitBusy=false;render();return;}
@@ -2262,7 +2686,7 @@ async function submitMgrClaim(){
     addClaimLocal(nc);
     hydrateClaimAttachmentUrls([nc]).then(function(){if(S==='adminDash'||S==='adminList'||S==='adminHistory')render();});
     toast(isCompany?'Recorded as Company-Paid':'Auto-approved for '+mgrFormEmp);
-    aiResult=null;mgrFormPayType='employee';mgrFormEmp=myName();resetMgrClaimDraft();ss(isCompany?'adminHistory':'adminList','adminDash');
+    aiResult=null;mgrFormPayType='employee';mgrFormEmp=myName();ss(isCompany?'adminHistory':'adminList','adminDash');
     refreshClaimsInBackground();
   }catch(e){
     console.error(e);
@@ -2472,7 +2896,7 @@ function render(){
   // ===== AUTH SCREEN =====
   if(S==='previewHome'){
     tbt_el.textContent='Local Preview';
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#eff6ff"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Preview mode only.</span> Supabase is not configured for this local file, so the app is exposing frontend-only screens that do not require live data.</div></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:16px;padding:14px"><div style="font-size:18px;font-weight:700;color:#111;margin-bottom:4px">Open Preview Screens</div><div style="font-size:12px;color:#6b7280;line-height:1.5;margin-bottom:12px">Use this mode when you open <span style="font-family:monospace">home_expense.htm</span> directly from disk or from a local preview server without injected Supabase keys.</div><div style="display:flex;flex-direction:column;gap:8px"><button class="pbtn btn-s" onclick="openCompanyInsights()">Company Monthly Insights</button><button class="pbtn btn-p" onclick="ss(\'reportHome\',\'previewHome\')">Reporting Home Preview</button></div></div></div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#eff6ff"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Preview mode only.</span> Supabase is not configured for this local file, so the app is exposing frontend-only screens that do not require live data.</div></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:16px;padding:14px"><div style="font-size:18px;font-weight:700;color:#111;margin-bottom:4px">Open Preview Screens</div><div style="font-size:12px;color:#6b7280;line-height:1.5;margin-bottom:12px">Use this mode when you open <span style="font-family:monospace">home_expense.htm</span> directly from disk or from a local preview server without injected Supabase keys.</div><div style="display:flex;flex-direction:column;gap:8px"><button class="pbtn btn-s" onclick="openCompanyInsights()">公司月度洞察 Company Monthly Insights</button><button class="pbtn btn-p" onclick="ss(\'reportHome\',\'previewHome\')">Reporting Home Preview</button></div></div></div>';
     return;
   }
   if(S==='auth'){
@@ -2557,13 +2981,13 @@ function render(){
       // Step 3: Review AI results
       var ai=aiResult||{};
       var descVal=formatAiDescription(ai);
-      var aiMonth=defaultExpenseMonthValue();
+      var aiMonth=(ai.suggested&&ai.suggested.expense_month)||ai.expense_month||((ai.date||today).slice(0,7));
       var aiCatOpts=CATS.map(function(c){return'<option value="'+c+'"'+(ai.category===c?' selected':'')+'>'+c+'</option>';}).join('');
       var notReceiptWarn=ai.is_receipt===false?'<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:#92400e">⚠️ May not be a receipt</div><div style="font-size:11px;color:#92400e;margin-top:3px">AI could not confirm this is a valid receipt or invoice. Please verify the details or re-scan with the correct file.</div><button class="pbtn btn-o" style="margin-top:8px;width:100%" onclick="restartAIScan()">↻ Re-scan different file</button></div>':'';
       ms.innerHTML='<div class="scr">'+notReceiptWarn+'<div class="ai-result-card"><div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="font-size:14px">🤖</span><span style="font-size:12px;font-weight:600;color:#065f46">AI Analysis Complete</span><span class="ai-tag">Auto-filled</span></div>'+aiItemsHtml(ai.items)+'<div style="display:flex;justify-content:space-between;padding:6px;margin-top:4px;background:#d1fae5;border-radius:8px"><span style="font-size:12px;font-weight:600;color:#065f46">Total</span><span style="font-size:13px;font-weight:700;color:#065f46">RM '+(ai.total||0).toFixed(2)+'</span></div></div><div class="fg"><label class="fl">Description *</label><textarea class="fi" id="f-desc" rows="4" style="resize:vertical;font-size:12px;line-height:1.4">'+descVal+'</textarea></div><div class="fg"><label class="fl">Category *</label><select class="fi" id="f-cat">'+aiCatOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" value="'+(ai.total||'')+'"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+(ai.date||today)+'"/></div></div>'+expMonthSelect(aiMonth)+'<div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="restartAIScan()">↻ Re-scan</button><button class="pbtn btn-p" onclick="submitNewClaim(false)">Submit Claim</button></div><button class="pbtn btn-o" style="margin-top:4px" onclick="submitNewClaim(true)">Save as Draft</button></div>';
     } else {
       // Manual entry fallback
-      ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Manual entry</span> — AI receipt scan is currently disabled.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. Electricity Bill - INV12345"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div>'+expMonthSelect(defaultExpenseMonthValue())+'<div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="submitNewClaim(true)"'+(claimSubmitBusy?' disabled':'')+'>'+(claimSubmitBusy?'Saving...':'Save Draft')+'</button><button class="pbtn btn-p" onclick="submitNewClaim(false)"'+(claimSubmitBusy?' disabled':'')+'>'+(claimSubmitBusy?'Submitting...':'Submit Claim')+'</button></div></div>';
+      ms.innerHTML='<div class="scr"><div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Manual entry</span> — AI receipt scan is currently disabled.</div></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. Electricity Bill - INV12345"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div><div id="rbox">'+receiptBox('')+'</div><div class="arow"><button class="pbtn btn-o" onclick="submitNewClaim(true)"'+(claimSubmitBusy?' disabled':'')+'>'+(claimSubmitBusy?'Saving...':'Save Draft')+'</button><button class="pbtn btn-p" onclick="submitNewClaim(false)"'+(claimSubmitBusy?' disabled':'')+'>'+(claimSubmitBusy?'Submitting...':'Submit Claim')+'</button></div></div>';
     }
     ms.innerHTML=claimWorkspaceShell('submit',ms.innerHTML);
   }
@@ -2802,7 +3226,6 @@ function render(){
     var mgrAiLoading=aiAnalyzing?'<div style="display:flex;align-items:center;gap:8px;padding:10px;background:#eff6ff;border-radius:10px;border:1px solid #93c5fd"><div class="ai-spinner" style="width:18px;height:18px;border-width:2px"></div><span style="font-size:12px;color:#1d4ed8">Analyzing receipt...</span></div>':'';
     ms.innerHTML='<div class="scr"><div style="display:flex;flex-direction:column;gap:7px"><div class="ptype-card'+(isCompany?'':' on')+'" onclick="togglePayType(\'employee\')"><div style="font-size:20px">👤</div><div><div class="ptype-title">Employee paid</div><div class="ptype-desc">Needs reimbursement — auto-approved</div></div></div><div class="ptype-card'+(isCompany?' on':'')+'" onclick="togglePayType(\'company\')"><div style="font-size:20px">🏢</div><div><div class="ptype-title">Company paid</div><div class="ptype-desc">No reimbursement — tracking only</div></div></div></div>'+scanBtn+(isCompany?'<div class="info-box" style="background:#d1fae5"><div style="font-size:11px;color:#065f46"><span style="font-weight:600">Company-paid:</span> No employee assigned.</div></div>':'<div class="fg"><label class="fl">Submit for employee *</label><select class="fi" id="f-emp" onchange="mgrFormEmp=this.value">'+empOpts+'</select></div>')+'<div class="fg"><label class="fl">Category *</label><select class="fi" id="f-cat">'+catOpts+'</select></div><div class="fg"><label class="fl">Unit / location *</label><select class="fi" id="f-unit" onchange="toggleChargeTo(this.value,\x27f-charge-wrap\x27)"><option value="">— Select unit —</option>'+unitOpts+'</select></div><div class="fg"><label class="fl">Description *</label><input class="fi" id="f-desc" placeholder="e.g. Electricity Bill - INV12345"/></div><div class="tcol"><div class="fg"><label class="fl">Amount (RM) *</label><input class="fi" id="f-amount" type="number" placeholder="0.00"/></div><div class="fg"><label class="fl">Date *</label><input class="fi" id="f-date" type="date" value="'+today+'"/></div></div>'+expMonthSelect(lastMonth)+'<div id="f-charge-wrap"><div class="fg"><label class="fl">Charge to *</label><select class="fi" id="f-charged"><option value="">— Select —</option><option value="Owner">Owner</option><option value="Operator">Operator</option><option value="Both">Both</option></select></div></div><div id="rbox">'+receiptBox('')+'</div><button class="pbtn '+(isCompany?'btn-s':'btn-p')+'" onclick="submitMgrClaim()"'+(mgrSubmitBusy?' disabled':'')+'>'+(mgrSubmitBusy?'Submitting...':(isCompany?'Record as Company-Paid':'Submit (Auto-Approved)'))+'</button></div>';
     ms.innerHTML=claimWorkspaceShell('submit',ms.innerHTML);
-    setTimeout(restoreMgrClaimDraftToDom,0);
   }
   else if(S==='errorLogs'){
     if(!isSystemAdmin){toast('Only admin can access logs');ss(R==='admin'?'adminDash':'empHome');return;}
@@ -2857,11 +3280,12 @@ function render(){
     var rUnitOpts=UNITS.map(function(u){return'<option value="'+u+'"'+(rptUnit===u?' selected':'')+'>'+u+'</option>';}).join('');
     var rMonthOpts=Object.entries(MONTHS).map(function(e){return'<option value="'+e[0]+'"'+(rptMonth===e[0]?' selected':'')+'>'+e[1]+'</option>';}).join('');
     var rYearOpts=YEARS.map(function(y){return'<option value="'+y+'"'+(rptYear===y?' selected':'')+'>'+y+'</option>';}).join('');
-    var insightsTile='<div style="margin-top:10px;background:#ecfdf5;border:1px solid #86efac;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="openCompanyInsights()"><div><div style="font-size:12px;font-weight:700;color:#065f46">Company Monthly Insights</div><div style="font-size:10px;color:#6b7280">Preview monthly company revenue, drivers, unit ranking, and alerts</div></div><span style="font-size:16px;color:#065f46">></span></div>';
+    var insightsTile='<div style="margin-top:10px;background:#ecfdf5;border:1px solid #86efac;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="openCompanyInsights()"><div><div style="font-size:12px;font-weight:700;color:#065f46">公司月度洞察 Company Monthly Insights</div><div style="font-size:10px;color:#6b7280">预览公司月收入、驱动因素、单位表现和提醒 Preview monthly company revenue, drivers, unit ranking, and alerts</div></div><span style="font-size:16px;color:#065f46">></span></div>';
     var unitExpenseTile='<div style="margin-top:10px;background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitExpenses\',\'reportHome\')"><div><div style="font-size:12px;font-weight:700;color:#1d4ed8">Unit Expenses</div><div style="font-size:10px;color:#6b7280">Review every non-draft expense by unit</div></div><span style="font-size:16px;color:#1d4ed8">›</span></div>';
     ms.innerHTML='<div class="scr"><div style="font-size:15px;font-weight:700;color:#111;margin-bottom:2px">Generate Report</div><div style="font-size:11px;color:#6b7280;margin-bottom:12px">Select unit and period</div><div class="fg"><label class="fl">Unit *</label><select class="fi" id="rpt-unit" onchange="rptUnit=this.value"><option value="">— Select unit —</option>'+rUnitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Month</label><select class="fi" id="rpt-month" onchange="rptMonth=this.value">'+rMonthOpts+'</select></div><div class="fg"><label class="fl">Year</label><select class="fi" id="rpt-year" onchange="rptYear=this.value">'+rYearOpts+'</select></div></div><button class="pbtn btn-p" onclick="openReportView()">View Report</button>'+insightsTile+unitExpenseTile+'<div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:14px"><div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">Settings</div><div style="display:flex;flex-direction:column;gap:6px"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="ss(\'unitConfigList\',\'reportHome\')"><div><div style="font-size:12px;font-weight:600;color:#111">Unit Configuration</div><div style="font-size:10px;color:#6b7280">Owner, rates, profit sharing</div></div><span style="font-size:16px;color:#6b7280">›</span></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="openSyncScreen()"><div><div style="font-size:12px;font-weight:600;color:#111">Reservation Sync</div><div style="font-size:10px;color:#6b7280">Auto-import booking data</div></div><span style="font-size:16px;color:#6b7280">›</span></div></div></div></div>';
   }
   else if(S==='companyInsights'){
+    if(isSystemAdmin||R!=='admin'){toast('Only manager can access dashboard');ss(isSystemAdmin?'adminUsers':'empHome',isSystemAdmin?'adminUsers':'empHome');return;}
     tbt_el.textContent='Company Insights';bb_el.style.display='block';adminNav('report');
     ms.innerHTML=companyInsightsScreenHtml();
   }
@@ -2952,14 +3376,18 @@ function render(){
       var cfg2=unitConfig.filter(function(x){return x.unit_name===u;})[0]||{};
       var cFee=parseFloat(cfg2.cleaning_fee||0).toFixed(2);
       var lFee=parseFloat(cfg2.laundry_fee||0).toFixed(2);
-      return'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:13px;font-weight:600;color:#111">'+u+'</div><div style="font-size:10px;color:#6b7280">'+(cfg2.owner_name||'No owner')+' · Cleaning RM '+cFee+' · Laundry RM '+lFee+' · Profit Sharing '+(cfg2.service_fee_pct||0)+'%</div></div><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnitCfg(\''+u+'\')">Edit</span></div>';
+      var model=unitBusinessModel(u,cfg2);
+      var rent=cfgMoney(cfg2,'monthly_rent');
+      var baseline=cfgMoney(cfg2,'market_rent_baseline');
+      return'<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:13px;font-weight:600;color:#111">'+u+'</div><div style="font-size:10px;color:#6b7280">'+unitConfigSummaryText(cfg2)+'</div></div><span style="font-size:11px;color:#2563eb;cursor:pointer;text-decoration:underline" onclick="editUnitCfg(\''+u+'\')">Edit</span></div>';
     }).join('');
-    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">Assign owner, cleaning/laundry rates, and profit sharing % for each unit.</div></div>'+ucRows+'</div>';
+    ms.innerHTML='<div class="scr"><div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">Each business model shows different fields. Only fill the values that belong to that model.</div></div>'+ucRows+'</div>';
   }
   else if(S==='unitConfigForm'){
     tbt_el.textContent='Edit Unit Config';bb_el.style.display='block';adminNav(isSystemAdmin?'units':'report');
     var ucfg=editingUnitCfg||{};
-    ms.innerHTML='<div class="scr">'+(ucFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px;border-radius:8px;margin-bottom:8px">'+ucFormError+'</div>':'')+'<div class="info-box" style="background:#f3f4f6"><div style="font-size:12px;font-weight:600;color:#374151">Unit: '+(ucfg.unit_name||'')+'</div></div><div class="fg"><label class="fl">Owner Name</label><input class="fi" id="ucf-owner" value="'+(ucfg.owner_name||'')+'" placeholder="e.g. Ahmad"/></div><div class="tcol"><div class="fg"><label class="fl">Cleaning Fee (RM)</label><input class="fi" id="ucf-cf" type="number" step="0.01" value="'+parseFloat(ucfg.cleaning_fee||0).toFixed(2)+'"/></div><div class="fg"><label class="fl">Laundry Fee (RM)</label><input class="fi" id="ucf-lf" type="number" step="0.01" value="'+parseFloat(ucfg.laundry_fee||0).toFixed(2)+'"/></div></div><div class="fg"><label class="fl">Profit Sharing %</label><input class="fi" id="ucf-svc" type="number" step="0.01" value="'+(ucfg.service_fee_pct||0)+'"/></div><button class="pbtn btn-s" onclick="saveUnitCfg()">Save Changes</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'unitConfigList\',\''+(isSystemAdmin?'adminUnits':'reportHome')+'\')">Cancel</button></div>';
+    var bm=unitBusinessModel(ucfg.unit_name,ucfg);
+    ms.innerHTML='<div class="scr">'+(ucFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px;border-radius:8px;margin-bottom:8px">'+ucFormError+'</div>':'')+'<div class="info-box" style="background:#f3f4f6"><div style="font-size:12px;font-weight:600;color:#374151">Unit: '+(ucfg.unit_name||'')+'</div></div>'+unitConfigModelFields(ucfg,bm)+'<button class="pbtn btn-s" onclick="saveUnitCfg()">Save Changes</button><button class="pbtn btn-o" style="margin-top:6px" onclick="ss(\'unitConfigList\',\''+(isSystemAdmin?'adminUnits':'reportHome')+'\')">Cancel</button></div>';
   }
   else if(S==='reservationSync'){
     tbt_el.textContent='Reservation Sync';bb_el.style.display='block';adminNav(isSystemAdmin?'units':'report');
@@ -3011,8 +3439,19 @@ window.openReportView=function(){
   ss('reportView','reportHome');
 };
 window.setCompanyInsightPeriod=function(period){companyInsightPeriod=period;render();};
+window.shiftCompanyInsightPeriod=function(delta){
+  var periods=companyInsightsPeriods();
+  if(!periods.length)return;
+  var current=(companyInsightPeriod&&periods.indexOf(companyInsightPeriod)>=0)?companyInsightPeriod:periods[periods.length-1];
+  var idx=periods.indexOf(current);
+  var nextIdx=Math.max(0,Math.min(periods.length-1,idx+(Number(delta)||0)));
+  if(nextIdx===idx)return;
+  companyInsightPeriod=periods[nextIdx];
+  render();
+};
 window.openCompanyInsights=function(){
-  if(!companyInsightPeriod&&COMPANY_INSIGHTS_PREVIEW.length)companyInsightPeriod=COMPANY_INSIGHTS_PREVIEW[COMPANY_INSIGHTS_PREVIEW.length-1].period;
+  var periods=companyInsightsPeriods();
+  if(!companyInsightPeriod||periods.indexOf(companyInsightPeriod)<0)companyInsightPeriod=periods[periods.length-1];
   ss('companyInsights','reportHome');
 };
 window.editUnitType=function(id){editingUnitType=unitTypes.filter(function(t){return t.id===id;})[0]||null;utFormError='';ss('cleaningFeeForm','cleaningFees');};
@@ -3030,24 +3469,62 @@ window.saveUnitType=async function(){
   else{utFormError='Save failed. Name may already exist.';render();}
 };
 window.editUnitCfg=function(unitName){editingUnitCfg=unitConfig.filter(function(x){return x.unit_name===unitName;})[0]||{unit_name:unitName};ucFormError='';ss('unitConfigForm','unitConfigList');};
+window.unitCfgModelChanged=function(model){
+  if(!editingUnitCfg)editingUnitCfg={};
+  editingUnitCfg.business_model=model;
+  ucFormError='';
+  render();
+};
 window.saveUnitCfg=async function(){
-  var owner=document.getElementById('ucf-owner'),svc=document.getElementById('ucf-svc'),cf=document.getElementById('ucf-cf'),lf=document.getElementById('ucf-lf');
+  var owner=document.getElementById('ucf-owner'),svc=document.getElementById('ucf-svc'),cf=document.getElementById('ucf-cf'),lf=document.getElementById('ucf-lf'),bm=document.getElementById('ucf-model'),rent=document.getElementById('ucf-rent'),market=document.getElementById('ucf-market'),marketDate=document.getElementById('ucf-market-date');
   if(!editingUnitCfg||!editingUnitCfg.unit_name){toast('No unit selected');return;}
+  var model=bm?bm.value:'owner_profit_sharing';
+  var ownerName=owner?owner.value.trim():'';
+  var profitPct=parseFloat(svc?svc.value:0)||0;
+  var cleaningFee=parseFloat(cf?cf.value:0)||0;
+  var laundryFee=parseFloat(lf?lf.value:0)||0;
+  var monthlyRent=parseFloat(rent?rent.value:0)||0;
+  var marketBaseline=parseFloat(market?market.value:0)||0;
+  var marketReviewedAt=marketDate&&marketDate.value?marketDate.value:null;
+  if(model==='owner_profit_sharing'){
+    monthlyRent=0;
+  }else if(model==='rented_homestay'){
+    profitPct=0;
+    marketBaseline=0;
+    marketReviewedAt=null;
+  }else if(model==='long_term_management'){
+    cleaningFee=0;
+    laundryFee=0;
+    marketBaseline=0;
+    marketReviewedAt=null;
+  }else{
+    profitPct=0;
+    cleaningFee=0;
+    laundryFee=0;
+    monthlyRent=0;
+    marketBaseline=0;
+    marketReviewedAt=null;
+  }
   var saved=await dbUpsertUnitConfig(
     editingUnitCfg.unit_name,
-    owner?owner.value.trim():'',
-    parseFloat(svc?svc.value:0)||0,
-    parseFloat(cf?cf.value:0)||0,
-    parseFloat(lf?lf.value:0)||0
+    ownerName,
+    profitPct,
+    cleaningFee,
+    laundryFee,
+    model,
+    monthlyRent,
+    marketBaseline,
+    '',
+    marketReviewedAt
   );
   if(saved&&saved.ok){
     await loadUnitConfig();
-    await logAdminAction('unit-config.saved',{unit_name:editingUnitCfg.unit_name,owner_name:owner?owner.value.trim():'',cleaning_fee:parseFloat(cf?cf.value:0)||0,laundry_fee:parseFloat(lf?lf.value:0)||0,profit_sharing_pct:parseFloat(svc?svc.value:0)||0});
+    await logAdminAction('unit-config.saved',{unit_name:editingUnitCfg.unit_name,owner_name:ownerName,business_model:model,cleaning_fee:cleaningFee,laundry_fee:laundryFee,profit_sharing_pct:profitPct,monthly_rent:monthlyRent,market_rent_baseline:marketBaseline});
     editingUnitCfg=null;
     toast(saved.missingRateColumns?'Saved (DB migration needed for fee fields)':'Saved');
     ss('unitConfigList',isSystemAdmin?'adminUnits':'reportHome');
   }else{
-    ucFormError='Save failed';
+    ucFormError=saved&&saved.missingDashboardColumns?'Save failed. Run supabase-management-dashboard-v1.sql in test first.':'Save failed';
     render();
   }
 };
@@ -3202,8 +3679,6 @@ window.mgrScanReceipt=function(mode){
     var inp=document.getElementById('receipt-input');
     if(!inp.files||!inp.files.length)return;
     var f=inp.files[0];
-    readMgrClaimDraftFromDom();
-    var selectedUnit=mgrClaimDraft.unit;
     if(f.name.match(/\.pdf$/i)){
       aiAnalyzing=true;render();
       try{f=await pdfToImageFile(f);}catch(e){aiAnalyzing=false;render();toast('PDF conversion failed: '+e.message);return;}
@@ -3211,6 +3686,8 @@ window.mgrScanReceipt=function(mode){
     pendingFiles=[f];pendingFileNames=[f.name];
     aiAnalyzing=true;render();
     try{
+      var currentUnit=document.getElementById('f-unit');
+      var selectedUnit=currentUnit?currentUnit.value:'';
       var ai=await analyzeInvoiceFile(f,selectedUnit);
       aiResult=ai;
       aiAnalyzing=false;render();
@@ -3219,13 +3696,12 @@ window.mgrScanReceipt=function(mode){
         var d=document.getElementById('f-desc'),a=document.getElementById('f-amount'),dt=document.getElementById('f-date'),c=document.getElementById('f-cat'),u=document.getElementById('f-unit'),em=document.getElementById('f-expmonth');
         if(d)d.value=formatAiDescription(ai);
         if(a)a.value=ai.total||'';
-        if(dt&&ai.date){dt.value=ai.date;mgrClaimDateChanged(ai.date);}
+        if(dt&&ai.date)dt.value=ai.date;
         if(c&&ai.category){for(var i=0;i<c.options.length;i++){if(c.options[i].value===ai.category){c.selectedIndex=i;break;}}}
         var unitVal=selectedUnit||(ai.suggested&&ai.suggested.unit)||ai.unit_hint||'';
-        if(u&&unitVal){for(var j=0;j<u.options.length;j++){if(u.options[j].value===unitVal){u.selectedIndex=j;break;}}mgrClaimDraft.unit=u.value;toggleChargeTo(u.value,'f-charge-wrap');}
+        if(u&&unitVal){for(var j=0;j<u.options.length;j++){if(u.options[j].value===unitVal){u.selectedIndex=j;break;}}toggleChargeTo(u.value,'f-charge-wrap');}
         var expVal=(ai.suggested&&ai.suggested.expense_month)||ai.expense_month||'';
-        if(em&&expVal){ensureExpenseMonthOption(em,expVal);for(var k=0;k<em.options.length;k++){if(em.options[k].value===expVal){em.selectedIndex=k;break;}}mgrClaimExpMonthChanged(expVal);}
-        readMgrClaimDraftFromDom();
+        if(em&&expVal)setExpenseMonthValue(em,expVal);
         if(ai.suggested&&ai.suggested.unit_warning)toast(ai.suggested.unit_warning);
         if(ai.duplicate_claims&&ai.duplicate_claims.length){toast(duplicateClaimMessage(ai));}
         else{toast('AI filled: '+ai.summary);}
