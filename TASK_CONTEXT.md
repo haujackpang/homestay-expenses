@@ -136,6 +136,22 @@ Recent unit-pairing context:
 - The pairing screen should be the primary place where admins pair HostPlatform rows to internal units.
 - `Display code (optional)` is editable only for internal units and read-only when shown in HostPlatform pairing.
 
+## 2026-05-27 Supabase Data API Grant Preparation
+- Supabase announced that new public-schema tables/functions will no longer be automatically exposed to the Data API for new projects from 2026-05-30, and for new tables across existing projects from 2026-10-30.
+- Preparation added:
+  - `supabase-data-api-grants.sql`: idempotent baseline grant script for this app's public Data API access.
+  - `supabase-data-api-grants-audit.sql`: Dashboard-friendly audit for table/function grants.
+  - `supabase-data-api-table-grants-audit.sql`: CLI-friendly table grant audit.
+- Test Supabase project `afcifzghlkxvnpulahub` was explicitly linked and `supabase-data-api-grants.sql` was applied successfully.
+- Live Supabase project `skwogboredsczcyhlqgn` was explicitly linked and `supabase-data-api-grants.sql` was applied after user approval.
+- Audits after applying grants showed:
+  - business tables have explicit `SELECT`, `INSERT`, `UPDATE`, and `DELETE` grants for `authenticated` and `service_role`
+  - old default broad privileges such as `TRUNCATE`, `REFERENCES`, and `TRIGGER` were revoked from app roles
+  - `anon` broad table grants were revoked
+  - `anon` keeps only `INSERT` on `error_logs` for pre-login/browser diagnostics
+  - helper RPC functions `get_my_role`, `get_my_name`, and `find_possible_duplicate_claims` have explicit `EXECUTE` for `authenticated` and `service_role`
+- Important rule for future DB scripts: whenever a script creates a table or RPC function that must be accessed through `supabase-js`, PostgREST, or GraphQL, add explicit `GRANT` statements in the same rollout or rerun `supabase-data-api-grants.sql` afterward.
+
 ## Do Not Do
 - Do not move future changes to live unless explicitly requested again after this promotion is finished.
 - Do not copy, mirror, or sync business data between test and live as part of a code or DB-structure push.
