@@ -1,6 +1,14 @@
 # Task Context
 
 ## Current Task
+2026-06-25 update (implemented locally, test-first):
+1. Added a dedicated Long-term Rent Receipt manager workflow for units configured as `long_term_management`.
+2. Long-term rent receipts are stored in `claims` as `source_type='long_term_rent'`, `category='Rental'`, `status='Company-Paid'`, `pay_type='company'`, and `charged_to='Operator'`.
+3. Owner report logic for long-term management units now uses actual tenant rent receipt amounts for the selected month, then calculates `Tenant Rent Received - Management Fee - Owner Expenses = Owner Net`.
+4. Long-term rent receipts are excluded from ordinary expense totals, Unit Expenses, dashboard company-paid totals, and short-term booking report expense calculations.
+5. Compatibility fix: once a unit is configured as `long_term_management`, legacy `category='Rental'` rows are treated as tenant rent receipts, not expenses. This does not apply to non-long-term units.
+6. No live data migration or live deployment was performed; live promotion still requires explicit approval.
+
 Current focus:
 1. Fix manager/admin claim visibility so pending `Submitted` claimable expenses appear in the `Claims` page.
 2. Keep claim-review queues claimable-only by excluding `Company-Paid` from `My Claims` and `All Claims`, while preserving company-paid totals in dashboard/report views.

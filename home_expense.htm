@@ -277,6 +277,8 @@ var errorLogs=[],errorLogLoading=false,errorLogPage=1,errorLogTotal=0,errorLogHa
 var ERROR_LOG_PAGE_SIZE=50,frontendLogBusy=false;
 var unitTypes=[],unitConfig=[];
 var rptUnit='',rptMonth='',rptYear='';
+var longTermRentUnit='';
+var ownerUnits=[],ownerReport=null,ownerReportLoading=false,ownerReportError='';
 var companyInsightPeriod='';
 var editingUnitType=null,editingUnitCfg=null,utFormError='',ucFormError='';
 var syncLogs=[],syncLoading=false,syncRunning=false,unitSyncing=false;
@@ -520,6 +522,31 @@ function reportChargeBucket(unitName,chargedTo){
   // Backward compatibility: older rows may have charged_to='' after the column was added.
   return 'Both';
 }
+function isLongTermRentClaim(c){
+  return !!(c&&String(c.sourceType||'')==='long_term_rent');
+}
+function isLongTermRentReceiptForUnit(c,unitName){
+  if(!c)return false;
+  if(isLongTermRentClaim(c))return true;
+  return unitBusinessModel(unitName||c.unit,unitConfigFor(unitName||c.unit))==='long_term_management'
+    && String(c.category||'')==='Rental';
+}
+function approvedReportClaim(c){
+  return ['Approved','Claimed','Auto-Approved','Company-Paid'].indexOf(c&&c.status)>=0;
+}
+function longTermRentClaimsForUnitPeriod(unitName,period,rows){
+  var aliases=reportUnitAliases(unitName);
+  return (rows||claims||[]).filter(function(c){
+    return isLongTermRentReceiptForUnit(c,unitName)&&approvedReportClaim(c)
+      && aliases.indexOf(String(c.unit||''))>=0
+      && String(c.expMonth||String(c.date||'').slice(0,7))===period;
+  });
+}
+function longTermManagementUnitNames(){
+  return (UNITS||[]).filter(function(u){
+    return unitBusinessModel(u,unitConfigFor(u))==='long_term_management';
+  });
+}
 function reportRowsTotal(rows){
   return (rows||[]).reduce(function(sum,row){return sum+(parseFloat(row&&row.amount||0)||0);},0);
 }
@@ -660,7 +687,7 @@ async function loadBankInfo(){
     if(!name)return;
     if(p.active===false)inactiveNames[name]=true;
     if(p.role==='admin')adminNames[name]=true;
-    if(p.active!==false&&p.role!=='admin')activeProfileNames.push(name);
+    if(p.active!==false&&p.role!=='admin'&&p.role!=='owner')activeProfileNames.push(name);
   });
   ACTIVE_EMPS=uniqueNames(activeProfileNames);
   if(!ACTIVE_EMPS.length)ACTIVE_EMPS=EMPS.filter(function(e){return!inactiveNames[e]&&!adminNames[e];});
@@ -722,6 +749,41 @@ async function dbUpsertUnitConfig(unitName,ownerName,profitPct,cleaningFee,laund
 }
 async function loadSyncLogs(){var{data}=await sb.from('sync_logs').select('*').order('started_at',{ascending:false}).limit(20);if(data)syncLogs=data;}
 async function loadReservations(){var{data}=await sb.from('reservations').select('*').order('start_date',{ascending:false});if(data)reservations=data;}
+async function loadOwnerInitial(){
+  var d=await callEdgeFunction('owner-report',{action:'init'});
+  ownerUnits=d.units||[];
+  if(ownerUnits.length===1)rptUnit=ownerUnits[0];
+  var today=new Date();
+  if(!rptYear)rptYear=today.getFullYear().toString();
+  if(!rptMonth)rptMonth=(today.getMonth()<9?'0':'')+(today.getMonth()+1);
+}
+async function loadOwnerReport(){
+  if(!rptUnit){ownerReport=null;ownerReportError='Please select a unit';return;}
+  ownerReportLoading=true;ownerReportError='';render();
+  try{
+    var d=await callEdgeFunction('owner-report',{action:'report',unit:rptUnit,period:rptYear+'-'+rptMonth});
+    ownerReport=d.report||null;
+    var rows=[];
+    if(ownerReport){
+      rows=(ownerReport.rentReceipts||[]).concat(ownerReport.expenses||[]).concat(ownerReport.ownerExpenses||[]);
+      cacheOwnerAttachmentUrls(rows);
+    }
+  }catch(e){
+    console.error('loadOwnerReport:',e);
+    ownerReport=null;ownerReportError=e&&e.message?e.message:'Failed to load owner report';
+  }
+  ownerReportLoading=false;render();
+}
+function cacheOwnerAttachmentUrls(rows){
+  (rows||[]).forEach(function(row){
+    (row.attachmentUrls||[]).forEach(function(item){
+      if(item&&item.path&&item.signedUrl){
+        ATTACHMENT_URLS[item.path]=item.signedUrl;
+        ATTACHMENT_URL_EXPIRY[item.path]=Date.now()+ATTACHMENT_URL_TTL_MS;
+      }
+    });
+  });
+}
 async function triggerSync(){
   syncRunning=true;render();
   try{
@@ -865,7 +927,8 @@ async function doLogout(){
     return;
   }
   await sb.auth.signOut();
-  currentUser=null;currentProfile=null;R=null;S='auth';PS=null;claims=[];BANK_INFO={};EMPS=[];ACTIVE_EMPS=[];UNITS_DATA=[];
+  if(realtimeSub){realtimeSub.unsubscribe();realtimeSub=null;}
+  currentUser=null;currentProfile=null;R=null;S='auth';PS=null;claims=[];BANK_INFO={};EMPS=[];ACTIVE_EMPS=[];UNITS_DATA=[];ownerUnits=[];ownerReport=null;ownerReportError='';
   unitUnavailability=[];
   isSystemAdmin=false;allUsers=[];editingUser=null;userFormError='';editingUnit=null;unitFormError='';
   resetPasswordUser=null;resetPasswordError='';resetPasswordDraft1='';resetPasswordDraft2='';
@@ -879,11 +942,16 @@ async function initSession(user){
   if(prof.active===false){authLoading=false;authError='Your account has been deactivated. Contact admin.';await sb.auth.signOut();S='auth';render();return;}
   currentProfile=prof;
   isSystemAdmin=prof.role==='admin';
-  R=(prof.role==='admin'||prof.role==='manager')?'admin':'employee';
-  await loadAll();
-  setupRealtime();
+  R=prof.role==='owner'?'owner':((prof.role==='admin'||prof.role==='manager')?'admin':'employee');
+  if(R==='owner'){
+    if(realtimeSub){realtimeSub.unsubscribe();realtimeSub=null;}
+    await loadOwnerInitial();
+  }else{
+    await loadAll();
+    setupRealtime();
+  }
   authLoading=false;
-  S=isSystemAdmin?'adminUsers':R==='admin'?'adminDash':'empHome';
+  S=R==='owner'?'ownerReportHome':(isSystemAdmin?'adminUsers':R==='admin'?'adminDash':'empHome');
   render();
 }
 
@@ -901,6 +969,21 @@ async function loadUsers(){
     userListSource=allUsers.some(function(u){return u.source==='profile';})?'profile':'auth';
   }catch(e){console.error('loadUsers:',e);toast('User list failed: '+e.message);}
 }
+function selectedOwnerUnits(){
+  return Array.prototype.slice.call(document.querySelectorAll('.owner-unit-check:checked')).map(function(el){return el.value;});
+}
+function ownerUnitPickerHtml(selected){
+  var selectedMap={};
+  (selected||[]).forEach(function(u){selectedMap[u]=true;});
+  var rows=UNITS.filter(function(u){return u&&u!=='MP Office';}).map(function(u){
+    return '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:#374151;padding:6px 0"><input class="owner-unit-check" type="checkbox" value="'+esc(u)+'"'+(selectedMap[u]?' checked':'')+'/> '+esc(u)+'</label>';
+  }).join('');
+  return '<div id="owner-unit-wrap" style="display:none;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;background:#f9fafb"><div style="font-size:12px;font-weight:600;color:#111;margin-bottom:4px">Owner Unit Access</div><div style="font-size:10px;color:#6b7280;margin-bottom:6px">Owner accounts can only view reports for selected units.</div>'+(rows||'<div style="font-size:11px;color:#9ca3af">No units available</div>')+'</div>';
+}
+function toggleOwnerUnitPicker(){
+  var role=document.getElementById('uf-role'),wrap=document.getElementById('owner-unit-wrap');
+  if(wrap)wrap.style.display=role&&role.value==='owner'?'block':'none';
+}
 async function createUserAccount(){
   var u=document.getElementById('uf-user'),p=document.getElementById('uf-pw'),n=document.getElementById('uf-name'),r=document.getElementById('uf-role');
   if(!u||!p||!n||!r||!u.value.trim()||!p.value||!n.value.trim()){userFormError='Please fill all fields';render();return;}
@@ -908,8 +991,10 @@ async function createUserAccount(){
   var username=u.value.trim().toLowerCase();
   var fullName=n.value.trim();
   var role=r.value;
+  var ownerUnitList=role==='owner'?selectedOwnerUnits():[];
+  if(role==='owner'&&!ownerUnitList.length){userFormError='Please bind at least one owner unit';render();return;}
   try{
-    await callEdgeFunction('admin-users',{action:'create',username:username,password:p.value,full_name:fullName,role:role});
+    await callEdgeFunction('admin-users',{action:'create',username:username,password:p.value,full_name:fullName,role:role,owner_units:ownerUnitList});
   }catch(e){userFormError=e.message||'Failed to create user';render();return;}
   userFormError='';
   await loadUsers();await loadBankInfo();
@@ -924,8 +1009,10 @@ async function updateUserAccount(){
   var fullName=n.value.trim();
   var role=r?r.value:editingUser.role;
   var oldName=editingUser.full_name;
+  var ownerUnitList=role==='owner'?selectedOwnerUnits():[];
+  if(role==='owner'&&!ownerUnitList.length){userFormError='Please bind at least one owner unit';render();return;}
   try{
-    await callEdgeFunction('admin-users',{action:'update',user_id:editingUser.id,full_name:fullName,old_name:oldName,role:role,password:p&&p.value?p.value:''});
+    await callEdgeFunction('admin-users',{action:'update',user_id:editingUser.id,full_name:fullName,old_name:oldName,role:role,password:p&&p.value?p.value:'',owner_units:ownerUnitList});
   }catch(e){userFormError=e.message||'Failed to update user';render();return;}
   userFormError='';editingUser=null;
   await loadUsers();await loadBankInfo();
@@ -1046,7 +1133,7 @@ function activateLocalPreview(){
   S='previewHome';
   PS=null;
 }
-function companyInsightsIsWideScreen(screen){return ['reportHome','unitExpenses','reportView','companyInsights','unitConfigList','unitConfigForm','reservationSync'].indexOf(screen)>=0;}
+function companyInsightsIsWideScreen(screen){return ['reportHome','unitExpenses','reportView','companyInsights','unitConfigList','unitConfigForm','reservationSync','ownerReportHome','ownerReportView'].indexOf(screen)>=0;}
 function companyInsightsMonthLabel(period){
   var p=String(period||'').split('-');
   if(p.length!==2)return period||'';
@@ -1123,7 +1210,7 @@ function unitBusinessModelOptions(selected){
 function unitConfigModelNote(model){
   if(model==='owner_profit_sharing')return 'Owner profit sharing: fill company fee %, optional per-booking cleaning/laundry revenue, and market rent baseline for comparison.';
   if(model==='rented_homestay')return 'Rented homestay: fill monthly rent and any per-booking cleaning/laundry revenue. Profit-sharing fields stay hidden.';
-  if(model==='long_term_management')return 'Long-term management: fill management fee % and tenancy base only. Cleaning, laundry, and market-rent comparison stay hidden.';
+  if(model==='long_term_management')return 'Long-term management: fill management fee % and tenancy base reference. Monthly owner reports use tenant rent receipts.';
   return 'Excluded unit: this unit stays out of homestay KPI calculations.';
 }
 function unitConfigModelFields(cfg,model){
@@ -1141,7 +1228,7 @@ function unitConfigModelFields(cfg,model){
   }else if(model==='rented_homestay'){
     html+='<div class="fg"><label class="fl">Monthly Rent (RM)</label><input class="fi" id="ucf-rent" type="number" step="0.01" value="'+parseFloat(cfg.monthly_rent||0).toFixed(2)+'"/></div>';
   }else if(model==='long_term_management'){
-    html+='<div class="tcol"><div class="fg"><label class="fl">Management Fee %</label><input class="fi" id="ucf-svc" type="number" step="0.01" value="'+(cfg.service_fee_pct||0)+'"/></div><div class="fg"><label class="fl">Tenancy Base (RM)</label><input class="fi" id="ucf-rent" type="number" step="0.01" value="'+parseFloat(cfg.monthly_rent||0).toFixed(2)+'"/></div></div>';
+    html+='<div class="tcol"><div class="fg"><label class="fl">Management Fee %</label><input class="fi" id="ucf-svc" type="number" step="0.01" value="'+(cfg.service_fee_pct||0)+'"/></div><div class="fg"><label class="fl">Tenancy Base Reference (RM)</label><input class="fi" id="ucf-rent" type="number" step="0.01" value="'+parseFloat(cfg.monthly_rent||0).toFixed(2)+'"/></div></div>';
   }else{
     html+='<div class="info-box" style="background:#f3f4f6"><div style="font-size:11px;color:#6b7280">No financial inputs are needed for excluded units.</div></div>';
   }
@@ -1181,9 +1268,11 @@ function companyInsightsApprovedClaims(period){
 }
 function companyInsightsClaimAffectsCompany(c){
   if(!c)return false;
+  if(isLongTermRentClaim(c))return false;
   if(String(c.unit||'')==='MP Office')return true;
   var cfg=unitConfigFor(c.unit);
   var model=unitBusinessModel(c.unit,cfg);
+  if(model==='long_term_management'&&String(c.category||'')==='Rental')return false;
   if(model==='company_office_excluded')return true;
   if(reportChargeBucket(c.unit,c.chargedTo)==='Owner')return false;
   if(model==='rented_homestay'&&c.category==='Rental'&&cfgMoney(cfg,'monthly_rent')>0)return false;
@@ -1299,9 +1388,10 @@ function companyInsightsUnitRows(period){
     var laundryFeeIncome=feeRevenueParts.laundry;
     var profitPct=(Number(cfg.service_fee_pct||0)||0)/100;
     var monthlyRent=cfgMoney(cfg,'monthly_rent');
+    var tenantRentReceived=unitClaims.filter(function(c){return isLongTermRentReceiptForUnit(c,unit);}).reduce(function(sum,c){return sum+(Number(c.amount)||0);},0);
     var marketRentBaseline=cfgMoney(cfg,'market_rent_baseline');
     var homestayProfit=grossBookingSales-sharedExpenses-cleaningFeeIncome-laundryFeeIncome;
-    var managementFeeIncome=model==='owner_profit_sharing'?(homestayProfit*profitPct):(model==='long_term_management'?(monthlyRent*profitPct):0);
+    var managementFeeIncome=model==='owner_profit_sharing'?(homestayProfit*profitPct):(model==='long_term_management'?(tenantRentReceived*profitPct):0);
     var bookingRevenue=model==='rented_homestay'?netAccommodationRevenue:0;
     var companyRevenue=bookingRevenue+managementFeeIncome+cleaningFeeIncome+laundryFeeIncome;
     var companyClaimExpenses=unitClaims.filter(companyInsightsClaimAffectsCompany).reduce(function(sum,c){return sum+(Number(c.amount)||0);},0);
@@ -1340,6 +1430,7 @@ function companyInsightsUnitRows(period){
       companyRevenue:companyRevenue,
       expenses:unitExpenses,
       monthlyRentCost:monthlyRentCost,
+      tenantRentReceived:tenantRentReceived,
       marketRentBaseline:marketRentBaseline,
       marketRentSourceUrl:String(cfg.market_rent_source_url||''),
       marketRentReviewedAt:String(cfg.market_rent_reviewed_at||''),
@@ -1574,6 +1665,11 @@ function expMonthSelect(selVal){
   for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();opts.push('<option value="'+v+'"'+(selVal===v?' selected':'')+'>'+lbl+'</option>');}
   return'<div class="fg"><label class="fl">Expense month (belongs to)</label><select class="fi" id="f-expmonth">'+opts.join('')+'</select></div>';
 }
+function rentMonthSelect(selVal){
+  var now=new Date();var opts=[];
+  for(var i=-3;i<=1;i++){var d=new Date(now.getFullYear(),now.getMonth()+i,1);var v=d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1);var lbl=MONTHS[(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)]+' '+d.getFullYear();opts.push('<option value="'+v+'"'+(selVal===v?' selected':'')+'>'+lbl+'</option>');}
+  return'<div class="fg"><label class="fl">Rent month *</label><select class="fi" id="ltr-month">'+opts.join('')+'</select></div>';
+}
 function descriptionExpenseMonth(desc){
   var text=String(desc||'').toLowerCase();
   var map={jan:'01',january:'01',feb:'02',february:'02',mar:'03',march:'03',apr:'04',april:'04',may:'05',jun:'06',june:'06',jul:'07',july:'07',aug:'08',august:'08',sep:'09',sept:'09',september:'09',oct:'10',october:'10',nov:'11',november:'11',dec:'12',december:'12'};
@@ -1616,7 +1712,7 @@ function ss(s,p){
 }
 function adminHomeScreen(){return isSystemAdmin?'adminUsers':'adminDash';}
 function goBack(){
-  var fallback=R==='admin'?adminHomeScreen():'empHome';
+  var fallback=R==='owner'?'ownerReportHome':(R==='admin'?adminHomeScreen():'empHome');
   var target=normalizeAdminScreenName(PS||fallback);
   ss(target);
 }
@@ -2033,6 +2129,18 @@ function viewReceiptBox(existingRefs){
   html+='</div>';
   return html;
 }
+function ownerExpenseRowsHTML(rows){
+  if(!rows||!rows.length)return'<div style="font-size:11px;color:#9ca3af;padding:8px 0">No expenses</div>';
+  return rows.map(function(r){
+    return '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div style="flex:1;min-width:0"><div style="font-size:10px;color:#6b7280;margin-bottom:3px">Category</div><div style="font-size:12px;font-weight:700;color:#111">'+esc(r.category||'Other')+'</div><div style="font-size:10px;color:#6b7280;margin-top:8px;margin-bottom:3px">Description</div><div style="font-size:12px;color:#374151;line-height:1.35">'+esc(r.desc||'')+'</div></div><div style="font-size:12px;font-weight:800;color:#111;white-space:nowrap">RM '+(Number(r.amount)||0).toFixed(2)+'</div></div>'+viewReceiptBox(r.receiptRefs||'')+'</div>';
+  }).join('');
+}
+function ownerReservationDetailsHTML(details){
+  if(!details||!details.length)return'<div style="font-size:11px;color:#9ca3af;padding-top:6px">No reservation details for this unit/month</div>';
+  return details.map(function(r){
+    return '<div style="background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 9px;margin-top:6px"><div style="display:grid;grid-template-columns:1fr 1fr 70px 90px;gap:8px;align-items:end"><div><div style="font-size:9px;color:#9ca3af">Check in</div><div style="font-size:10px;color:#374151;font-weight:600">'+fmtDateShort(r.checkIn)+'</div></div><div><div style="font-size:9px;color:#9ca3af">Check out</div><div style="font-size:10px;color:#374151;font-weight:600">'+fmtDateShort(r.checkOut)+'</div></div><div><div style="font-size:9px;color:#9ca3af">Nights</div><div style="font-size:10px;color:#374151;font-weight:600">'+(Number(r.nights)||0)+'</div></div><div style="text-align:right"><div style="font-size:9px;color:#9ca3af">Amount</div><div style="font-size:10px;color:#92400e;font-weight:700">RM '+(Number(r.amount)||0).toFixed(2)+'</div></div></div></div>';
+  }).join('');
+}
 function viewPaymentSlipBox(existingRefs){
   var refs=splitAttachmentRefs(existingRefs);
   if(!refs.length)return '<div class="slip-box"><span>💳</span><span style="font-size:12px;color:#92400e;font-weight:600;margin-left:4px">Payment processed</span></div>';
@@ -2397,7 +2505,7 @@ function paidOutHistoryClaims(list){
   return list.filter(function(c){return isPaidOut(c);});
 }
 function unitExpenseClaims(list){
-  return list.filter(function(c){return c.status!=='Draft';});
+  return list.filter(function(c){return c.status!=='Draft'&&!isLongTermRentReceiptForUnit(c,c.unit);});
 }
 function refreshClaimsInBackground(){
   loadClaims().then(function(){render();}).catch(function(e){console.error('refreshClaimsInBackground:',e);});
@@ -2438,7 +2546,7 @@ function claimListPager(listKey,total,page){
 }
 function claimWorkspaceTabs(active){
   var tabs=R==='admin'
-    ?[['submit','Submit',"ss('mgrNewClaim','adminList')"],['active','Active',"ss('adminList','adminDash')"],['history','History',"ss('adminHistory','adminList')"]]
+    ?[['submit','Submit',"ss('mgrNewClaim','adminList')"],['rent','Rent Receipt',"ss('longTermRent','adminList')"],['active','Active',"ss('adminList','adminDash')"],['history','History',"ss('adminHistory','adminList')"]]
     :[['submit','Submit',"ss('newClaim','empList')"],['active','Active',"ss('empList','empHome')"],['history','History',"ss('empHistory','empList')"]];
   return '<div class="tab-bar" style="margin-bottom:2px">'+tabs.map(function(x){return'<div class="tab-opt'+(active===x[0]?' on':'')+'" onclick="'+x[2]+'">'+x[1]+'</div>';}).join('')+'</div>';
 }
@@ -2645,6 +2753,49 @@ async function submitNewClaim(asDraft){
     render();
   }
 }
+async function submitLongTermRent(){
+  if(mgrSubmitBusy)return;
+  var unit=document.getElementById('ltr-unit'),month=document.getElementById('ltr-month'),date=document.getElementById('ltr-date'),amt=document.getElementById('ltr-amount'),desc=document.getElementById('ltr-desc');
+  var uv=unit?unit.value:'',expM=month?month.value:'',dtv=date?date.value:'',av=parseFloat(amt?amt.value:0)||0;
+  if(!uv){toast('Please select a long-term unit');return;}
+  if(unitBusinessModel(uv,unitConfigFor(uv))!=='long_term_management'){toast('This unit is not configured as Long-term Management');return;}
+  if(!expM||!dtv||!av){toast('Please fill rent month, receipt date and amount');return;}
+  if(!pendingFiles.length){toast('Please attach the tenant rent receipt');return;}
+  var existing=longTermRentClaimsForUnitPeriod(uv,expM,claims)[0];
+  if(existing){toast('Rent receipt already exists for '+uv+' '+expM+': '+existing.id);return;}
+  var dv=(desc&&desc.value?desc.value.trim():'')||('Tenant rent received - '+uv+' '+expenseMonthLabel(expM));
+  var exactDup=activeClaimDbDuplicate('',expM,av,dv);
+  if(exactDup){toast(dbDuplicateClaimMessage(exactDup));return;}
+  mgrSubmitBusy=true;render();
+  try{
+    var cid=await getNextClaimId('LTR');
+    var nc={id:cid,emp:'',unit:uv,hpUnitId:unitHpId(uv),category:'Rental',desc:dv,amount:av,date:dtv,expMonth:expM,status:'Company-Paid',rejectReason:'',slipRef:'',receiptRefs:'',paymentSlipRefs:'',payType:'company',submittedBy:'manager',chargedTo:'Operator',invoiceNumber:'',merchantName:'',aiRaw:{},aiConfidence:0,sourceType:'long_term_rent'};
+    var receiptRefs='';
+    try{receiptRefs=await uploadAllFiles(cid,{category:'Rental',unit:uv,desc:dv,date:dtv});}catch(e){console.error(e);await logClaimSubmitFailure('submitLongTermRent.receiptUpload',nc,e,{rent_month:expM});toast(e&&e.message?e.message:'Receipt upload failed');mgrSubmitBusy=false;render();return;}
+    if(!receiptRefs){toast('Receipt upload failed');mgrSubmitBusy=false;render();return;}
+    nc.receiptRefs=receiptRefs;
+    var insertResult=await dbInsertClaim(nc);
+    mgrSubmitBusy=false;
+    if(!insertResult.ok){
+      await logClaimSubmitFailure('submitLongTermRent.dbInsert',nc,insertResult.error,{rent_month:expM});
+      toast(claimInsertFailureMessage(nc,insertResult.error,'Failed to save rent receipt'));
+      render();
+      return;
+    }
+    addClaimLocal(nc);
+    hydrateClaimAttachmentUrls([nc]).then(function(){if(S==='longTermRent'||S==='adminHistory')render();});
+    await logAdminAction('long-term-rent.receipt-saved',{unit_name:uv,rent_month:expM,amount:av,claim_id:cid});
+    toast('Rent receipt saved: '+cid);
+    ss('adminHistory','adminDash');
+    refreshClaimsInBackground();
+  }catch(e){
+    console.error(e);
+    await logFrontendError('error','submitLongTermRent.exception',e&&e.message?e.message:'Rent receipt submit failed',{error:serializeErrorForLog(e)});
+    mgrSubmitBusy=false;
+    toast(e&&e.message?e.message:'Rent receipt submit failed');
+    render();
+  }
+}
 async function submitMgrClaim(){
   if(mgrSubmitBusy)return;
   var desc=document.getElementById('f-desc'),amt=document.getElementById('f-amount'),dt=document.getElementById('f-date'),cat=document.getElementById('f-cat'),unit=document.getElementById('f-unit');
@@ -2725,7 +2876,7 @@ async function exportReportPDF(){
   var ym=rptYear+'-'+rptMonth;
   var rptAliases=reportUnitAliases(rptUnit);
   var rcAll=claims.filter(function(c){return rptAliases.indexOf(c.unit)>=0&&APPROVED_STATUSES.indexOf(c.status)>=0&&(c.expMonth||c.date.slice(0,7))===ym;});
-  var rc=rcAll.filter(function(c){return c.unit===rptUnit;});
+  var rc=rcAll.filter(function(c){return c.unit===rptUnit&&!isLongTermRentReceiptForUnit(c,rptUnit);});
   var shared=rc.filter(function(c){return reportChargeBucket(c.unit,c.chargedTo)==='Both';});
   var ownerCl=rc.filter(function(c){return reportChargeBucket(c.unit,c.chargedTo)==='Owner';});
   var cfg=unitConfig.filter(function(x){return x.unit_name===rptUnit;})[0]||{};
@@ -2809,6 +2960,36 @@ async function exportReportPDF(){
     var ownerExpenseTotal=ownerCl.reduce(function(s,c){return s+c.amount;},0);
     var ownerExpensesTotal=ownerExpenseTotal;
     var ownerProfit=homestayProfit-managementFee-ownerExpensesTotal;
+    if(unitBusinessModel(rptUnit,cfg)==='long_term_management'){
+      var longTermRentRows=longTermRentClaimsForUnitPeriod(rptUnit,ym,rcAll);
+      var tenantRentReceived=reportRowsTotal(longTermRentRows);
+      var longTermManagementFee=tenantRentReceived*profitPct/100;
+      var longTermOwnerProfit=tenantRentReceived-longTermManagementFee-ownerExpensesTotal;
+      doc.setFontSize(17);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
+      doc.text(title,x,y);y+=7;
+      doc.setFontSize(9);doc.setFont(undefined,'normal');doc.setTextColor(80,80,80);
+      doc.text('Owner: '+ownerName,x,y);doc.text('Period: '+monthLabel,x+82,y);y+=6;
+      line();
+      section('Tenant Rent Received');
+      renderPdfExpenseGroups(reportCategoryGroups(longTermRentRows),'No tenant rent receipt for this unit/month');
+      row('Tenant Rent Received',money(tenantRentReceived),true);y+=2;
+      section('Owner Expenses');
+      renderPdfExpenseGroups(reportCategoryGroups(ownerCl),'No owner expenses for this unit/month');
+      row('Total Owner Expenses',money(ownerExpensesTotal),true);y+=2;
+      section('Owner');
+      row('Tenant Rent Received',money(tenantRentReceived),false);
+      row('Less: Management Fee',money(longTermManagementFee),false);
+      row('Less: Owner Expenses',money(ownerExpensesTotal),false);
+      doc.setDrawColor(0);doc.setLineWidth(0.5);doc.line(x,y,x+pw,y);y+=6;
+      doc.setFontSize(12);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
+      doc.text('Owner Net',x,y);right(money(longTermOwnerProfit),rCol,y);y+=10;
+      if(y>pageBottom-8){doc.addPage();y=16;}
+      doc.setFontSize(8);doc.setFont(undefined,'normal');doc.setTextColor(150,150,150);
+      doc.text('Generated: '+new Date().toLocaleDateString('en-MY')+' - Homestay Expense System',x,y);
+      doc.save(title.replace(/[^\w]+/g,'_')+'_'+MONTHS[rptMonth]+rptYear+'.pdf');
+      toast('PDF exported');
+      return;
+    }
 
     doc.setFontSize(17);doc.setFont(undefined,'bold');doc.setTextColor(0,0,0);
     doc.text(title,x,y);y+=7;
@@ -2911,6 +3092,12 @@ function render(){
     nav.innerHTML=its.map(function(x){return'<div class="ni'+(a===x[0]?' on':'')+'" onclick="'+x[3]+'"><span class="ni-ic">'+x[1]+'</span>'+x[2]+'</div>';}).join('');
     lo.style.display='block';
   }
+  function ownerNav(a){
+    nav.style.display='flex';
+    var its=[['report','📊','Report',"ss('ownerReportHome')"]];
+    nav.innerHTML=its.map(function(x){return'<div class="ni'+(a===x[0]?' on':'')+'" onclick="'+x[3]+'"><span class="ni-ic">'+x[1]+'</span>'+x[2]+'</div>';}).join('');
+    lo.style.display='block';
+  }
 
   // ===== AUTH SCREEN =====
   if(S==='previewHome'){
@@ -2924,9 +3111,39 @@ function render(){
     return;
   }
 
-  tbr_el.style.display='block';tbr_el.textContent=isSystemAdmin?'Admin - '+myName():R==='admin'?'Manager - '+myName():'Employee - '+myName();
+  if(R==='owner'&&['ownerReportHome','ownerReportView'].indexOf(S)<0){
+    toast('Owner accounts can only access reports');
+    S='ownerReportHome';
+  }
+  tbr_el.style.display='block';tbr_el.textContent=isSystemAdmin?'Admin - '+myName():R==='admin'?'Manager - '+myName():R==='owner'?'Owner - '+myName():'Employee - '+myName();
 
-  if(S==='empHome'){
+  if(S==='ownerReportHome'){
+    tbt_el.textContent='Owner Reports';bb_el.style.display='none';ownerNav('report');
+    var todayO=new Date();
+    if(!rptYear)rptYear=todayO.getFullYear().toString();
+    if(!rptMonth)rptMonth=(todayO.getMonth()<9?'0':'')+(todayO.getMonth()+1);
+    if(!rptUnit&&ownerUnits.length===1)rptUnit=ownerUnits[0];
+    var oUnitOpts=ownerUnits.map(function(u){return'<option value="'+esc(u)+'"'+(rptUnit===u?' selected':'')+'>'+esc(u)+'</option>';}).join('');
+    var oMonthOpts=Object.entries(MONTHS).map(function(e){return'<option value="'+e[0]+'"'+(rptMonth===e[0]?' selected':'')+'>'+e[1]+'</option>';}).join('');
+    var oYearOpts=YEARS.map(function(y){return'<option value="'+y+'"'+(rptYear===y?' selected':'')+'>'+y+'</option>';}).join('');
+    ms.innerHTML='<div class="scr"><div style="font-size:15px;font-weight:700;color:#111;margin-bottom:2px">Owner Report</div><div style="font-size:11px;color:#6b7280;margin-bottom:12px">Select unit and period</div>'+(ownerReportError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px 12px;border-radius:8px;margin-bottom:8px">'+esc(ownerReportError)+'</div>':'')+'<div class="fg"><label class="fl">Unit *</label><select class="fi" id="rpt-unit" onchange="rptUnit=this.value"><option value="">— Select unit —</option>'+oUnitOpts+'</select></div><div class="tcol"><div class="fg"><label class="fl">Month</label><select class="fi" id="rpt-month" onchange="rptMonth=this.value">'+oMonthOpts+'</select></div><div class="fg"><label class="fl">Year</label><select class="fi" id="rpt-year" onchange="rptYear=this.value">'+oYearOpts+'</select></div></div><button class="pbtn btn-p" onclick="openOwnerReportView()"'+(ownerReportLoading?' disabled':'')+'>'+(ownerReportLoading?'Loading...':'View Report')+'</button></div>';
+  }
+  else if(S==='ownerReportView'){
+    tbt_el.textContent='Owner Report';bb_el.style.display='block';ownerNav('report');
+    var r=ownerReport;
+    if(!r){ms.innerHTML='<div class="scr"><div style="text-align:center;padding:18px;font-size:12px;color:#6b7280">No report loaded</div><button class="pbtn btn-p" onclick="ss(\'ownerReportHome\')">Back to Reports</button></div>';return;}
+    var booking=r.booking||{},summary=r.summary||{};
+    var expenseTotal=(r.expenses||[]).reduce(function(s,x){return s+(Number(x.amount)||0);},0);
+    var ownerExpenseTotal=(r.ownerExpenses||[]).reduce(function(s,x){return s+(Number(x.amount)||0);},0);
+    if(r.businessModel==='long_term_management'){
+      var rentTotal=Number(summary.tenantRentReceived||booking.sales||0);
+      ms.innerHTML='<div class="scr"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">Unit</span><span style="font-size:12px;font-weight:600">'+esc(r.unit||'')+'</span></div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">Period</span><span style="font-size:12px;font-weight:600">'+esc(r.monthLabel||'')+'</span></div><div style="display:flex;justify-content:space-between"><span style="font-size:11px;color:#6b7280">Owner</span><span style="font-size:12px;font-weight:600">'+esc(r.ownerName||'--')+'</span></div></div><div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">Tenant Rent Received</div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Rent receipts</span><span style="font-size:12px;font-weight:600">'+((r.rentReceipts||[]).length)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Amount received</span><span style="font-size:12px;font-weight:700">RM '+rentTotal.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Owner Net</span><span style="font-size:12px;font-weight:700">RM '+(Number(summary.ownerProfit)||0).toFixed(2)+'</span></div></div><div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#065f46;background:#d1fae5;padding:6px 10px;border-radius:8px;margin-bottom:6px">Rent Receipt Evidence</div>'+ownerExpenseRowsHTML(r.rentReceipts||[])+'</div><div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:6px 10px;border-radius:8px;margin-bottom:6px">Owner Expenses</div>'+ownerExpenseRowsHTML(r.ownerExpenses||[])+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#1d4ed8;border-top:2px solid #dbeafe;margin-top:4px"><span>Total Owner Expenses</span><span>RM '+ownerExpenseTotal.toFixed(2)+'</span></div></div><div style="background:#111;border-radius:10px;padding:12px;margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:#d1fae5">MANAGEMENT FEE</span><span style="font-size:14px;font-weight:800;color:#d1fae5">RM '+(Number(summary.managementFee)||0).toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid rgba(255,255,255,.18);padding-top:7px"><span style="font-size:13px;font-weight:700;color:#fff">OWNER NET</span><span style="font-size:16px;font-weight:800;color:#fff">RM '+(Number(summary.ownerProfit)||0).toFixed(2)+'</span></div></div></div>';
+      return;
+    }
+    var reservationDetails='<div style="font-size:11px;font-weight:700;color:#92400e;border-top:1px dashed #fde68a;margin-top:7px;padding-top:7px">Reservation Details</div>'+ownerReservationDetailsHTML(booking.details||[]);
+    ms.innerHTML='<div class="scr"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">Unit</span><span style="font-size:12px;font-weight:600">'+esc(r.unit||'')+'</span></div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">Period</span><span style="font-size:12px;font-weight:600">'+esc(r.monthLabel||'')+'</span></div><div style="display:flex;justify-content:space-between"><span style="font-size:11px;color:#6b7280">Owner</span><span style="font-size:12px;font-weight:600">'+esc(r.ownerName||'—')+'</span></div></div><div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">Bookings This Month</div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Reservations</span><span style="font-size:12px;font-weight:600">'+(booking.count||0)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Sales</span><span style="font-size:12px;font-weight:600">RM '+(Number(booking.sales)||0).toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Owner Profit</span><span style="font-size:12px;font-weight:700">RM '+(Number(summary.ownerProfit)||0).toFixed(2)+'</span></div>'+reservationDetails+'</div><div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#065f46;background:#d1fae5;padding:6px 10px;border-radius:8px;margin-bottom:6px">Expenses</div>'+ownerExpenseRowsHTML(r.expenses||[])+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#065f46;border-top:2px solid #d1fae5;margin-top:4px"><span>Subtotal Expenses</span><span>RM '+expenseTotal.toFixed(2)+'</span></div></div><div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:6px 10px;border-radius:8px;margin-bottom:6px">Owner Expenses</div>'+ownerExpenseRowsHTML(r.ownerExpenses||[])+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#1d4ed8;border-top:2px solid #dbeafe;margin-top:4px"><span>Total Owner Expenses</span><span>RM '+ownerExpenseTotal.toFixed(2)+'</span></div></div></div>';
+  }
+  else if(S==='empHome'){
     tbt_el.textContent='My Dashboard';empNav('home');
     var months=['All'].concat(Object.keys(MONTHS));var years=['All'].concat(YEARS);
     function edm(v){empDashMonth=v;render();}function edy(v){empDashYear=v;render();}
@@ -3016,7 +3233,7 @@ function render(){
     var months=['All'].concat(Object.keys(MONTHS));var years=['All'].concat(YEARS);var unitOpts=['All Units'].concat(UNITS);
     function dm(v){dashFltMonth=v;render();}function dy(v){dashFltYear=v;render();}function du(v){dashFltUnit=v;render();}
     window.dm=dm;window.dy=dy;window.du=du;
-    var base=claims.filter(function(c){var em_=c.expMonth||c.date.slice(0,7);var mo=dashFltMonth==='All'||em_.slice(5,7)===dashFltMonth;var yr=dashFltYear==='All'||em_.slice(0,4)===dashFltYear;var ut=dashFltUnit==='All Units'||dashFltUnit==='All'||c.unit===dashFltUnit;return mo&&yr&&ut;});
+    var base=claims.filter(function(c){var em_=c.expMonth||c.date.slice(0,7);var mo=dashFltMonth==='All'||em_.slice(5,7)===dashFltMonth;var yr=dashFltYear==='All'||em_.slice(0,4)===dashFltYear;var ut=dashFltUnit==='All Units'||dashFltUnit==='All'||c.unit===dashFltUnit;return mo&&yr&&ut&&!isLongTermRentReceiptForUnit(c,c.unit);});
     // Fixed expenses check
     var currentMonth=new Date().getFullYear()+'-'+(new Date().getMonth()+1<10?'0':'')+(new Date().getMonth()+1);
     var fxStatus=getFixedExpensesStatus(currentMonth);
@@ -3238,7 +3455,7 @@ function render(){
     var userCards=allUsers.map(function(u){
       var displayName=(u.full_name||'').trim()||((u.email||'').split('@')[0]||'User');
       var ini=initials(displayName);
-      var roleTag=u.role==='admin'?'<span style="font-size:10px;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:99px">Admin</span>':u.role==='manager'?'<span style="font-size:10px;color:#065f46;background:#d1fae5;padding:1px 6px;border-radius:99px">Manager</span>':'<span style="font-size:10px;color:#6b7280;background:#f3f4f6;padding:1px 6px;border-radius:99px">Employee</span>';
+      var roleTag=u.role==='admin'?'<span style="font-size:10px;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:99px">Admin</span>':u.role==='manager'?'<span style="font-size:10px;color:#065f46;background:#d1fae5;padding:1px 6px;border-radius:99px">Manager</span>':u.role==='owner'?'<span style="font-size:10px;color:#7c2d12;background:#ffedd5;padding:1px 6px;border-radius:99px">Owner</span>':'<span style="font-size:10px;color:#6b7280;background:#f3f4f6;padding:1px 6px;border-radius:99px">Employee</span>';
       var username=(u.email||'').replace('@homestay.app','');
       var isActive=u.active!==false;
       var hasProfile=u.has_profile!==false;
@@ -3257,7 +3474,10 @@ function render(){
   else if(S==='userForm'){
     tbt_el.textContent=editingUser?'Edit User':'Add User';bb_el.style.display='block';adminNav('dash');
     var isEditing=!!editingUser;
-    ms.innerHTML='<div class="scr">'+(userFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px 12px;border-radius:8px;text-align:center">'+userFormError+'</div>':'')+(isEditing?'<div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Editing:</span> '+editingUser.full_name+' (@'+editingUser.email.replace('@homestay.app','')+')</div></div>':'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">The username will be used for login. Example: username <b>ahmad</b> → login as <b>ahmad</b>.</div></div>')+(isEditing?'':'<div class="fg"><label class="fl">Username *</label><input class="fi" id="uf-user" placeholder="e.g. ahmad" autocapitalize="off"/></div>')+'<div class="fg"><label class="fl">Full name *</label><input class="fi" id="uf-name" value="'+(isEditing?editingUser.full_name:'')+'"/></div><div class="fg"><label class="fl">Role *</label><select class="fi" id="uf-role"><option value="employee"'+(isEditing&&editingUser.role==='employee'?' selected':'')+'>Employee</option><option value="manager"'+(isEditing&&editingUser.role==='manager'?' selected':'')+'>Manager</option></select></div><div class="fg"><label class="fl">Password '+(isEditing?'(leave blank to keep current)':'*')+'</label><input class="fi" id="uf-pw" type="password" placeholder="Min 6 characters"/></div><button class="pbtn btn-s" onclick="'+(isEditing?'updateUserAccount()':'createUserAccount()')+'">'+(isEditing?'Save Changes':'Create Account')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="editingUser=null;userFormError=\'\';ss(\'adminUsers\',adminHomeScreen())">Cancel</button></div>';
+    var roleValue=isEditing?editingUser.role:'employee';
+    var ownerPicker=ownerUnitPickerHtml(isEditing?editingUser.owner_units:[]);
+    ms.innerHTML='<div class="scr">'+(userFormError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px 12px;border-radius:8px;text-align:center">'+userFormError+'</div>':'')+(isEditing?'<div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Editing:</span> '+editingUser.full_name+' (@'+editingUser.email.replace('@homestay.app','')+')</div></div>':'<div class="info-box" style="background:#dbeafe"><div style="font-size:11px;color:#1d4ed8">The username will be used for login. Example: username <b>ahmad</b> → login as <b>ahmad</b>.</div></div>')+(isEditing?'':'<div class="fg"><label class="fl">Username *</label><input class="fi" id="uf-user" placeholder="e.g. ahmad" autocapitalize="off"/></div>')+'<div class="fg"><label class="fl">Full name *</label><input class="fi" id="uf-name" value="'+(isEditing?editingUser.full_name:'')+'"/></div><div class="fg"><label class="fl">Role *</label><select class="fi" id="uf-role" onchange="toggleOwnerUnitPicker()"><option value="employee"'+(roleValue==='employee'?' selected':'')+'>Employee</option><option value="manager"'+(roleValue==='manager'?' selected':'')+'>Manager</option><option value="owner"'+(roleValue==='owner'?' selected':'')+'>Owner</option></select></div>'+ownerPicker+'<div class="fg"><label class="fl">Password '+(isEditing?'(leave blank to keep current)':'*')+'</label><input class="fi" id="uf-pw" type="password" placeholder="Min 6 characters"/></div><button class="pbtn btn-s" onclick="'+(isEditing?'updateUserAccount()':'createUserAccount()')+'">'+(isEditing?'Save Changes':'Create Account')+'</button><button class="pbtn btn-o" style="margin-top:6px" onclick="editingUser=null;userFormError=\'\';ss(\'adminUsers\',adminHomeScreen())">Cancel</button></div>';
+    setTimeout(toggleOwnerUnitPicker,0);
   }
   else if(S==='resetPasswordForm'){
     tbt_el.textContent='Reset Password';bb_el.style.display='block';adminNav('dash');
@@ -3265,6 +3485,18 @@ function render(){
     if(!rp){ss('adminUsers','adminUsers');return;}
     var rpUsername=rp.email.replace('@homestay.app','');
     ms.innerHTML='<div class="scr">'+(resetPasswordError?'<div style="background:#fee2e2;color:#991b1b;font-size:12px;padding:8px 12px;border-radius:8px;text-align:center">'+resetPasswordError+'</div>':'')+'<div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">Resetting:</span> '+rp.full_name+' (@'+rpUsername+')</div><div style="font-size:11px;color:#92400e;margin-top:3px">This updates the login password only.</div></div><div class="fg"><label class="fl">New password *</label><input class="fi" id="rp-pw" type="password" placeholder="Min 6 characters" autocomplete="new-password" value="'+esc(resetPasswordDraft1)+'" oninput="resetPasswordDraft1=this.value"/></div><div class="fg"><label class="fl">Confirm password *</label><input class="fi" id="rp-pw2" type="password" placeholder="Re-enter the new password" autocomplete="new-password" value="'+esc(resetPasswordDraft2)+'" oninput="resetPasswordDraft2=this.value"/></div><button class="pbtn btn-s" onclick="submitResetPassword()">Update Password</button><button class="pbtn btn-o" style="margin-top:6px" onclick="resetPasswordUser=null;resetPasswordError=\'\';resetPasswordDraft1=\'\';resetPasswordDraft2=\'\';ss(\'adminUsers\',adminHomeScreen())">Cancel</button></div>';
+  }
+  else if(S==='longTermRent'){
+    tbt_el.textContent='Long-term Rent Receipt';bb_el.style.display='block';adminNav('sub');
+    var longUnits=longTermManagementUnitNames();
+    if(longTermRentUnit&&longUnits.indexOf(longTermRentUnit)<0)longTermRentUnit='';
+    if(!longTermRentUnit&&longUnits.length===1)longTermRentUnit=longUnits[0];
+    var todayRent=new Date().toISOString().slice(0,10);
+    var currentRentMonth=todayRent.slice(0,7);
+    var rentUnitOpts=longUnits.map(function(u){return'<option value="'+esc(u)+'"'+(longTermRentUnit===u?' selected':'')+'>'+esc(u)+'</option>';}).join('');
+    var noLongUnits='<div class="info-box" style="background:#fef3c7"><div style="font-size:11px;color:#92400e"><span style="font-weight:600">No long-term management unit found.</span> Set CL B0207 or another unit to Long-term Management in Unit Configuration first.</div></div>';
+    var formHtml='<div class="scr">'+(longUnits.length?'<div class="info-box" style="background:#eff6ff"><div style="font-size:11px;color:#1d4ed8"><span style="font-weight:600">Tenant rent receipt:</span> This records actual rent received for owner monthly reporting. It is saved as Company-Paid evidence, not a reimbursable claim.</div></div><div class="fg"><label class="fl">Long-term unit *</label><select class="fi" id="ltr-unit" onchange="longTermRentUnit=this.value"><option value="">— Select unit —</option>'+rentUnitOpts+'</select></div>'+rentMonthSelect(currentRentMonth)+'<div class="tcol"><div class="fg"><label class="fl">Receipt date *</label><input class="fi" id="ltr-date" type="date" value="'+todayRent+'"/></div><div class="fg"><label class="fl">Amount received (RM) *</label><input class="fi" id="ltr-amount" type="number" step="0.01" placeholder="0.00"/></div></div><div class="fg"><label class="fl">Description</label><input class="fi" id="ltr-desc" placeholder="Tenant rent received"/></div><div id="rbox">'+receiptBox('')+'</div><button class="pbtn btn-s" onclick="submitLongTermRent()"'+(mgrSubmitBusy?' disabled':'')+'>'+(mgrSubmitBusy?'Saving...':'Save Rent Receipt')+'</button>':noLongUnits+'<button class="pbtn btn-o" onclick="ss(\'unitConfigList\',\'reportHome\')">Open Unit Configuration</button>')+'</div>';
+    ms.innerHTML=claimWorkspaceShell('rent',formHtml);
   }
   else if(S==='mgrNewClaim'){
     tbt_el.textContent='Expense Claims';bb_el.style.display='block';adminNav('sub');
@@ -3364,8 +3596,8 @@ function render(){
     var ym=rptYear+'-'+rptMonth;
     var rptAliases=reportUnitAliases(rptUnit);
     var rptClaimsAll=claims.filter(function(c){return rptAliases.indexOf(c.unit)>=0&&APPROVED_STATUSES.indexOf(c.status)>=0&&(c.expMonth||c.date.slice(0,7))===ym;});
-    var rptPrimaryClaims=rptClaimsAll.filter(function(c){return c.unit===rptUnit;});
-    var rptAliasClaims=rptClaimsAll.filter(function(c){return c.unit!==rptUnit;});
+    var rptPrimaryClaims=rptClaimsAll.filter(function(c){return c.unit===rptUnit&&!isLongTermRentReceiptForUnit(c,rptUnit);});
+    var rptAliasClaims=rptClaimsAll.filter(function(c){return c.unit!==rptUnit&&!isLongTermRentReceiptForUnit(c,rptUnit);});
     var sharedCl=rptPrimaryClaims.filter(function(c){return reportChargeBucket(c.unit,c.chargedTo)==='Both';});
     var ownerCl=rptPrimaryClaims.filter(function(c){return reportChargeBucket(c.unit,c.chargedTo)==='Owner';});
     var operatorCl=rptPrimaryClaims.filter(function(c){return reportChargeBucket(c.unit,c.chargedTo)==='Operator';});
@@ -3377,6 +3609,21 @@ function render(){
     var grand=stS+stO+stOp;
     var rhtml='<div class="scr">';
     rhtml+='<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">Owner</span><span style="font-size:12px;font-weight:600">'+ownerLabel+'</span></div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:11px;color:#6b7280">Unit</span><span style="font-size:12px;font-weight:600">'+rptUnit+'</span></div><div style="display:flex;justify-content:space-between"><span style="font-size:11px;color:#6b7280">Period</span><span style="font-size:12px;font-weight:600">'+monthLabel+'</span></div></div>';
+    if(unitBusinessModel(rptUnit,rptCfg)==='long_term_management'){
+      var rentRows=longTermRentClaimsForUnitPeriod(rptUnit,ym,rptClaimsAll);
+      var tenantRentReceived=reportRowsTotal(rentRows);
+      var longTermProfitPct=parseFloat(rptCfg.service_fee_pct||0)||0;
+      var longTermManagementFee=tenantRentReceived*longTermProfitPct/100;
+      var longTermOwnerExpenses=stO;
+      var longTermOwnerNet=tenantRentReceived-longTermManagementFee-longTermOwnerExpenses;
+      rhtml+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">Tenant Rent Received</div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Rent receipts</span><span style="font-size:12px;font-weight:600">'+rentRows.length+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-size:11px;color:#6b7280">Amount received</span><span style="font-size:12px;font-weight:700">RM '+tenantRentReceived.toFixed(2)+'</span></div></div>';
+      rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#065f46;background:#d1fae5;padding:6px 10px;border-radius:8px;margin-bottom:6px">Rent Receipt Evidence</div>'+ownerExpenseRowsHTML(rentRows)+'</div>';
+      rhtml+='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:6px 10px;border-radius:8px;margin-bottom:6px">Owner Expenses</div>'+reportSectionRowsHTML(ownerCl)+'<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px;font-weight:700;color:#1d4ed8;border-top:2px solid #dbeafe;margin-top:4px"><span>Total Owner Expenses</span><span>RM '+longTermOwnerExpenses.toFixed(2)+'</span></div></div>';
+      rhtml+='<div style="background:#111;border-radius:10px;padding:12px;margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:#d1fae5">MANAGEMENT FEE ('+longTermProfitPct.toFixed(2)+'%)</span><span style="font-size:14px;font-weight:800;color:#d1fae5">RM '+longTermManagementFee.toFixed(2)+'</span></div><div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid rgba(255,255,255,.18);padding-top:7px"><span style="font-size:13px;font-weight:700;color:#fff">OWNER NET</span><span style="font-size:16px;font-weight:800;color:#fff">RM '+longTermOwnerNet.toFixed(2)+'</span></div></div>';
+      rhtml+='<button class="pbtn btn-s" onclick="exportReportPDF()">⬇ Export PDF</button></div>';
+      ms.innerHTML=rhtml;
+      return;
+    }
     // Booking summary from reservations
     var rptHpIds=hpIdsForDisplayUnit(rptUnit);
     var rptRes=reservations.filter(function(r){if(!r.end_date||!r.unit_name)return false;if(r.booking_type===6)return false;if(r.booking_status&&r.booking_status.indexOf('Cancel')>=0)return false;var resYm=r.end_date.slice(0,7);var unitMatch=rptAliases.indexOf(r.unit_name)>=0||(r.hp_unit_id&&rptHpIds.indexOf(r.hp_unit_id)>=0);return unitMatch&&resYm===ym;});
@@ -3490,6 +3737,13 @@ window.openReportView=function(){
   if(u)rptUnit=u.value;if(m)rptMonth=m.value;if(yr)rptYear=yr.value;
   if(!rptUnit){toast('Please select a unit');return;}
   ss('reportView','reportHome');
+};
+window.openOwnerReportView=async function(){
+  var u=document.getElementById('rpt-unit'),m=document.getElementById('rpt-month'),yr=document.getElementById('rpt-year');
+  if(u)rptUnit=u.value;if(m)rptMonth=m.value;if(yr)rptYear=yr.value;
+  if(!rptUnit){toast('Please select a unit');return;}
+  await loadOwnerReport();
+  if(ownerReport)ss('ownerReportView','ownerReportHome');
 };
 window.setCompanyInsightPeriod=function(period){companyInsightPeriod=period;render();};
 window.shiftCompanyInsightPeriod=function(delta){
@@ -3617,6 +3871,7 @@ window.doLogin=doLogin;
 window.openUsers=openUsersScreen;
 window.createUserAccount=createUserAccount;
 window.updateUserAccount=updateUserAccount;
+window.toggleOwnerUnitPicker=toggleOwnerUnitPicker;
 window.submitResetPassword=submitResetPassword;
 window.deleteUserAccount=deleteUserAccount;window.reactivateUser=reactivateUser;
 window.editUser=function(uid){
@@ -3634,7 +3889,7 @@ window.doApprove=async function(){
 window.toggleChargeTo=function(unitVal,wrapId){var wrap=document.getElementById(wrapId);if(wrap)wrap.style.display=unitVal==='MP Office'?'none':'';};
 window.doReject=async function(){var r=document.getElementById('rv-reason');await rejectClaim(SEL.id,r?r.value:'No reason given');};
 window.saveMgrEdit=saveMgrEdit;window.saveEmpEdit=saveEmpEdit;window.submitEmpEdit=submitEmpEdit;
-window.submitNewClaim=submitNewClaim;window.submitMgrClaim=submitMgrClaim;
+window.submitNewClaim=submitNewClaim;window.submitMgrClaim=submitMgrClaim;window.submitLongTermRent=submitLongTermRent;
 window.markClaimed=markClaimed;window.saveBankInfo=saveBankInfo;
 window.openPropertyMapping=function(){
   unitFormError='';

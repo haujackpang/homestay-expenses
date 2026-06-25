@@ -58,12 +58,18 @@
 - Report PDF homestay management fee is calculated from the unit `Profit Sharing %` against homestay profit.
 - Owner expenses should include only expenses charged to Owner, and exclude Cleaning fee and Homestay Management Fee.
 - Report page and PDF should show Homestay Management Fee and Owner Profit instead of focusing on Total Expenses.
+- Long-term management rent receipts are income evidence, not normal expenses.
+- Long-term rent receipts must be saved with `source_type='long_term_rent'`, `category='Rental'`, `status='Company-Paid'`, `pay_type='company'`, and `charged_to='Operator'`.
+- Backward compatibility: for units configured as `long_term_management`, legacy `category='Rental'` rows are also treated as rent receipts and excluded from expense totals. This compatibility rule must not be applied to non-long-term units.
+- Long-term management owner reports use actual tenant rent receipts for the selected month. Formula: Tenant Rent Received - Management Fee - Owner Expenses = Owner Net.
+- Long-term rent receipts must be excluded from ordinary expense totals, Unit Expenses, manager dashboard company-paid expense totals, and short-term booking report expense calculations.
 
 ## Unit Configuration Rules
 - Cleaning and laundry rates are unit-level settings.
 - Do not rely on unit type for cleaning/laundry rates because the same property and same unit type may still have different rates.
 - `Service Fee %` wording must be shown as `Profit Sharing %`.
 - Existing database column `service_fee_pct` may remain as implementation detail unless a migration is explicitly approved.
+- For `long_term_management` units, `service_fee_pct` is the management fee percentage and `monthly_rent` is only a tenancy base reference unless a report explicitly says otherwise.
 
 ## Logs Rules
 - Logs page must show useful operational logs, not only error logs.
