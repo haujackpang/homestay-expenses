@@ -146,6 +146,52 @@ Recent unit-pairing context:
 - The pairing screen should be the primary place where admins pair HostPlatform rows to internal units.
 - `Display code (optional)` is editable only for internal units and read-only when shown in HostPlatform pairing.
 
+## 2026-05-23 V2 Google Sheet Expense Import Log
+- Scope: imported Jan-Apr 2026 historical Google Sheet expenses into live only.
+- Live target used and verified: Supabase project `skwogboredsczcyhlqgn`, repo `haujackpang/homestay-expenses`.
+- Test project boundary: `afcifzghlkxvnpulahub` was treated as test and was not used for the import.
+- Source material:
+  - user-provided unit expense Google Sheets were treated as source of truth for rows and attachments
+  - generated staging sheet was `Google Sheet Expense Final Staging Jan-Apr 2026`
+  - connector account verified later as `homesweethome09661@gmail.com`
+- Business decisions applied:
+  - import status was `Company-Paid`
+  - blank `submit_by` defaulted to `Jack Pang`
+  - `S16` was allowed as a new rental-sharing unit
+  - `Admiral A2208` was mapped/handled as `MP Office`
+  - previous `coco` naming was treated as renamed to `34F`
+  - rows marked `REVIEW_RENTAL_SCOPE` were imported
+  - rows marked `REVIEW_SOURCE_DUP` kept the unique row and skipped duplicates
+  - `SKIP_EXISTING_SPLIT` rows stayed skipped
+  - user confirmed 4 exact duplicate rows must be skipped: `Atlantis row 410`, `Landed row 775`, `Landed row 776`, `Landed row 779`
+- Final import result:
+  - 222 claims inserted into live
+  - 351 attachments uploaded to Supabase Storage bucket `receipts`
+  - all inserted claims used `external_source='google_sheet_v2_jan_apr_2026'`
+  - status for inserted claims is `Company-Paid`
+  - post-import verification returned `inserted_count=222`, `company_paid_count=222`, `receipt_count_mismatches=0`, `empty_receipt_refs=0`, `skipped_rows_inserted=0`
+- Duplicate handling:
+  - live DB duplicate guard is `claims_dup_check` on `(emp, expense_month, amount, description)`, excluding `Rejected` and `Draft`
+  - 10 planned rows across different units would collide with that guard because `unit` is not part of the unique key
+  - no schema change was made and no import row was removed for those 10 rows
+  - the 10 rows were disambiguated by appending unit to description, for example `Parking Fees Jan 2026 [IR B1506]`
+- Cleanup completed:
+  - local temporary import outputs and helper scripts were removed: `outputs/`, `scripts/`
+  - temporary SQL files removed: `supabase-active-units-readonly.sql`, `supabase-claims-jan-apr-readonly.sql`, `supabase-google-sheet-expense-dryrun.sql`, `supabase-google-sheet-keyword-review.sql`
+  - temporary `debug.log` removed
+  - the Supabase Storage `_codex_probe` test object was removed
+- Cleanup intentionally not done:
+  - `.worktrees/` was preserved because it supports the local live/test split workflow
+  - `manuals/`, screenshots, dashboard/report SQL, and `supabase/functions/owner-report/` were preserved because they were not clearly part of this import temp set
+- Google Drive staging sheet was identified but not deleted by Codex because the available Drive connector actions did not expose delete/trash; user can manually trash `Google Sheet Expense Final Staging Jan-Apr 2026`
+
+## 2026-08-19 Guest-Requested Extra Cleaning
+- User-approved reporting rule: completed guest-requested cleaning, laundry, hospitality/linen change, or combination is recorded as one `Other` item named `Extra cleaning`.
+- The new reservation-level table is `reservation_extra_services`; it stores reservation code, completed service date, quantity, unit rate snapshot, status, and creator.
+- Manager report and PDF include `Other -> Extra cleaning xN`; the amount is quantity multiplied by the unit's cleaning fee plus laundry fee, and follows reservation checkout month.
+- No automatic bi-weekly charge is generated. The manager adds a row only after the service is completed.
+- Test schema and RLS/Data API permissions were applied and verified on Supabase project `afcifzghlkxvnpulahub`; test `owner-report` was redeployed. Frontend test Pages deployment remains the next verification step.
+
 ## 2026-05-27 Supabase Data API Grant Preparation
 - Supabase announced that new public-schema tables/functions will no longer be automatically exposed to the Data API for new projects from 2026-05-30, and for new tables across existing projects from 2026-10-30.
 - Preparation added:
