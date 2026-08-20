@@ -348,3 +348,9 @@ Decision: Record completed reservation-level guest-requested extra service as on
 
 Reason:
 The user found separate cleaning and laundry lines confusing. A single fixed label keeps the report readable while preserving quantity and the configured unit rate. The record is entered only after completion, has no automatic bi-weekly recurrence, and follows the reservation checkout month for reporting.
+
+## 2026-08-20: Promote Extra Cleaning To Live
+Decision: After the user confirmed the test behavior, promote the extra-cleaning code, idempotent database structure, and matching `owner-report` function to the live environment.
+
+Reason:
+The live rollout changes application structure and reporting behavior only. It does not copy test rows or create sample extra-service data in live.

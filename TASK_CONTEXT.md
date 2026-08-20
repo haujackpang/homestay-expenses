@@ -190,7 +190,14 @@ Recent unit-pairing context:
 - The new reservation-level table is `reservation_extra_services`; it stores reservation code, completed service date, quantity, unit rate snapshot, status, and creator.
 - Manager report and PDF include `Other -> Extra cleaning xN`; the amount is quantity multiplied by the unit's cleaning fee plus laundry fee, and follows reservation checkout month.
 - No automatic bi-weekly charge is generated. The manager adds a row only after the service is completed.
-- Test schema and RLS/Data API permissions were applied and verified on Supabase project `afcifzghlkxvnpulahub`; test `owner-report` was redeployed. Frontend test Pages deployment remains the next verification step.
+- Test schema and RLS/Data API permissions were applied and verified on Supabase project `afcifzghlkxvnpulahub`; test `owner-report` was redeployed. Test Pages deployment run `32224431406` completed successfully.
+
+## 2026-08-20 Extra Cleaning Live Promotion
+- User confirmed the test behavior was correct and approved live promotion.
+- Live Supabase project `skwogboredsczcyhlqgn` received the idempotent `reservation_extra_services` structure, manager RLS policies, and explicit Data API CRUD grants.
+- Live `owner-report` was redeployed with the extra-cleaning aggregation logic.
+- Live Pages deployment run `32341156781` completed successfully from commit `0d62c65`.
+- No test business data was copied to live and no extra-service rows were inserted during promotion.
 
 ## 2026-05-27 Supabase Data API Grant Preparation
 - Supabase announced that new public-schema tables/functions will no longer be automatically exposed to the Data API for new projects from 2026-05-30, and for new tables across existing projects from 2026-10-30.
