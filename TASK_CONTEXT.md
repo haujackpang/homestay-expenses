@@ -1,12 +1,13 @@
 # Task Context
 
 ## Current Task
-2026-09-29 TEST implementation:
+2026-09-29 TEST implementation and approved LIVE promotion:
 1. Add `owner_settlements` for actual profit distribution and owner reimbursement payments with private proof, report snapshot, void audit, and manager-only write access.
 2. Extend `owner-report` to show payment history and outstanding owner profit; managers can fetch a unit report for settlement entry, owners remain limited to assigned units.
 3. Add manager settlement entry and owner report/PDF reconciliation. Do not count payment records again as company expenses.
-4. TEST schema, `owner-report`, `process-invoice`, and Pages were deployed on 2026-09-29. TEST Pages run `36546589240` succeeded; the deployed page returned HTTP 200, contained the new settlement entry, and pointed to TEST. LIVE was not changed.
-5. Local browser fixture showed RM3,000 owner profit, RM1,500 paid, RM1,500 outstanding, the payment form, and proof input. Actual authenticated save and owner readback still need a real TEST account; no fake payment was inserted.
+4. TEST schema, `owner-report`, `process-invoice`, and Pages were deployed on 2026-09-29. TEST Pages run `36546589240` succeeded; the deployed page returned HTTP 200, contained the new settlement entry, and pointed to TEST. User confirmed TEST is OK and approved LIVE promotion on 2026-09-29.
+5. Local browser fixture showed RM3,000 owner profit, RM1,500 paid, RM1,500 outstanding, the payment form, and proof input. No fake payment was inserted or copied to LIVE.
+6. LIVE promotion carries only the feature commits plus the required role declaration in `process-invoice`; unrelated TEST-only owner attachment authorization changes are excluded.
 
 2026-06-25 update (implemented locally, test-first):
 1. Added a dedicated Long-term Rent Receipt manager workflow for units configured as `long_term_management`.

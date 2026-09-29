@@ -149,6 +149,7 @@ serve(async (req: Request) => {
     if (!profile || profile.active === false) return json({ error: "Profile not active" }, 403);
 
     const body = await req.json();
+    const role = String(profile.role || "");
     if (body.action === "create-ai-scan-upload") {
       if (!AI_RECEIPT_SCAN_ENABLED) return json({ ok: false, error: "AI receipt scan is currently disabled" }, 403);
       await ensureReceiptsBucket(admin);
